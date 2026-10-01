@@ -42,4 +42,7 @@ public class DiaChiKhachHang {
     @Column(name = "is_mac_dinh")
     private Boolean isMacDinh;
 
+    @Column(name = "trang_thai")
+    private Integer trangThai;
+
 }

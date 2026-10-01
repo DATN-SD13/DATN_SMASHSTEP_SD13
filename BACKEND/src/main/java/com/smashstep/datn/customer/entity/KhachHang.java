@@ -20,14 +20,11 @@ public class KhachHang {
     @Column(name = "ma_khach_hang")
     private String maKhachHang;
 
-    @Column(name = "ten_khach_hang")
-    private String tenKhachHang;
-
     @Column(name = "ten_tai_khoan")
     private String tenTaiKhoan;
 
-    @Column(name = "mat_khau")
-    private String matKhau;
+    @Column(name = "ten_khach_hang")
+    private String tenKhachHang;
 
     @Column(name = "email")
     private String email;
@@ -35,14 +32,17 @@ public class KhachHang {
     @Column(name = "so_dien_thoai")
     private String soDienThoai;
 
-    @Column(name = "gioi_tinh")
-    private Integer gioiTinh;
-
     @Column(name = "ngay_sinh")
     private LocalDate ngaySinh;
 
-    @Column(name = "anh_dai_dien")
-    private String anhDaiDien;
+    @Column(name = "gioi_tinh")
+    private Integer gioiTinh;
+
+    @Column(name = "mat_khau")
+    private String matKhau;
+
+    @Column(name = "hinh_anh")
+    private String hinhAnh;
 
     @Column(name = "trang_thai")
     private Integer trangThai;
@@ -50,13 +50,7 @@ public class KhachHang {
     @Column(name = "ngay_tao")
     private LocalDateTime ngayTao;
 
-    @Column(name = "nguoi_tao")
-    private Long nguoiTao;
-
     @Column(name = "ngay_cap_nhat")
     private LocalDateTime ngayCapNhat;
-
-    @Column(name = "nguoi_cap_nhat")
-    private Long nguoiCapNhat;
 
 }

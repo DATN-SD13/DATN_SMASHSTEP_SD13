@@ -23,37 +23,16 @@ public class ChiTietDotGiamGia {
     private DotGiamGia idDotGiamGia;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "id_chi_tiet_san_pham")
-    private SanPhamChiTiet idChiTietSanPham;
+    @JoinColumn(name = "id_san_pham_chi_tiet")
+    private SanPhamChiTiet idSanPhamChiTiet;
 
-    @Column(name = "so_luong_ap_dung")
-    private Integer soLuongApDung;
-
-    @Column(name = "gia_tri_giam")
-    private BigDecimal giaTriGiam;
-
-    @Column(name = "so_tien_da_giam")
-    private BigDecimal soTienDaGiam;
+    @Column(name = "phan_tram_giam_bien_the")
+    private BigDecimal phanTramGiamBienThe;
 
     @Column(name = "trang_thai")
     private Integer trangThai;
 
-    @Column(name = "ghi_chu")
-    private String ghiChu;
-
-    @Column(name = "xoa_mem")
-    private Boolean xoaMem;
-
     @Column(name = "ngay_tao")
     private LocalDateTime ngayTao;
-
-    @Column(name = "nguoi_tao")
-    private Long nguoiTao;
-
-    @Column(name = "ngay_cap_nhat")
-    private LocalDateTime ngayCapNhat;
-
-    @Column(name = "nguoi_cap_nhat")
-    private Long nguoiCapNhat;
 
 }

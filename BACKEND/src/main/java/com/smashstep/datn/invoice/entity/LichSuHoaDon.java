@@ -1,6 +1,5 @@
 package com.smashstep.datn.invoice.entity;
 
-import com.smashstep.datn.employee.entity.NhanVien;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -21,21 +20,16 @@ public class LichSuHoaDon {
     @JoinColumn(name = "id_hoa_don")
     private HoaDon idHoaDon;
 
+    @Column(name = "nguoi_tao")
+    private Long nguoiTao;
+
     @Column(name = "trang_thai")
     private Integer trangThai;
-
-    @Column(name = "thoi_gian")
-    private LocalDateTime thoiGian;
 
     @Column(name = "ghi_chu")
     private String ghiChu;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "nguoi_cap_nhat")
-    private NhanVien nguoiCapNhat;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "nguoi_thuc_hien")
-    private NhanVien nguoiThucHien;
+    @Column(name = "ngay_tao")
+    private LocalDateTime ngayTao;
 
 }

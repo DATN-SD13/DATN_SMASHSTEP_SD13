@@ -24,7 +24,4 @@ public class HinhAnhSanPham {
     @Column(name = "is_anh_chinh")
     private Boolean isAnhChinh;
 
-    @Column(name = "xoa_mem")
-    private Boolean xoaMem;
-
 }

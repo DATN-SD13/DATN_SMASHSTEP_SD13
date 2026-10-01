@@ -1,9 +1,9 @@
 package com.smashstep.datn.invoice.repository;
 
-import com.smashstep.datn.invoice.entity.ChiTietHoaDon;
+import com.smashstep.datn.invoice.entity.HoaDonChiTiet;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public interface ChiTietHoaDonRepository extends JpaRepository<ChiTietHoaDon, Long> {
+public interface HoaDonChiTietRepository extends JpaRepository<HoaDonChiTiet, Long> {
 }

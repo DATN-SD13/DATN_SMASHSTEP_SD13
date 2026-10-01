@@ -4,6 +4,8 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.time.LocalDateTime;
+
 @Getter
 @Setter
 @Entity
@@ -14,19 +16,19 @@ public class KichThuoc {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "ma_kich_thuoc")
-    private String maKichThuoc;
+    @Column(name = "gia_tri")
+    private String giaTri;
 
-    @Column(name = "ten_kich_thuoc")
-    private String tenKichThuoc;
-
-    @Column(name = "size")
-    private String size;
+    @Column(name = "ghi_chu")
+    private String ghiChu;
 
     @Column(name = "trang_thai")
     private Integer trangThai;
 
-    @Column(name = "xoa_mem")
-    private Boolean xoaMem;
+    @Column(name = "ngay_tao")
+    private LocalDateTime ngayTao;
+
+    @Column(name = "ngay_cap_nhat")
+    private LocalDateTime ngayCapNhat;
 
 }

@@ -46,22 +46,22 @@ public class SanPham {
     @Column(name = "ten_san_pham")
     private String tenSanPham;
 
-    @Column(name = "mo_ta_chi_tiet")
+    @Column(name = "mo_ta_chi_tiet", columnDefinition = "NVARCHAR(MAX)")
     private String moTaChiTiet;
 
     @Column(name = "ngay_tao")
     private LocalDateTime ngayTao;
-
-    @Column(name = "xoa_mem")
-    private Boolean xoaMem;
-
-    @Column(name = "trang_thai")
-    private Integer trangThai;
 
     @Column(name = "nguoi_tao")
     private Long nguoiTao;
 
     @Column(name = "nguoi_cap_nhat")
     private Long nguoiCapNhat;
+
+    @Column(name = "ngay_cap_nhat")
+    private LocalDateTime ngayCapNhat;
+
+    @Column(name = "trang_thai")
+    private Integer trangThai;
 
 }

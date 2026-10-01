@@ -10,8 +10,8 @@ import java.math.BigDecimal;
 @Getter
 @Setter
 @Entity
-@Table(name = "chi_tiet_hoa_don")
-public class ChiTietHoaDon {
+@Table(name = "hoa_don_chi_tiet")
+public class HoaDonChiTiet {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -25,8 +25,8 @@ public class ChiTietHoaDon {
     @JoinColumn(name = "id_san_pham_chi_tiet")
     private SanPhamChiTiet idSanPhamChiTiet;
 
-    @Column(name = "ma_hoa_don_ct")
-    private String maHoaDonCt;
+    @Column(name = "so_luong")
+    private Integer soLuong;
 
     @Column(name = "don_gia")
     private BigDecimal donGia;
@@ -34,8 +34,8 @@ public class ChiTietHoaDon {
     @Column(name = "thanh_tien")
     private BigDecimal thanhTien;
 
-    @Column(name = "so_luong")
-    private Integer soLuong;
+    @Column(name = "ghi_chu")
+    private String ghiChu;
 
     @Column(name = "trang_thai")
     private Integer trangThai;

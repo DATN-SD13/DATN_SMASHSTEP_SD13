@@ -23,7 +23,4 @@ public class ChatLieu {
     @Column(name = "trang_thai")
     private Integer trangThai;
 
-    @Column(name = "xoa_mem")
-    private Boolean xoaMem;
-
 }

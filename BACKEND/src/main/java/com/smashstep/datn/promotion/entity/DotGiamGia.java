@@ -23,11 +23,8 @@ public class DotGiamGia {
     @Column(name = "ten_dot_giam_gia")
     private String tenDotGiamGia;
 
-    @Column(name = "loai_giam_gia")
-    private Integer loaiGiamGia;
-
-    @Column(name = "gia_tri_giam_gia")
-    private BigDecimal giaTriGiamGia;
+    @Column(name = "phan_tram_giam_dot")
+    private BigDecimal phanTramGiamDot;
 
     @Column(name = "ngay_bat_dau")
     private LocalDateTime ngayBatDau;
@@ -35,13 +32,16 @@ public class DotGiamGia {
     @Column(name = "ngay_ket_thuc")
     private LocalDateTime ngayKetThuc;
 
-    @Column(name = "muc_uu_tien")
-    private Integer mucUuTien;
+    @Column(name = "kich_hoat")
+    private Boolean kichHoat;
+
+    @Column(name = "ngay_tao")
+    private LocalDateTime ngayTao;
+
+    @Column(name = "ngay_cap_nhat")
+    private LocalDateTime ngayCapNhat;
 
     @Column(name = "trang_thai")
     private Integer trangThai;
-
-    @Column(name = "xoa_mem")
-    private Boolean xoaMem;
 
 }

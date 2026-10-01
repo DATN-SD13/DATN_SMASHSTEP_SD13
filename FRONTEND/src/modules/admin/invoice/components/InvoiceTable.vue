@@ -1,28 +1,133 @@
 <script setup>
 import { computed, ref } from 'vue'
-const props = defineProps({ invoices:{type:Array,default:()=>[]}, stats:{type:Object,default:()=>({})} })
-const emit = defineEmits(['view'])
+
+const props = defineProps({
+  invoices: { type: Array, default: () => [] },
+  stats: { type: Object, default: () => ({}) }
+})
+const emit = defineEmits(['view', 'export'])
 const activeTab = ref('all')
-const tabs = computed(() => [
-  ['all','Tất cả',props.stats.all ?? props.invoices.length],['waiting','Chưa xác nhận',props.stats.waiting ?? 0],['confirmed','Đã xác nhận',0],['ready','Chờ giao',0],['shipping','Đang giao',props.stats.shipping ?? 0],['done','Đã hoàn thành',props.stats.done ?? 0],['cancel','Đã hủy',props.stats.cancel ?? 0],['request','Yêu cầu hủy',0],['refund','Cần hoàn phí',0]
-])
-const visible = computed(()=>props.invoices.filter(i=>activeTab.value==='all' || (activeTab.value==='waiting' && i.statusClass==='waiting') || (activeTab.value==='shipping' && i.statusClass==='shipping') || (activeTab.value==='done' && i.statusClass==='done') || (activeTab.value==='cancel' && i.statusClass==='cancel')))
-function typeName(type){ return type==='online'?'Online':type==='delivery'?'Giao hàng':'Tại quầy' }
-function money(value){ return `${Number(value).toLocaleString('vi-VN')}đ` }
+
+const tabDefs = [
+  ['all', 'Tất cả'],
+  ['waiting', 'Chờ xác nhận'],
+  ['confirmed', 'Đã xác nhận'],
+  ['ready', 'Chờ giao hàng'],
+  ['shipping', 'Đang giao hàng'],
+  ['delivered', 'Đã giao hàng'],
+  ['done', 'Đã hoàn thành'],
+  ['cancel', 'Đã hủy'],
+  ['refund', 'Hoàn tiền']
+]
+function matchesTab(invoice, tab) {
+  const s = `${invoice.status || ''}`.toLowerCase()
+  if (tab === 'all') return true
+  if (tab === 'waiting') return invoice.statusClass === 'waiting' || s.includes('chờ xác nhận')
+  if (tab === 'confirmed') return invoice.statusClass === 'confirmed' || s.includes('đã xác nhận')
+  if (tab === 'ready') return invoice.statusClass === 'ready' || s.includes('chờ giao')
+  if (tab === 'shipping') return invoice.statusClass === 'shipping' || s.includes('đang giao')
+  if (tab === 'delivered') return invoice.statusClass === 'delivered' || s.includes('đã giao hàng')
+  if (tab === 'done') return invoice.statusClass === 'done' || s.includes('hoàn thành')
+  if (tab === 'cancel') return invoice.statusClass === 'cancel' || s.includes('đã hủy')
+  if (tab === 'refund') return invoice.statusClass === 'refund' || s.includes('hoàn tiền') || s.includes('hoàn phí')
+  return true
+}
+const tabs = computed(() => tabDefs.map(([key, label]) => [
+  key, label, key === 'all' ? props.invoices.length : props.invoices.filter(i => matchesTab(i, key)).length
+]))
+const visible = computed(() => props.invoices.filter(i => matchesTab(i, activeTab.value)))
+function typeName(type) {
+  return type === 'online' ? 'Trực tuyến' : type === 'delivery' ? 'Giao hàng' : 'Tại quầy'
+}
+function money(value) { return `${Number(value || 0).toLocaleString('vi-VN')} đ` }
 </script>
+
 <template>
-  <section class="table-card">
+  <section class="table-card card shadow-sm border-0">
     <div class="table-head">
-      <div class="title-line"><div class="list-icon">▣</div><div><h2>Danh sách hóa đơn</h2><p>Quản lý trạng thái và tra cứu hóa đơn</p></div><span class="total-pill">{{ visible.length }} kết quả</span></div>
-      <div class="status-tabs"><button v-for="tab in tabs" :key="tab[0]" :class="{active:activeTab===tab[0]}" @click="activeTab=tab[0]">{{tab[1]}} <b>{{tab[2]}}</b></button></div>
+      <div class="list-heading">
+        <h2>Danh sách hóa đơn</h2>
+        <button class="export-btn btn btn-outline-primary btn-sm" type="button" @click="emit('export')"><i class="bi bi-box-arrow-up"></i> Xuất Excel</button>
+      </div>
+      <div class="status-tabs">
+        <button v-for="tab in tabs" :key="tab[0]" :class="{ active: activeTab === tab[0] }" @click="activeTab = tab[0]">
+          {{ tab[1] }} <b v-if="tab[2]">{{ tab[2] }}</b>
+        </button>
+      </div>
     </div>
-    <div class="table-wrap">
-      <table><thead><tr><th class="stt">STT</th><th>MÃ HÓA ĐƠN</th><th>NHÂN VIÊN</th><th>KHÁCH HÀNG</th><th>NGÀY TẠO</th><th>TỔNG TIỀN</th><th>SDT KHÁCH HÀNG</th><th>TRẠNG THÁI</th><th class="action">HÀNH ĐỘNG</th></tr></thead>
-      <tbody><tr v-for="(invoice,index) in visible" :key="invoice.code"><td class="stt"><span class="row-no">{{index+1}}</span></td><td><strong class="code">{{invoice.code}}</strong></td><td>{{invoice.employee}}</td><td class="customer"><strong>{{invoice.customer}}</strong></td><td>{{invoice.date}}</td><td><strong class="money">{{money(invoice.total)}}</strong><span class="type-tag" :class="invoice.type">{{typeName(invoice.type)}}</span></td><td>{{invoice.phone}}</td><td><span :class="['status',invoice.statusClass]"><i></i>{{invoice.status}}</span></td><td class="action"><button class="view" title="Xem chi tiết" @click="emit('view',invoice)">⌕</button></td></tr><tr v-if="!visible.length"><td colspan="9" class="empty"><div>⌕</div><strong>Không tìm thấy hóa đơn</strong><span>Thử thay đổi điều kiện tìm kiếm hoặc trạng thái.</span></td></tr></tbody></table>
+
+    <div class="table-wrap table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead>
+          <tr>
+            <th class="stt">STT</th><th>Mã HĐ</th><th>Mã NV</th><th>Tên KH</th><th>SĐT KH</th>
+            <th>Tổng tiền TT</th><th>Loại đơn</th><th>Ngày tạo</th><th>Trạng thái</th><th class="action">Hành động</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="(invoice, index) in visible" :key="invoice.code">
+            <td class="stt">{{ index + 1 }}</td>
+            <td><strong class="code">{{ invoice.code }}</strong></td>
+            <td>{{ invoice.employeeCode || 'NV001' }}</td>
+            <td class="customer">{{ invoice.customer }}</td>
+            <td>{{ invoice.phone }}</td>
+            <td><strong class="money">{{ money(invoice.total) }}</strong></td>
+            <td><span class="type-tag" :class="invoice.type">{{ typeName(invoice.type) }}</span></td>
+            <td>{{ invoice.date }}</td>
+            <td><span :class="['status', invoice.statusClass]">{{ invoice.status }}</span></td>
+            <td class="action"><button class="view" title="Xem chi tiết" aria-label="Xem chi tiết" @click="emit('view', invoice)"><i class="bi bi-eye"></i></button></td>
+          </tr>
+          <tr v-if="!visible.length">
+            <td colspan="10" class="empty"><i class="bi bi-receipt"></i><strong>Không tìm thấy hóa đơn</strong><span>Thử thay đổi bộ lọc hoặc trạng thái hóa đơn.</span></td>
+          </tr>
+        </tbody>
+      </table>
     </div>
-    <div class="table-footer"><span>Hiển thị <b>{{visible.length ? 1 : 0}}–{{visible.length}}</b> trong {{props.stats.all ?? visible.length}} hóa đơn</span><div class="pagination"><button disabled>‹</button><button class="current">1</button><button>2</button><button>3</button><button>›</button></div></div>
+    <div class="table-footer">
+      <span>Hiển thị <b>{{ visible.length ? 1 : 0 }}–{{ visible.length }}</b> trong {{ props.invoices.length }} hóa đơn</span>
+      <div class="pagination"><button disabled>‹</button><button class="current">1</button><button disabled>›</button></div>
+    </div>
   </section>
 </template>
+
 <style scoped>
-.table-card{background:#fff;border:1px solid #e5edef;border-radius:14px;overflow:hidden;box-shadow:0 6px 20px rgba(30,64,78,.045)}.table-head{padding:16px 17px 0}.title-line{display:flex;align-items:center;gap:10px}.list-icon{width:31px;height:31px;border-radius:9px;background:#e8f9fc;color:#08aeca;display:grid;place-items:center;font-size:14px}.title-line h2{font-size:13px;margin:0;color:#31434d}.title-line p{font-size:8px;color:#99a7ad;margin:3px 0 0}.total-pill{margin-left:auto;border:1px solid #e4ecef;border-radius:20px;color:#7f9199;font-size:8px;padding:6px 10px;background:#fbfcfd}.status-tabs{display:flex;gap:5px;overflow:auto;padding:15px 0 11px}.status-tabs::-webkit-scrollbar{height:3px}.status-tabs button{border:1px solid #e2e9ec;background:#fff;color:#7d8e97;border-radius:18px;padding:7px 10px;white-space:nowrap;font-size:8px;cursor:pointer;transition:.15s}.status-tabs button b{font-weight:800;margin-left:2px}.status-tabs button:hover{border-color:#9cdae4;color:#08a8c7}.status-tabs button.active{background:#08b4d2;border-color:#08b4d2;color:#fff;box-shadow:0 4px 10px rgba(10,180,210,.16)}.table-wrap{overflow:auto}table{width:100%;min-width:1080px;border-collapse:collapse}thead{background:#f3f7f8}th{height:37px;padding:0 10px;text-align:left;color:#71838c;font-size:7.5px;font-weight:800;white-space:nowrap;border-top:1px solid #edf1f2;border-bottom:1px solid #e6edef}td{height:53px;padding:0 10px;color:#657781;font-size:8.5px;white-space:nowrap;border-bottom:1px solid #edf1f2}tbody tr{transition:.14s}tbody tr:hover{background:#f9fcfd}tbody tr:hover .row-no{background:#e8f9fc;color:#05a9c8}.stt{width:47px;text-align:center}.row-no{display:inline-grid;place-items:center;width:23px;height:23px;border-radius:7px;background:#f3f6f7;color:#81919a;font-size:8px}.code{color:#263943;font-size:9px}.customer{max-width:175px;overflow:hidden;text-overflow:ellipsis}.customer strong{font-size:8.5px;color:#536771}.money{display:inline-block;color:#334b55;font-size:9px}.type-tag{display:inline-block;margin-left:6px;padding:4px 6px;border-radius:8px;font-size:7px;font-weight:650}.type-tag.online{color:#0b8cb9;background:#e8f7fc}.type-tag.delivery{color:#df7077;background:#ffeff1}.type-tag.store{color:#766bc9;background:#f0efff}.status{display:inline-flex;align-items:center;gap:5px;border-radius:14px;padding:5px 8px;font-size:7.5px;font-weight:700}.status i{width:5px;height:5px;border-radius:50%;display:block}.status.done{color:#0a9968;background:#e7f8f0}.status.done i{background:#0dbb79}.status.shipping{color:#0b99bd;background:#e5f7fb}.status.shipping i{background:#0ab2d3}.status.waiting{color:#d68b17;background:#fff4df}.status.waiting i{background:#efa92e}.status.cancel{color:#dc6871;background:#ffeaec}.status.cancel i{background:#eb737c}.view{width:30px;height:30px;border:1px solid #e0e9ec;background:#f9fbfc;color:#68808b;border-radius:8px;cursor:pointer;font-size:14px;transition:.15s}.view:hover{background:#e7f9fc;border-color:#9adce7;color:#06a9c9;transform:translateY(-1px)}.action{text-align:center}.empty{text-align:center;height:145px!important;color:#a0adb2}.empty div{margin:auto;width:34px;height:34px;border-radius:50%;background:#eef9fb;color:#0aacc9;display:grid;place-items:center;font-size:17px}.empty strong{display:block;color:#667981;font-size:10px;margin-top:8px}.empty span{display:block;color:#a3afb4;font-size:8px;margin-top:3px}.table-footer{height:57px;padding:0 17px;display:flex;align-items:center;justify-content:space-between;color:#98a5ab;font-size:8px}.table-footer b{color:#63757e}.pagination{display:flex;gap:5px}.pagination button{width:30px;height:30px;border:1px solid #e2eaed;background:#fff;border-radius:8px;color:#71838d;cursor:pointer;font-size:10px}.pagination button.current{background:#102d39;color:#fff;border-color:#102d39}.pagination button:disabled{color:#c7d0d4;cursor:not-allowed}@media(max-width:700px){.total-pill{display:none}}
+.table-card{background:#fff;border:1px solid #e7eef4!important;border-radius:14px;overflow:hidden}
+.table-head{padding:20px 22px 0}
+.list-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.list-heading h2{margin:0;color:#111827;font-size:15px;font-weight:700}
+.export-btn{height:36px;padding:0 15px;border-radius:9px;font-size:12px;font-weight:600;display:flex;align-items:center;gap:7px;--bs-btn-color:#137fb7;--bs-btn-border-color:#b9d9ec;--bs-btn-hover-bg:#1689cf;--bs-btn-hover-border-color:#1689cf}
+.status-tabs{display:flex;gap:8px;overflow-x:auto;padding:18px 0 15px}
+.status-tabs::-webkit-scrollbar{height:4px}.status-tabs::-webkit-scrollbar-thumb{background:#dce8ef;border-radius:5px}
+.status-tabs button{flex:0 0 auto;border:1px solid #dfe6eb;background:#fff;color:#111827;border-radius:9px;padding:8px 13px;white-space:nowrap;font-size:11px;font-weight:600;cursor:pointer;transition:.15s}
+.status-tabs button b{font-size:10px;margin-left:3px;font-weight:700}
+.status-tabs button:hover{border-color:#8fc5e7;color:#0878bd;background:#f5fbff}
+.status-tabs button.active{background:#1689cf;border-color:#1689cf;color:#fff;box-shadow:0 3px 9px rgba(22,137,207,.15)}
+.table-wrap{overflow-x:auto}
+table{width:100%;min-width:1060px;border-collapse:separate;border-spacing:0}
+thead{background:#eaf4fa}
+th{height:54px!important;padding:0 13px!important;text-align:left;vertical-align:middle!important;color:#111827!important;font-size:11px;font-weight:750!important;line-height:1.2!important;white-space:nowrap;border-bottom:1px solid #dce7ee!important;background:#eaf4fa!important}
+td{height:56px;padding:0 13px!important;vertical-align:middle!important;color:#111827;font-size:11px;line-height:1.25!important;white-space:nowrap;border-bottom:1px solid #edf1f4}
+tbody tr{transition:background .12s}tbody tr:hover>*{background:#f5faff!important}
+.stt{width:48px;text-align:center;color:#111827}
+.code{color:#111827;font-size:11px;font-weight:700}
+.customer{max-width:180px;overflow:hidden;text-overflow:ellipsis}
+.money{color:#111827!important;font-size:11px;font-weight:750}
+.type-tag{display:inline-block;padding:6px 10px;border-radius:7px;font-size:10px;font-weight:700}
+.type-tag.online{background:#e6f4ff;color:#147bb8}.type-tag.delivery{background:#e9f6fb;color:#167e9e}.type-tag.store{background:#edf0ff;color:#5b68b4}
+.status{display:inline-flex;align-items:center;border-radius:7px;padding:7px 10px;font-size:10px;font-weight:700;background:#e8f3ff;color:#1675bd}
+.status.done,.status.delivered{background:#e8f7ef;color:#168455}
+.status.shipping,.status.confirmed,.status.ready{background:#e6f4ff;color:#1678b8}
+.status.waiting{background:#fff5df;color:#a86a08}
+.status.cancel{background:#ffebed;color:#c64f5b}
+.status.refund{background:#f1eaff;color:#7b55b5}
+.view{width:32px;height:32px;border:1px solid #dcebf4;background:#f3faff;color:#1689cf;border-radius:9px;cursor:pointer;font-size:14px;transition:.15s}
+.view:hover{background:#1689cf;color:#fff;border-color:#1689cf}
+.action{text-align:center}
+.empty{text-align:center;height:150px!important;color:#111827}
+.empty i{display:block;font-size:24px;color:#a9cde2;margin-bottom:8px}
+.empty strong,.empty span{display:block}.empty strong{color:#111827;font-size:13px}.empty span{margin-top:5px;font-size:11px}
+.table-footer{min-height:58px;padding:0 22px;display:flex;align-items:center;justify-content:space-between;color:#111827;font-size:11px}
+.table-footer b{color:#111827}
+.pagination{display:flex;gap:5px}.pagination button{width:31px;height:31px;border:1px solid #dfe7ec;background:#fff;border-radius:8px;color:#111827;cursor:pointer}.pagination button.current{background:#1689cf;color:#fff;border-color:#1689cf}.pagination button:disabled{color:#c6d1d7;cursor:not-allowed}
+@media(max-width:700px){.table-head{padding:15px 14px 0}.status-tabs{gap:6px}.status-tabs button{font-size:10px;padding:8px 10px}.table-footer{padding:0 14px}}
 </style>

@@ -24,16 +24,16 @@ public class LichSuThanhToan {
     @Column(name = "so_tien")
     private BigDecimal soTien;
 
-    @Column(name = "phuong_thuc_thanh_toan")
-    private String phuongThucThanhToan;
+    @Column(name = "ma_giao_dich")
+    private String maGiaoDich;
 
-    @Column(name = "trang_thai_thanh_toan")
-    private Integer trangThaiThanhToan;
+    @Column(name = "thoi_gian")
+    private LocalDateTime thoiGian;
 
-    @Column(name = "ngay_thanh_toan")
-    private LocalDateTime ngayThanhToan;
+    @Column(name = "trang_thai")
+    private Integer trangThai;
 
-    @Column(name = "ghi_chu")
-    private String ghiChu;
+    @Column(name = "mo_ta")
+    private String moTa;
 
 }

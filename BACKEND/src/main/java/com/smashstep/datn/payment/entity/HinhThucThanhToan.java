@@ -14,14 +14,11 @@ public class HinhThucThanhToan {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "ma_hinh_thuc_thanh_toan")
-    private String maHinhThucThanhToan;
+    @Column(name = "ma_hinh_thuc")
+    private String maHinhThuc;
 
-    @Column(name = "ten_hinh_thuc_thanh_toan")
-    private String tenHinhThucThanhToan;
-
-    @Column(name = "nha_cung_cap")
-    private String nhaCungCap;
+    @Column(name = "ten_hinh_thuc")
+    private String tenHinhThuc;
 
     @Column(name = "trang_thai")
     private Integer trangThai;
