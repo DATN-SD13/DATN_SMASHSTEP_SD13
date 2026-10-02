@@ -1,23 +1,93 @@
 <script setup>
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-const router=useRouter(); const form=ref({code:'VCHH5TG9',name:'',type:'Công khai',discountType:'Phần trăm (%)',value:0,min:0,max:0,quantity:'',unlimited:false,start:'2026-08-16',end:''})
-function save(){alert('Đã tạo phiếu giảm giá');router.push('/giam-gia')}
+
+const router = useRouter()
+const form = ref({ code: 'VCH8H5TG9', name: '', type: 'Công khai', discountType: 'Phần trăm (%)', value: 0, min: 0, max: 0, quantity: '', unlimited: false, start: '2026-08-16', end: '' })
+const isPercent = computed(() => form.value.discountType === 'Phần trăm (%)')
+
+function save() { alert('Đã tạo phiếu giảm giá'); router.push('/giam-gia') }
 </script>
+
 <template>
-<AdminLayout><main class="page"><div class="breadcrumb"><span>Quản lý giảm giá</span><i class="bi bi-chevron-right"></i><span>Phiếu giảm giá</span><i class="bi bi-chevron-right"></i><strong>Thêm phiếu giảm giá</strong></div><div class="page-heading"><div><h1>Thêm phiếu giảm giá</h1><p>Tạo một mã giảm giá mới cho khách hàng.</p></div><button class="back" @click="router.back()"><i class="bi bi-arrow-left"></i> Quay lại</button></div>
-<section class="card form-card"><div class="section-title"><div class="section-icon"><i class="bi bi-ticket-perforated"></i></div><div><h2>Thông tin phiếu</h2><p>Nhập đầy đủ thông tin để tạo phiếu giảm giá.</p></div></div>
-<div class="form-grid"><label>Mã phiếu <b>*</b><div class="code-wrap"><input v-model="form.code"/><button><i class="bi bi-arrow-clockwise"></i></button></div></label><label>Tên phiếu <b>*</b><input v-model="form.name" placeholder="Ví dụ: Giảm giá hè 2026"/></label>
-<div class="field"><span>Hình thức phiếu <b>*</b></span><div class="radios"><label><input type="radio" value="Công khai" v-model="form.type"/> Công khai</label><label><input type="radio" value="Cá nhân" v-model="form.type"/> Cá nhân</label></div></div>
-<label>Loại giảm <b>*</b><select v-model="form.discountType"><option>Phần trăm (%)</option><option>Tiền mặt (VNĐ)</option></select></label>
-<label>Giá trị giảm <b>*</b><div class="suffix"><input type="number" v-model="form.value"/><span>{{form.discountType==='Phần trăm (%)'?'%':'VNĐ'}}</span></div></label><label>Giá trị đơn tối thiểu (VNĐ)<input type="number" v-model="form.min"/></label>
-<label>Giảm tối đa (VNĐ)<input type="number" v-model="form.max"/><small><i class="bi bi-info-circle"></i> Để 0 nếu không giới hạn mức giảm tối đa.</small></label><label>Số lượng còn lại <b>*</b><input v-model="form.quantity" :disabled="form.unlimited" placeholder="Nhập số lượng còn lại"/><span class="check"><input type="checkbox" v-model="form.unlimited"/> Vô hạn số lượng</span></label>
-<label>Ngày bắt đầu <b>*</b><input type="date" v-model="form.start"/></label><label>Ngày kết thúc <b>*</b><input type="date" v-model="form.end"/></label></div>
-<div class="form-actions"><button class="primary" @click="save"><i class="bi bi-check2"></i> Tạo phiếu giảm giá</button><button class="cancel" @click="router.back()">Hủy</button></div></section></main></AdminLayout>
+  <AdminLayout>
+    <main class="ss-page">
+      <div><button class="ss-back" aria-label="Quay lại" @click="router.back()"><i class="bi bi-arrow-left"></i></button></div>
+
+      <section class="ss-card ss-form">
+        <div class="ss-head">
+          <div class="ss-head-icon"><i class="bi bi-ticket-perforated"></i></div>
+          <h2>Thông tin phiếu</h2>
+        </div>
+
+        <div class="form-grid">
+          <div class="ss-field">
+            <label class="ss-label">Mã phiếu <span class="req">*</span></label>
+            <input class="ss-input" v-model="form.code" />
+          </div>
+          <div class="ss-field">
+            <label class="ss-label">Tên phiếu <span class="req">*</span></label>
+            <input class="ss-input" v-model="form.name" placeholder="Ví dụ: Giảm giá hè 2024" />
+          </div>
+
+          <div class="ss-field">
+            <span class="ss-label">Hình thức phiếu</span>
+            <div class="ss-radios">
+              <label><input type="radio" value="Công khai" v-model="form.type" /> Công khai</label>
+              <label><input type="radio" value="Cá nhân" v-model="form.type" /> Cá nhân</label>
+            </div>
+          </div>
+          <div class="ss-field">
+            <span class="ss-label">Loại giảm</span>
+            <div class="ss-radios">
+              <label><input type="radio" value="Phần trăm (%)" v-model="form.discountType" /> Phần trăm (%)</label>
+              <label><input type="radio" value="Tiền mặt (VNĐ)" v-model="form.discountType" /> Tiền mặt (VNĐ)</label>
+            </div>
+          </div>
+
+          <div class="ss-field">
+            <label class="ss-label">Giá trị giảm ({{ isPercent ? '%' : 'VNĐ' }}) <span class="req">*</span></label>
+            <input class="ss-input" type="number" min="0" v-model="form.value" />
+          </div>
+          <div class="ss-field">
+            <label class="ss-label muted">Giá trị đơn tối thiểu (VNĐ)</label>
+            <input class="ss-input" type="number" min="0" v-model="form.min" />
+          </div>
+
+          <div class="ss-field">
+            <label class="ss-label muted">Giảm tối đa (VNĐ)</label>
+            <input class="ss-input" type="number" min="0" v-model="form.max" />
+            <span class="ss-hint warn"><i class="bi bi-exclamation-triangle"></i> Lưu ý: Voucher này sẽ không giới hạn số tiền giảm tối đa.</span>
+          </div>
+          <div class="ss-field">
+            <label class="ss-label">Số lượng còn lại <span class="req">*</span></label>
+            <input class="ss-input" v-model="form.quantity" :disabled="form.unlimited" placeholder="Nhập số lượng còn lại" />
+            <label class="ss-check"><input type="checkbox" v-model="form.unlimited" /> Vô hạn số lượng</label>
+          </div>
+
+          <div class="ss-field">
+            <label class="ss-label">Ngày bắt đầu <span class="req">*</span></label>
+            <input class="ss-input" type="date" v-model="form.start" />
+          </div>
+          <div class="ss-field">
+            <label class="ss-label">Ngày kết thúc <span class="req">*</span></label>
+            <input class="ss-input" type="date" v-model="form.end" />
+          </div>
+        </div>
+
+        <div class="ss-actions left">
+          <button class="ss-btn primary" @click="save"><i class="bi bi-check2"></i> Tạo phiếu giảm giá</button>
+          <button class="ss-btn" @click="router.back()">Hủy</button>
+        </div>
+      </section>
+    </main>
+  </AdminLayout>
 </template>
+
 <style scoped>
-
-.page{min-height:calc(100vh - 72px);padding:22px 28px 44px;background:#eef4f7;color:#17303b}.breadcrumb{display:flex;align-items:center;gap:8px;font-size:11px;color:#607782;margin-bottom:8px}.breadcrumb strong{color:#17303b;font-weight:850}.breadcrumb i{font-size:9px;color:#91a4ad}.page-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin-bottom:20px}.page-heading h1{font-size:26px;margin:0;font-weight:900;color:#102c38}.page-heading p{font-size:12px;color:#637b86;margin:7px 0 0}.back{height:40px;border:1px solid #b9d5e1;border-radius:10px;background:#fff;color:#17586f;padding:0 15px;font-size:12px;font-weight:800;display:flex;align-items:center;gap:7px;cursor:pointer}.back:hover{background:#eef8fc}.card{background:#fff;border:1px solid #d6e2e8;border-radius:16px;box-shadow:0 5px 18px rgba(21,54,70,.055)}.form-card{padding:23px 24px}.section-title{display:flex;gap:12px;align-items:center;margin-bottom:23px}.section-icon{width:42px;height:42px;border-radius:11px;display:grid;place-items:center;background:#e0f1f8;color:#087fb8;font-size:18px;border:1px solid #cbe5ef}.section-title h2{margin:0;font-size:17px;font-weight:850;color:#102c38}.section-title p{margin:4px 0 0;font-size:11px;color:#69808b}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:19px 24px}.form-grid>label,.field{display:flex;flex-direction:column;gap:7px;font-size:11px;font-weight:800;color:#29434f}.form-grid b{color:#c43e4f}.form-grid input,.form-grid select{width:100%;height:44px;border:1px solid #ccdbe2;border-radius:10px;padding:0 12px;color:#17303b;background:#fff;font-size:12px;outline:none}.form-grid input:focus,.form-grid select:focus{border-color:#087fb8;box-shadow:0 0 0 3px rgba(8,127,184,.1)}.form-grid input::placeholder{color:#899ca5}.code-wrap,.suffix{position:relative}.code-wrap input{padding-right:45px}.code-wrap button{position:absolute;right:5px;top:5px;width:34px;height:34px;border:0;border-radius:8px;background:#edf5f8;color:#416673}.suffix input{padding-right:52px}.suffix span{position:absolute;right:13px;top:14px;color:#5f7884;font-size:11px;font-weight:700}.radios{height:44px;display:flex;align-items:center;gap:25px}.radios label{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:700;color:#304b57}.radios input{width:15px;height:15px;margin:0;accent-color:#087fb8}.form-grid small{font-size:10px;color:#9a5e00;font-weight:700}.check{display:flex;align-items:center;gap:7px;margin-top:1px;font-size:10px;color:#607782;font-weight:700}.check input{width:15px;height:15px}.form-actions{display:flex;align-items:center;gap:10px;border-top:1px solid #e3ebef;margin-top:26px;padding-top:18px}.primary,.cancel{height:42px;border-radius:10px;padding:0 18px;font-size:12px;font-weight:850;cursor:pointer}.primary{border:0;background:#087fb8;color:#fff;box-shadow:0 5px 12px rgba(8,127,184,.2)}.cancel{border:1px solid #cbdde5;background:#fff;color:#385460}.cancel:hover{background:#f3f8fa}@media(max-width:760px){.page{padding:17px 14px}.page-heading{align-items:flex-start;flex-direction:column}.form-grid{grid-template-columns:1fr}}
-
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 24px; }
+.ss-label.muted { font-weight: 500; color: var(--ss-muted); }
+.ss-hint i { margin-right: 3px; }
+@media (max-width: 760px) { .form-grid { grid-template-columns: 1fr; } }
 </style>

@@ -40,94 +40,71 @@ function typeName(type) {
   return type === 'online' ? 'Trực tuyến' : type === 'delivery' ? 'Giao hàng' : 'Tại quầy'
 }
 function money(value) { return `${Number(value || 0).toLocaleString('vi-VN')} đ` }
+
+const tone = (c) => ({ done: 'success', cancel: 'danger', refund: 'danger', waiting: 'warn' }[c] || '')
+const typeTone = (t) => (t === 'delivery' ? 'warn' : t === 'store' ? 'gray' : '')
 </script>
 
 <template>
-  <section class="table-card card shadow-sm border-0">
-    <div class="table-head">
-      <div class="list-heading">
-        <h2>Danh sách hóa đơn</h2>
-        <button class="export-btn btn btn-outline-primary btn-sm" type="button" @click="emit('export')"><i class="bi bi-box-arrow-up"></i> Xuất Excel</button>
-      </div>
-      <div class="status-tabs">
-        <button v-for="tab in tabs" :key="tab[0]" :class="{ active: activeTab === tab[0] }" @click="activeTab = tab[0]">
-          {{ tab[1] }} <b v-if="tab[2]">{{ tab[2] }}</b>
-        </button>
-      </div>
+  <section class="ss-card">
+    <div class="ss-head">
+      <h2>Danh sách hóa đơn</h2>
+      <span class="ss-spacer"></span>
+      <span class="ss-count">{{ visible.length }} bản ghi hiển thị.</span>
+      <button class="ss-btn sm" type="button" @click="emit('export')"><i class="bi bi-file-earmark-excel"></i> Xuất Excel</button>
     </div>
 
-    <div class="table-wrap table-responsive">
-      <table class="table table-hover align-middle mb-0">
+    <div class="tabs">
+      <button v-for="tab in tabs" :key="tab[0]" type="button" :class="{ active: activeTab === tab[0] }" @click="activeTab = tab[0]">
+        {{ tab[1] }} <b v-if="tab[2]">{{ tab[2] }}</b>
+      </button>
+    </div>
+
+    <div class="ss-table-wrap">
+      <table class="ss-table">
         <thead>
           <tr>
-            <th class="stt">STT</th><th>Mã HĐ</th><th>Mã NV</th><th>Tên KH</th><th>SĐT KH</th>
-            <th>Tổng tiền TT</th><th>Loại đơn</th><th>Ngày tạo</th><th>Trạng thái</th><th class="action">Hành động</th>
+            <th class="w-stt c">STT</th><th>Mã HĐ</th><th>Mã NV</th><th>Tên KH</th><th>SĐT KH</th>
+            <th class="r">Tổng tiền TT</th><th>Loại đơn</th><th>Ngày tạo</th><th>Trạng thái</th><th>Hành động</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="(invoice, index) in visible" :key="invoice.code">
-            <td class="stt">{{ index + 1 }}</td>
-            <td><strong class="code">{{ invoice.code }}</strong></td>
+            <td class="c">{{ index + 1 }}</td>
+            <td><span class="ss-code">{{ invoice.code }}</span></td>
             <td>{{ invoice.employeeCode || 'NV001' }}</td>
-            <td class="customer">{{ invoice.customer }}</td>
-            <td>{{ invoice.phone }}</td>
-            <td><strong class="money">{{ money(invoice.total) }}</strong></td>
-            <td><span class="type-tag" :class="invoice.type">{{ typeName(invoice.type) }}</span></td>
-            <td>{{ invoice.date }}</td>
-            <td><span :class="['status', invoice.statusClass]">{{ invoice.status }}</span></td>
-            <td class="action"><button class="view" title="Xem chi tiết" aria-label="Xem chi tiết" @click="emit('view', invoice)"><i class="bi bi-eye"></i></button></td>
+            <td>{{ invoice.customer }}</td>
+            <td class="nowrap">{{ invoice.phone }}</td>
+            <td class="r nowrap"><span class="ss-strong">{{ money(invoice.total) }}</span></td>
+            <td><span class="ss-pill" :class="typeTone(invoice.type)">{{ typeName(invoice.type) }}</span></td>
+            <td class="nowrap">{{ invoice.date }}</td>
+            <td><span class="ss-pill dot" :class="tone(invoice.statusClass)">{{ invoice.status }}</span></td>
+            <td><div class="ss-row-actions"><button class="ss-icon-btn" title="Xem chi tiết" aria-label="Xem chi tiết" @click="emit('view', invoice)"><i class="bi bi-eye"></i></button></div></td>
           </tr>
           <tr v-if="!visible.length">
-            <td colspan="10" class="empty"><i class="bi bi-receipt"></i><strong>Không tìm thấy hóa đơn</strong><span>Thử thay đổi bộ lọc hoặc trạng thái hóa đơn.</span></td>
+            <td colspan="10" class="ss-empty"><i class="bi bi-receipt"></i>Không tìm thấy hóa đơn. Thử thay đổi bộ lọc hoặc trạng thái.</td>
           </tr>
         </tbody>
       </table>
     </div>
-    <div class="table-footer">
-      <span>Hiển thị <b>{{ visible.length ? 1 : 0 }}–{{ visible.length }}</b> trong {{ props.invoices.length }} hóa đơn</span>
-      <div class="pagination"><button disabled>‹</button><button class="current">1</button><button disabled>›</button></div>
+
+    <div class="ss-foot">
+      <span class="ss-foot-info">Hiển thị {{ visible.length ? 1 : 0 }}–{{ visible.length }} trong {{ props.invoices.length }} hóa đơn</span>
+      <div class="ss-pages"><button disabled><i class="bi bi-chevron-left"></i></button><button class="active">1</button><button disabled><i class="bi bi-chevron-right"></i></button></div>
     </div>
   </section>
 </template>
 
 <style scoped>
-.table-card{background:#fff;border:1px solid #e7eef4!important;border-radius:14px;overflow:hidden}
-.table-head{padding:20px 22px 0}
-.list-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
-.list-heading h2{margin:0;color:#111827;font-size:15px;font-weight:700}
-.export-btn{height:36px;padding:0 15px;border-radius:9px;font-size:12px;font-weight:600;display:flex;align-items:center;gap:7px;--bs-btn-color:#137fb7;--bs-btn-border-color:#b9d9ec;--bs-btn-hover-bg:#1689cf;--bs-btn-hover-border-color:#1689cf}
-.status-tabs{display:flex;gap:8px;overflow-x:auto;padding:18px 0 15px}
-.status-tabs::-webkit-scrollbar{height:4px}.status-tabs::-webkit-scrollbar-thumb{background:#dce8ef;border-radius:5px}
-.status-tabs button{flex:0 0 auto;border:1px solid #dfe6eb;background:#fff;color:#111827;border-radius:9px;padding:8px 13px;white-space:nowrap;font-size:11px;font-weight:600;cursor:pointer;transition:.15s}
-.status-tabs button b{font-size:10px;margin-left:3px;font-weight:700}
-.status-tabs button:hover{border-color:#8fc5e7;color:#0878bd;background:#f5fbff}
-.status-tabs button.active{background:#1689cf;border-color:#1689cf;color:#fff;box-shadow:0 3px 9px rgba(22,137,207,.15)}
-.table-wrap{overflow-x:auto}
-table{width:100%;min-width:1060px;border-collapse:separate;border-spacing:0}
-thead{background:#eaf4fa}
-th{height:54px!important;padding:0 13px!important;text-align:left;vertical-align:middle!important;color:#111827!important;font-size:11px;font-weight:750!important;line-height:1.2!important;white-space:nowrap;border-bottom:1px solid #dce7ee!important;background:#eaf4fa!important}
-td{height:56px;padding:0 13px!important;vertical-align:middle!important;color:#111827;font-size:11px;line-height:1.25!important;white-space:nowrap;border-bottom:1px solid #edf1f4}
-tbody tr{transition:background .12s}tbody tr:hover>*{background:#f5faff!important}
-.stt{width:48px;text-align:center;color:#111827}
-.code{color:#111827;font-size:11px;font-weight:700}
-.customer{max-width:180px;overflow:hidden;text-overflow:ellipsis}
-.money{color:#111827!important;font-size:11px;font-weight:750}
-.type-tag{display:inline-block;padding:6px 10px;border-radius:7px;font-size:10px;font-weight:700}
-.type-tag.online{background:#e6f4ff;color:#147bb8}.type-tag.delivery{background:#e9f6fb;color:#167e9e}.type-tag.store{background:#edf0ff;color:#5b68b4}
-.status{display:inline-flex;align-items:center;border-radius:7px;padding:7px 10px;font-size:10px;font-weight:700;background:#e8f3ff;color:#1675bd}
-.status.done,.status.delivered{background:#e8f7ef;color:#168455}
-.status.shipping,.status.confirmed,.status.ready{background:#e6f4ff;color:#1678b8}
-.status.waiting{background:#fff5df;color:#a86a08}
-.status.cancel{background:#ffebed;color:#c64f5b}
-.status.refund{background:#f1eaff;color:#7b55b5}
-.view{width:32px;height:32px;border:1px solid #dcebf4;background:#f3faff;color:#1689cf;border-radius:9px;cursor:pointer;font-size:14px;transition:.15s}
-.view:hover{background:#1689cf;color:#fff;border-color:#1689cf}
-.action{text-align:center}
-.empty{text-align:center;height:150px!important;color:#111827}
-.empty i{display:block;font-size:24px;color:#a9cde2;margin-bottom:8px}
-.empty strong,.empty span{display:block}.empty strong{color:#111827;font-size:13px}.empty span{margin-top:5px;font-size:11px}
-.table-footer{min-height:58px;padding:0 22px;display:flex;align-items:center;justify-content:space-between;color:#111827;font-size:11px}
-.table-footer b{color:#111827}
-.pagination{display:flex;gap:5px}.pagination button{width:31px;height:31px;border:1px solid #dfe7ec;background:#fff;border-radius:8px;color:#111827;cursor:pointer}.pagination button.current{background:#1689cf;color:#fff;border-color:#1689cf}.pagination button:disabled{color:#c6d1d7;cursor:not-allowed}
-@media(max-width:700px){.table-head{padding:15px 14px 0}.status-tabs{gap:6px}.status-tabs button{font-size:10px;padding:8px 10px}.table-footer{padding:0 14px}}
+.tabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; }
+.tabs button {
+  height: 32px; padding: 0 12px; flex: 0 0 auto;
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--ss-border); background: #fff; border-radius: 999px;
+  font-size: 11.5px; font-weight: 600; color: var(--ss-muted); cursor: pointer; transition: all .15s;
+}
+.tabs button:hover { border-color: var(--ss-primary); color: var(--ss-primary); }
+.tabs button.active { background: var(--ss-primary-soft); border-color: var(--ss-primary); color: var(--ss-primary); }
+.tabs button b { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--ss-surface); border: 1px solid var(--ss-border); font-size: 10px; display: grid; place-items: center; color: inherit; }
+.tabs button.active b { background: #fff; border-color: #b9d5f7; }
 </style>

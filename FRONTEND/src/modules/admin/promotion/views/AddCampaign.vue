@@ -1,28 +1,178 @@
 <script setup>
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
-import { computed, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-const router=useRouter(); const form=ref({code:'DGGD5OY17',name:'',value:0,start:'2026-08-16',end:'',desc:''}); const search=ref(''); const color=ref('all'); const size=ref('all'); const selected=ref([])
-const products=ref([{code:'G66748',name:'ASICS GEL-Kayano 31',color:'Đen',size:'41'},{code:'G57664',name:'New Balance 530',color:'Trắng',size:'40'},{code:'G86428',name:'Air Jordan 1 Low G',color:'Đỏ',size:'42'},{code:'SP20',name:'Brooks Ghost 14',color:'Xám',size:'41'},{code:'SP19',name:'Hoka Clifton 8',color:'Xanh',size:'40'}])
-const filtered=computed(()=>products.value.filter(x=>{const q=search.value.trim().toLowerCase();return(!q||x.code.toLowerCase().includes(q)||x.name.toLowerCase().includes(q))&&(color.value==='all'||x.color===color.value)&&(size.value==='all'||x.size===size.value)}))
-function toggle(x){selected.value=selected.value.includes(x.code)?selected.value.filter(c=>c!==x.code):[...selected.value,x.code]}
-function save(){alert('Đã tạo đợt giảm giá');router.push('/dot-giam-gia')}
+
+const router = useRouter()
+const form = ref({ code: 'DGGD5OY17', name: '', value: 0, start: '2026-08-16', end: '', desc: '' })
+
+/* ---------- Dữ liệu mẫu: sản phẩm + biến thể ---------- */
+const v = (code, color, size, price) => ({ code, color, size, price, qty: 100 })
+const products = ref([
+  { code: 'G66748', name: 'ASICS GEL-Kayano 31', variants: [v('G66748-MS05-37', 'Xám', '37', 3790000), v('G66748-MS05-36', 'Xám', '36', 3790000), v('G66748-MS01-37', 'Đen', '37', 3790000), v('G66748-MS01-36', 'Đen', '36', 3790000)] },
+  { code: 'G57664', name: 'New Balance 530', variants: [v('G57664-WH-40', 'Trắng', '40', 2490000), v('G57664-WH-41', 'Trắng', '41', 2490000)] },
+  { code: 'G86428', name: 'Air Jordan 1 Low G', variants: [v('G86428-RD-42', 'Đỏ', '42', 3250000), v('G86428-RD-41', 'Đỏ', '41', 3250000)] },
+  { code: 'SP20', name: 'Brooks Ghost 14', variants: [v('SP20-GR-41', 'Xám', '41', 2890000), v('SP20-GR-42', 'Xám', '42', 2890000)] },
+  { code: 'SP19', name: 'Hoka Clifton 8', variants: [v('SP19-BL-40', 'Xanh', '40', 3190000), v('SP19-BL-41', 'Xanh', '41', 3190000)] }
+])
+const allVariants = computed(() => products.value.flatMap(p => p.variants.map(x => ({ ...x, product: p.name, productCode: p.code }))))
+const colors = computed(() => [...new Set(allVariants.value.map(x => x.color))])
+const sizes = computed(() => [...new Set(allVariants.value.map(x => x.size))].sort())
+
+/* ---------- Bảng chọn sản phẩm ---------- */
+const draft = reactive({ q: '', color: 'all', size: 'all' })
+const applied = reactive({ q: '', color: 'all', size: 'all' })
+function applySearch() { Object.assign(applied, draft) }
+
+const filteredProducts = computed(() => {
+  const q = applied.q.trim().toLowerCase()
+  return products.value.filter(p =>
+    (!q || p.code.toLowerCase().includes(q) || p.name.toLowerCase().includes(q)) &&
+    p.variants.some(x => (applied.color === 'all' || x.color === applied.color) && (applied.size === 'all' || x.size === applied.size))
+  )
+})
+
+const selected = ref([]) // danh sách mã biến thể đã chọn
+const isChosen = (p) => p.variants.some(x => selected.value.includes(x.code))
+const isFull = (p) => p.variants.every(x => selected.value.includes(x.code))
+function toggleProduct(p) {
+  const codes = p.variants.map(x => x.code)
+  selected.value = isFull(p)
+    ? selected.value.filter(c => !codes.includes(c))
+    : [...new Set([...selected.value, ...codes])]
+}
+const allChecked = computed(() => filteredProducts.value.length > 0 && filteredProducts.value.every(isFull))
+function toggleAll() {
+  const codes = filteredProducts.value.flatMap(p => p.variants.map(x => x.code))
+  selected.value = allChecked.value
+    ? selected.value.filter(c => !codes.includes(c))
+    : [...new Set([...selected.value, ...codes])]
+}
+function removeVariant(code) { selected.value = selected.value.filter(c => c !== code) }
+
+/* ---------- Bảng biến thể đã chọn ---------- */
+const listFilter = reactive({ q: '', color: 'all', size: 'all' })
+const chosenRows = computed(() => allVariants.value.filter(x => selected.value.includes(x.code)))
+const shownRows = computed(() => {
+  const q = listFilter.q.trim().toLowerCase()
+  return chosenRows.value.filter(x =>
+    (!q || x.code.toLowerCase().includes(q) || x.product.toLowerCase().includes(q)) &&
+    (listFilter.color === 'all' || x.color === listFilter.color) &&
+    (listFilter.size === 'all' || x.size === listFilter.size))
+})
+const afterDiscount = (price) => Math.round(price * (1 - Math.min(100, Math.max(0, Number(form.value.value) || 0)) / 100))
+const money = (n) => `${Number(n || 0).toLocaleString('vi-VN')} đ`
+
+function save() { alert('Đã tạo đợt giảm giá'); router.push('/dot-giam-gia') }
 </script>
+
 <template>
-<AdminLayout><main class="page"><div class="breadcrumb"><span>Quản lý giảm giá</span><i class="bi bi-chevron-right"></i><span>Đợt giảm giá</span><i class="bi bi-chevron-right"></i><strong>Thêm đợt giảm giá</strong></div><div class="page-heading"><div><h1>Thêm đợt giảm giá</h1><p>Tạo chương trình giảm giá và chọn các sản phẩm được áp dụng.</p></div><button class="back" @click="router.back()"><i class="bi bi-arrow-left"></i> Quay lại</button></div>
-<div class="two-col">
-<section class="card info-card"><div class="section-title"><div class="section-icon"><i class="bi bi-tag"></i></div><div><h2>Thông tin đợt giảm</h2><p>Thiết lập thông tin chương trình.</p></div></div>
-<label>Mã đợt<input v-model="form.code"/></label><label>Tên đợt <b>*</b><input v-model="form.name" placeholder="Ví dụ: Siêu giảm giá mùa hè"/></label><label>Giá trị giảm (%) <b>*</b><div class="suffix"><input type="number" v-model="form.value"/><span>%</span></div></label><div class="date-row"><label>Từ ngày <b>*</b><input type="date" v-model="form.start"/></label><label>Đến ngày <b>*</b><input type="date" v-model="form.end"/></label></div><label>Mô tả<textarea v-model="form.desc" placeholder="Nhập mô tả chương trình..."></textarea></label>
-<div class="info-actions"><button class="primary" @click="save"><i class="bi bi-check2"></i> Tạo đợt giảm giá</button><button class="cancel" @click="router.back()">Hủy</button></div></section>
-<section class="card product-card"><div class="section-title"><div class="section-icon"><i class="bi bi-search"></i></div><div><h2>Chọn sản phẩm áp dụng</h2><p>Đã chọn <strong>{{selected.length}}</strong> biến thể</p></div></div>
-<div class="product-filter"><div class="input-wrap"><i class="bi bi-search"></i><input v-model="search" placeholder="Tìm theo tên hoặc mã sản phẩm..."/></div><select v-model="color"><option value="all">Tất cả màu sắc</option><option>Đen</option><option>Trắng</option><option>Đỏ</option><option>Xám</option><option>Xanh</option></select><select v-model="size"><option value="all">Tất cả kích cỡ</option><option>40</option><option>41</option><option>42</option></select><button class="find"><i class="bi bi-search"></i> Tìm kiếm</button></div>
-<div class="product-table"><table><thead><tr><th class="check-col"></th><th>STT</th><th>Mã SP</th><th>Tên sản phẩm</th><th class="right">Chọn</th></tr></thead><tbody><tr v-for="(p,i) in filtered" :key="p.code"><td class="check-col"><input type="checkbox" :checked="selected.includes(p.code)" @change="toggle(p)"/></td><td>{{i+1}}</td><td><strong>{{p.code}}</strong></td><td>{{p.name}}</td><td class="right"><button class="select-btn" :class="{chosen:selected.includes(p.code)}" @click="toggle(p)"><i class="bi" :class="selected.includes(p.code)?'bi-check2':'bi-plus-lg'"></i></button></td></tr></tbody></table></div>
-<div class="product-foot"><select><option>5 / trang</option></select><div class="pagination"><button disabled><i class="bi bi-chevron-left"></i></button><button class="current">1</button><button>2</button><button>3</button><button disabled><i class="bi bi-chevron-right"></i></button></div></div></section></div>
-<section class="card selected-card"><div class="section-title"><div class="section-icon"><i class="bi bi-check2-square"></i></div><div><h2>Sản phẩm & biến thể đã chọn áp dụng</h2><p>Danh sách các biến thể được áp dụng mức giảm này.</p></div></div><div v-if="!selected.length" class="empty"><i class="bi bi-inbox"></i><span>Chưa có sản phẩm nào được chọn.</span></div><div v-else class="chips"><span v-for="code in selected" :key="code">{{code}} <button @click="toggle({code})"><i class="bi bi-x"></i></button></span></div></section>
-</main></AdminLayout>
+  <AdminLayout>
+    <main class="ss-page">
+      <div class="top-grid">
+        <!-- Thông tin đợt giảm -->
+        <section class="ss-card ss-form">
+          <div class="ss-head">
+            <div class="ss-head-icon"><i class="bi bi-tag"></i></div>
+            <h2>Thông tin đợt giảm</h2>
+          </div>
+
+          <div class="ss-field"><label class="ss-label">Mã đợt <span class="req">*</span></label><input class="ss-input" v-model="form.code" /></div>
+          <div class="ss-field"><label class="ss-label">Tên đợt <span class="req">*</span></label><input class="ss-input" v-model="form.name" placeholder="Ví dụ: Siêu giảm giá mùa hè" /></div>
+          <div class="ss-field"><label class="ss-label">Giá trị giảm (%) <span class="req">*</span></label><input class="ss-input" type="number" min="0" max="100" v-model="form.value" /></div>
+          <div class="two">
+            <div class="ss-field"><label class="ss-label">Từ ngày <span class="req">*</span></label><input class="ss-input" type="date" v-model="form.start" /></div>
+            <div class="ss-field"><label class="ss-label">Đến ngày <span class="req">*</span></label><input class="ss-input" type="date" v-model="form.end" /></div>
+          </div>
+          <div class="ss-field"><label class="ss-label">Mô tả</label><textarea class="ss-textarea" v-model="form.desc" placeholder="Nhập mô tả..."></textarea></div>
+
+          <button class="ss-btn primary block" @click="save"><i class="bi bi-check2"></i> Tạo đợt giảm giá</button>
+          <button class="ss-btn block" @click="router.back()">Hủy</button>
+        </section>
+
+        <!-- Chọn sản phẩm áp dụng -->
+        <section class="ss-card">
+          <div class="ss-head">
+            <div class="ss-head-icon"><i class="bi bi-search"></i></div>
+            <div><h2>Chọn sản phẩm áp dụng</h2><p>Đã chọn {{ selected.length }} biến thể</p></div>
+          </div>
+
+          <div class="pick-filter">
+            <div class="ss-search"><i class="bi bi-search"></i><input class="ss-input" v-model="draft.q" placeholder="Tìm theo tên hoặc mã sản phẩm..." @keyup.enter="applySearch" /></div>
+            <div class="ss-field"><span class="ss-label strong">Màu sắc</span>
+              <select class="ss-select" v-model="draft.color"><option value="all">Tất cả màu sắc</option><option v-for="c in colors" :key="c">{{ c }}</option></select>
+            </div>
+            <div class="ss-field"><span class="ss-label strong">Kích cỡ</span>
+              <select class="ss-select" v-model="draft.size"><option value="all">Tất cả kích cỡ</option><option v-for="s in sizes" :key="s">{{ s }}</option></select>
+            </div>
+            <button class="ss-btn primary" @click="applySearch"><i class="bi bi-search"></i> Tìm kiếm</button>
+          </div>
+
+          <div class="ss-table-wrap">
+            <table class="ss-table" style="min-width:520px">
+              <thead>
+                <tr><th style="width:44px" class="c"><input type="checkbox" :checked="allChecked" @change="toggleAll" /></th><th class="w-stt c">STT</th><th>Mã SP</th><th>Tên sản phẩm</th><th class="r" style="width:70px"></th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="(p, i) in filteredProducts" :key="p.code">
+                  <td class="c"><input type="checkbox" :checked="isFull(p)" @change="toggleProduct(p)" /></td>
+                  <td class="c">{{ i + 1 }}</td>
+                  <td>{{ p.code }}</td>
+                  <td>{{ p.name }}</td>
+                  <td class="r"><button class="ss-icon-btn" :class="{ chosen: isChosen(p) }" :title="isFull(p) ? 'Bỏ chọn' : 'Chọn'" @click="toggleProduct(p)"><i class="bi" :class="isFull(p) ? 'bi-check2' : 'bi-plus-lg'"></i></button></td>
+                </tr>
+                <tr v-if="!filteredProducts.length"><td colspan="5" class="ss-empty"><i class="bi bi-inbox"></i>Không tìm thấy sản phẩm.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <!-- Biến thể đã chọn -->
+      <section class="ss-card">
+        <div class="ss-head">
+          <div class="ss-head-icon"><i class="bi bi-check2-square"></i></div>
+          <div><h2>Sản phẩm &amp; biến thể đã chọn áp dụng</h2><p>Danh sách chi tiết gồm {{ chosenRows.length }} biến thể đã chọn</p></div>
+        </div>
+
+        <div class="list-filter">
+          <select class="ss-select" v-model="listFilter.color"><option value="all">Tất cả màu sắc</option><option v-for="c in colors" :key="c">{{ c }}</option></select>
+          <select class="ss-select" v-model="listFilter.size"><option value="all">Tất cả kích cỡ</option><option v-for="s in sizes" :key="s">{{ s }}</option></select>
+          <input class="ss-input" v-model="listFilter.q" placeholder="Tìm trong danh sách..." />
+        </div>
+
+        <div class="ss-table-wrap">
+          <table class="ss-table">
+            <thead>
+              <tr><th class="w-stt c">STT</th><th>Sản phẩm</th><th>Biến thể</th><th>Giá bán</th><th>Giá sau giảm</th><th class="r">Số lượng</th><th class="c" style="width:60px">Xóa</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="(x, i) in shownRows" :key="x.code">
+                <td class="c">{{ i + 1 }}</td>
+                <td><span class="ss-strong">{{ x.product }}</span><span class="ss-sub">{{ x.productCode }}</span></td>
+                <td>{{ x.code }}<span class="ss-sub">{{ x.color }} · {{ x.size }}</span></td>
+                <td class="nowrap">{{ money(x.price) }}</td>
+                <td class="nowrap"><span class="ss-code">{{ money(afterDiscount(x.price)) }}</span></td>
+                <td class="r">{{ x.qty }}</td>
+                <td class="c"><button class="ss-icon-btn danger" title="Xóa" @click="removeVariant(x.code)"><i class="bi bi-x-lg"></i></button></td>
+              </tr>
+              <tr v-if="!shownRows.length"><td colspan="7" class="ss-empty"><i class="bi bi-inbox"></i>Chưa có biến thể nào được chọn.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </AdminLayout>
 </template>
+
 <style scoped>
-
-.page{min-height:calc(100vh - 72px);padding:22px 28px 44px;background:#eef4f7;color:#17303b}.breadcrumb{display:flex;align-items:center;gap:8px;font-size:11px;color:#607782;margin-bottom:8px}.breadcrumb strong{color:#17303b;font-weight:850}.breadcrumb i{font-size:9px;color:#91a4ad}.page-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin-bottom:20px}.page-heading h1{font-size:26px;margin:0;font-weight:900;color:#102c38}.page-heading p{font-size:12px;color:#637b86;margin:7px 0 0}.back{height:40px;border:1px solid #b9d5e1;border-radius:10px;background:#fff;color:#17586f;padding:0 15px;font-size:12px;font-weight:800;display:flex;align-items:center;gap:7px;cursor:pointer}.two-col{display:grid;grid-template-columns:365px minmax(0,1fr);gap:18px;align-items:start}.card{background:#fff;border:1px solid #d6e2e8;border-radius:16px;box-shadow:0 5px 18px rgba(21,54,70,.055)}.info-card,.product-card,.selected-card{padding:21px}.section-title{display:flex;gap:12px;align-items:center;margin-bottom:19px}.section-icon{width:40px;height:40px;border-radius:10px;display:grid;place-items:center;background:#e0f1f8;color:#087fb8;font-size:17px;border:1px solid #cbe5ef}.section-title h2{margin:0;font-size:16px;color:#102c38;font-weight:850}.section-title p{margin:4px 0 0;font-size:11px;color:#69808b}.section-title p strong{color:#087fb8}.info-card>label{display:flex;flex-direction:column;gap:7px;font-size:11px;font-weight:800;color:#29434f;margin-bottom:15px}.info-card label b{color:#c43e4f}.info-card input,.info-card textarea,.info-card select{height:42px;border:1px solid #ccdbe2;border-radius:10px;padding:0 11px;color:#17303b;background:#fff;font-size:12px;outline:none}.info-card textarea{height:82px;padding:10px 11px;resize:vertical}.info-card input:focus,.info-card textarea:focus{border-color:#087fb8;box-shadow:0 0 0 3px rgba(8,127,184,.1)}.suffix{position:relative}.suffix input{width:100%;padding-right:45px}.suffix span{position:absolute;right:13px;top:13px;color:#607782;font-size:11px;font-weight:700}.date-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}.date-row label{display:flex;flex-direction:column;gap:7px;font-size:11px;font-weight:800;color:#29434f;margin-bottom:15px}.info-actions{display:flex;flex-direction:column;gap:9px;border-top:1px solid #e3ebef;padding-top:17px}.primary,.cancel{height:42px;border-radius:10px;font-size:12px;font-weight:850;cursor:pointer}.primary{border:0;background:#087fb8;color:#fff;box-shadow:0 5px 12px rgba(8,127,184,.2)}.cancel{border:1px solid #cbdde5;background:#fff;color:#385460}.product-filter{display:grid;grid-template-columns:minmax(220px,1fr) 155px 155px 100px;gap:9px;margin-bottom:14px}.input-wrap{position:relative}.input-wrap i{position:absolute;left:12px;top:13px;color:#6a838e;font-size:12px}.input-wrap input,.product-filter select{width:100%;height:42px;border:1px solid #ccdbe2;border-radius:10px;background:#fff;color:#17303b;font-size:11px;outline:none}.input-wrap input{padding:0 11px 0 34px}.product-filter select{padding:0 10px}.find{height:42px;border:0;border-radius:10px;background:#087fb8;color:#fff;font-size:11px;font-weight:850}.product-table{border:1px solid #dce7ec;border-radius:11px;overflow:auto}.product-table table{width:100%;min-width:620px;border-collapse:collapse}.product-table th{background:#e5f1f7;padding:12px 11px;color:#193744;font-size:11px;text-align:left;font-weight:850}.product-table td{padding:11px;border-top:1px solid #e7eef1;color:#29434f;font-size:11px}.check-col{width:42px;text-align:center!important}.check-col input{width:15px;height:15px;accent-color:#087fb8}.right{text-align:right!important}.select-btn{width:31px;height:31px;border:1px solid #bcd7e2;border-radius:8px;background:#fff;color:#087fb8;cursor:pointer}.select-btn.chosen{background:#e0f2f9;border-color:#8dc7dc}.product-foot{display:flex;justify-content:space-between;align-items:center;padding-top:13px}.product-foot select{height:34px;border:1px solid #cbdde5;border-radius:8px;font-size:11px;color:#506a76}.pagination{display:flex;gap:5px}.pagination button{width:31px;height:31px;border:1px solid #d2e0e6;background:#fff;border-radius:8px;color:#3a5662;font-size:10px}.pagination .current{background:#087fb8;border-color:#087fb8;color:#fff;font-weight:800}.pagination button:disabled{opacity:.45}.selected-card{margin-top:18px}.empty{min-height:72px;border:1px dashed #cbdde5;border-radius:10px;background:#f9fcfd;display:flex;align-items:center;justify-content:center;gap:9px;color:#708791;font-size:11px}.empty i{font-size:18px}.chips{display:flex;flex-wrap:wrap;gap:8px}.chips span{display:inline-flex;align-items:center;gap:5px;background:#e0f2f9;color:#086f9f;border:1px solid #c9e5ef;border-radius:18px;padding:7px 10px;font-size:10px;font-weight:800}.chips button{width:18px;height:18px;border:0;border-radius:50%;background:transparent;color:inherit;cursor:pointer;padding:0}@media(max-width:1050px){.two-col{grid-template-columns:1fr}.info-actions{flex-direction:row}.info-actions>*{flex:1}.product-filter{grid-template-columns:1fr 1fr}}@media(max-width:700px){.page{padding:17px 14px}.page-heading{align-items:flex-start;flex-direction:column}.product-filter{grid-template-columns:1fr}.date-row{grid-template-columns:1fr}}
-
+.top-grid { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 16px; align-items: start; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.pick-filter { display: grid; grid-template-columns: minmax(0, 1fr) 150px 150px auto; gap: 10px; align-items: end; }
+.pick-filter > .ss-btn { height: 40px; }
+.list-filter { display: grid; grid-template-columns: 170px 170px 240px; justify-content: end; gap: 10px; }
+.ss-icon-btn.chosen { background: var(--ss-primary); border-color: var(--ss-primary); color: #fff; }
+input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--ss-primary); cursor: pointer; }
+@media (max-width: 1100px) { .top-grid { grid-template-columns: 1fr; } }
+@media (max-width: 760px) { .pick-filter, .list-filter { grid-template-columns: 1fr; } }
 </style>
