@@ -1,0 +1,169 @@
+package com.smashstep.datn.invoice.service;
+
+import com.smashstep.datn.common.exception.AppException;
+import com.smashstep.datn.common.response.PageResponse;
+import com.smashstep.datn.employee.entity.NhanVien;
+import com.smashstep.datn.employee.repository.NhanVienRepository;
+import com.smashstep.datn.invoice.dto.CapNhatTrangThaiHoaDonDto;
+import com.smashstep.datn.invoice.dto.HoaDonChiTietDto;
+import com.smashstep.datn.invoice.dto.HoaDonDetailDto;
+import com.smashstep.datn.invoice.dto.HoaDonListDto;
+import com.smashstep.datn.invoice.dto.LichSuHoaDonDto;
+import com.smashstep.datn.invoice.entity.HoaDon;
+import com.smashstep.datn.invoice.entity.LichSuHoaDon;
+import com.smashstep.datn.invoice.enums.TrangThaiHoaDon;
+import com.smashstep.datn.invoice.repository.HoaDonChiTietRepository;
+import com.smashstep.datn.invoice.repository.HoaDonRepository;
+import com.smashstep.datn.invoice.repository.LichSuHoaDonRepository;
+import jakarta.persistence.criteria.Predicate;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+
+@Service
+@RequiredArgsConstructor
+public class HoaDonService {
+
+    private final HoaDonRepository hoaDonRepository;
+    private final HoaDonChiTietRepository hoaDonChiTietRepository;
+    private final LichSuHoaDonRepository lichSuHoaDonRepository;
+    private final NhanVienRepository nhanVienRepository;
+
+    @Transactional(readOnly = true)
+    public PageResponse<HoaDonListDto> timKiem(
+            String ma,
+            LocalDate tuNgay,
+            LocalDate denNgay,
+            String trangThai,
+            int page,
+            int size) {
+        if (tuNgay != null && denNgay != null && tuNgay.isAfter(denNgay)) {
+            throw AppException.badRequest("Từ ngày không được sau đến ngày");
+        }
+        int pageNumber = Math.max(page, 1);
+        int pageSize = Math.min(Math.max(size, 1), 100);
+        Integer status = getTrangThai(trangThai);
+        Pageable pageable = PageRequest.of(
+                pageNumber - 1,
+                pageSize,
+                Sort.by(Sort.Direction.DESC, "ngayTao")
+        );
+        Specification<HoaDon> specification = taoBoLoc(ma, tuNgay, denNgay, status);
+        Page<HoaDon> result = hoaDonRepository.findAll(specification, pageable);
+        return PageResponse.from(result.map(HoaDonListDto::from));
+    }
+
+    @Transactional(readOnly = true)
+    public HoaDonDetailDto chiTiet(String ma) {
+        HoaDon hoaDon = timHoaDon(ma);
+        List<HoaDonChiTietDto> items = hoaDonChiTietRepository
+                .findByIdHoaDonIdOrderByIdAsc(hoaDon.getId())
+                .stream()
+                .map(HoaDonChiTietDto::from)
+                .toList();
+        return HoaDonDetailDto.from(hoaDon, items);
+    }
+
+    @Transactional(readOnly = true)
+    public List<LichSuHoaDonDto> lichSu(String ma) {
+        HoaDon hoaDon = timHoaDon(ma);
+        return lichSuHoaDonRepository
+                .findByIdHoaDonIdOrderByNgayTaoDesc(hoaDon.getId())
+                .stream()
+                .map(LichSuHoaDonDto::from)
+                .toList();
+    }
+
+    @Transactional
+    public HoaDonDetailDto capNhatTrangThai(String ma, CapNhatTrangThaiHoaDonDto request) {
+        if (request.getTrangThai() == null) {
+            throw AppException.badRequest("Trạng thái không được để trống");
+        }
+        TrangThaiHoaDon trangThai = TrangThaiHoaDon.tuMa(request.getTrangThai());
+        if (trangThai == null) {
+            throw AppException.badRequest("Trạng thái hóa đơn không hợp lệ");
+        }
+        HoaDon hoaDon = timHoaDon(ma);
+        if (request.getIdNhanVien() != null) {
+            NhanVien nhanVien = nhanVienRepository.findById(request.getIdNhanVien())
+                    .orElseThrow(() -> AppException.notFound("Không tìm thấy nhân viên"));
+            hoaDon.setIdNhanVien(nhanVien);
+        }
+        hoaDon.setTrangThai(request.getTrangThai());
+        hoaDon.setNgayCapNhat(LocalDateTime.now());
+        hoaDonRepository.save(hoaDon);
+        LichSuHoaDon lichSu = new LichSuHoaDon();
+        lichSu.setIdHoaDon(hoaDon);
+        lichSu.setNguoiTao(request.getIdNhanVien());
+        lichSu.setTrangThai(request.getTrangThai());
+        lichSu.setGhiChu(request.getGhiChu());
+        lichSu.setNgayTao(LocalDateTime.now());
+        lichSuHoaDonRepository.save(lichSu);
+        return chiTiet(ma);
+    }
+
+    private HoaDon timHoaDon(String ma) {
+        if (ma == null || ma.isBlank()) {
+            throw AppException.badRequest("Mã hóa đơn không được để trống");
+        }
+        return hoaDonRepository.findByMaHoaDon(ma.trim())
+                .orElseThrow(() -> AppException.notFound("Không tìm thấy hóa đơn: " + ma));
+    }
+
+    private Integer getTrangThai(String trangThai) {
+        if (trangThai == null || trangThai.isBlank()) {
+            return null;
+        }
+        try {
+            Integer value = Integer.valueOf(trangThai);
+            if (TrangThaiHoaDon.tuMa(value) == null) {
+                throw AppException.badRequest("Trạng thái hóa đơn không hợp lệ");
+            }
+            return value;
+        } catch (NumberFormatException e) {
+            throw AppException.badRequest("Trạng thái hóa đơn không hợp lệ");
+        }
+    }
+
+    private Specification<HoaDon> taoBoLoc(
+            String ma,
+            LocalDate tuNgay,
+            LocalDate denNgay,
+            Integer trangThai) {
+        return (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            if (ma != null && !ma.isBlank()) {
+                predicates.add(cb.like(
+                        cb.lower(root.get("maHoaDon")),
+                        "%" + ma.trim().toLowerCase() + "%"
+                ));
+            }
+            if (tuNgay != null) {
+                predicates.add(cb.greaterThanOrEqualTo(
+                        root.get("ngayTao"),
+                        tuNgay.atStartOfDay()
+                ));
+            }
+            if (denNgay != null) {
+                predicates.add(cb.lessThan(
+                        root.get("ngayTao"),
+                        denNgay.plusDays(1).atStartOfDay()
+                ));
+            }
+            if (trangThai != null) {
+                predicates.add(cb.equal(root.get("trangThai"), trangThai));
+            }
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+    }
+}
