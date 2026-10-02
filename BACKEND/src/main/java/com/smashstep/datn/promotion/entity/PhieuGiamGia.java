@@ -23,6 +23,9 @@ public class PhieuGiamGia {
     @Column(name = "ten_phieu_giam_gia")
     private String tenPhieuGiamGia;
 
+    @Column(name = "hinh_thuc_phieu")
+    private Integer hinhThucPhieu;
+
     @Column(name = "loai_giam_gia")
     private Integer loaiGiamGia;
 

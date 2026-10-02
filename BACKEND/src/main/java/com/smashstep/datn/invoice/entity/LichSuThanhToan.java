@@ -1,5 +1,6 @@
 package com.smashstep.datn.invoice.entity;
 
+import com.smashstep.datn.payment.entity.PhuongThucThanhToan;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -20,6 +21,10 @@ public class LichSuThanhToan {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "id_hoa_don")
     private HoaDon idHoaDon;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "id_phuong_thuc_thanh_toan")
+    private PhuongThucThanhToan idPhuongThucThanhToan;
 
     @Column(name = "so_tien")
     private BigDecimal soTien;

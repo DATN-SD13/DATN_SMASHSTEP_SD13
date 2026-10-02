@@ -44,4 +44,7 @@ public class DotGiamGia {
     @Column(name = "trang_thai")
     private Integer trangThai;
 
+    @Column(name = "mo_ta")
+    private String moTa;
+
 }

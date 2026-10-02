@@ -18,6 +18,10 @@ public class HinhAnhSanPham {
     @JoinColumn(name = "id_san_pham")
     private SanPham idSanPham;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "id_mau_sac")
+    private MauSac idMauSac;
+
     @Column(name = "url_anh")
     private String urlAnh;
 
