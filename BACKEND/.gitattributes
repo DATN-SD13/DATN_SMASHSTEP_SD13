@@ -1,2 +1,17 @@
-/mvnw text eol=lf
-*.cmd text eol=crlf
+# Tu dong chuan hoa kieu xuong dong (CRLF/LF) de khong bi "sua" cả trăm file khi chi khac dau xuong dong
+* text=auto
+
+# File can giu dung kieu xuong dong
+*.sh   text eol=lf
+mvnw   text eol=lf
+*.cmd  text eol=crlf
+
+# File nhi phan, khong chuan hoa
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.woff binary
+*.woff2 binary
+*.jar  binary

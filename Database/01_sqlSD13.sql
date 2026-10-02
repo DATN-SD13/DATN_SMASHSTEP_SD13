@@ -4,7 +4,8 @@
    của module mình (A/B/C/D bên dưới), rồi tạo Pull Request.
 
    Thứ tự khối đã xếp theo khóa ngoại: A -> B -> C -> D.
-   Chạy lại nhiều lần được (xóa bảng cũ ở mục 0 - CHỈ DÙNG KHI DEV).
+   File KHÔNG xóa dữ liệu. Nếu DB đã có bảng, script tự dừng và báo lỗi.
+   Muốn tạo lại từ đầu (chỉ DB dev trên máy): DROP DATABASE SmashStep rồi chạy lại.
    ========================================================= */
 
 IF DB_ID(N'SmashStep') IS NULL
@@ -20,33 +21,13 @@ SET NOCOUNT ON;
 GO
 
 /* =========================================================
-   0. XÓA BẢNG CŨ (đúng thứ tự khóa ngoại, chỉ 25 bảng của dự án)
+   0. KIỂM TRA AN TOÀN: đã có bảng thì dừng, không đụng dữ liệu
    ========================================================= */
-IF OBJECT_ID(N'dbo.lich_su_thanh_toan', N'U') IS NOT NULL DROP TABLE dbo.lich_su_thanh_toan;
-IF OBJECT_ID(N'dbo.lich_su_hoa_don', N'U') IS NOT NULL DROP TABLE dbo.lich_su_hoa_don;
-IF OBJECT_ID(N'dbo.hoa_don_chi_tiet', N'U') IS NOT NULL DROP TABLE dbo.hoa_don_chi_tiet;
-IF OBJECT_ID(N'dbo.hoa_don', N'U') IS NOT NULL DROP TABLE dbo.hoa_don;
-IF OBJECT_ID(N'dbo.phuong_thuc_thanh_toan', N'U') IS NOT NULL DROP TABLE dbo.phuong_thuc_thanh_toan;
-IF OBJECT_ID(N'dbo.hinh_thuc_thanh_toan', N'U') IS NOT NULL DROP TABLE dbo.hinh_thuc_thanh_toan;
-IF OBJECT_ID(N'dbo.chi_tiet_dot_giam_gia', N'U') IS NOT NULL DROP TABLE dbo.chi_tiet_dot_giam_gia;
-IF OBJECT_ID(N'dbo.dot_giam_gia', N'U') IS NOT NULL DROP TABLE dbo.dot_giam_gia;
-IF OBJECT_ID(N'dbo.phieu_giam_gia_khach_hang', N'U') IS NOT NULL DROP TABLE dbo.phieu_giam_gia_khach_hang;
-IF OBJECT_ID(N'dbo.phieu_giam_gia', N'U') IS NOT NULL DROP TABLE dbo.phieu_giam_gia;
-IF OBJECT_ID(N'dbo.hinh_anh_san_pham', N'U') IS NOT NULL DROP TABLE dbo.hinh_anh_san_pham;
-IF OBJECT_ID(N'dbo.san_pham_chi_tiet', N'U') IS NOT NULL DROP TABLE dbo.san_pham_chi_tiet;
-IF OBJECT_ID(N'dbo.san_pham', N'U') IS NOT NULL DROP TABLE dbo.san_pham;
-IF OBJECT_ID(N'dbo.kich_thuoc', N'U') IS NOT NULL DROP TABLE dbo.kich_thuoc;
-IF OBJECT_ID(N'dbo.mau_sac', N'U') IS NOT NULL DROP TABLE dbo.mau_sac;
-IF OBJECT_ID(N'dbo.kieu_dang', N'U') IS NOT NULL DROP TABLE dbo.kieu_dang;
-IF OBJECT_ID(N'dbo.co_giay', N'U') IS NOT NULL DROP TABLE dbo.co_giay;
-IF OBJECT_ID(N'dbo.xuat_xu', N'U') IS NOT NULL DROP TABLE dbo.xuat_xu;
-IF OBJECT_ID(N'dbo.chat_lieu', N'U') IS NOT NULL DROP TABLE dbo.chat_lieu;
-IF OBJECT_ID(N'dbo.thuong_hieu', N'U') IS NOT NULL DROP TABLE dbo.thuong_hieu;
-IF OBJECT_ID(N'dbo.danh_muc', N'U') IS NOT NULL DROP TABLE dbo.danh_muc;
-IF OBJECT_ID(N'dbo.dia_chi_khach_hang', N'U') IS NOT NULL DROP TABLE dbo.dia_chi_khach_hang;
-IF OBJECT_ID(N'dbo.khach_hang', N'U') IS NOT NULL DROP TABLE dbo.khach_hang;
-IF OBJECT_ID(N'dbo.nhan_vien', N'U') IS NOT NULL DROP TABLE dbo.nhan_vien;
-IF OBJECT_ID(N'dbo.vai_tro', N'U') IS NOT NULL DROP TABLE dbo.vai_tro;
+IF OBJECT_ID(N'dbo.vai_tro', N'U') IS NOT NULL
+BEGIN
+    RAISERROR(N'DB SmashStep đã có bảng. Script dừng để không mất dữ liệu.', 16, 1);
+    SET NOEXEC ON;   -- bỏ qua toàn bộ phần còn lại
+END
 GO
 
 /* =========================================================
@@ -448,4 +429,7 @@ GO
    ========================================================= */
 
 SELECT name AS ten_bang FROM sys.tables WHERE is_ms_shipped = 0 ORDER BY name;
+GO
+
+SET NOEXEC OFF;
 GO
