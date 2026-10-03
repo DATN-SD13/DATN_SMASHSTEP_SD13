@@ -12,6 +12,7 @@ import com.smashstep.datn.invoice.dto.LichSuHoaDonDto;
 import com.smashstep.datn.invoice.entity.HoaDon;
 import com.smashstep.datn.invoice.entity.LichSuHoaDon;
 import com.smashstep.datn.invoice.enums.TrangThaiHoaDon;
+import com.smashstep.datn.invoice.enums.LoaiHoaDon;
 import com.smashstep.datn.invoice.repository.HoaDonChiTietRepository;
 import com.smashstep.datn.invoice.repository.HoaDonRepository;
 import com.smashstep.datn.invoice.repository.LichSuHoaDonRepository;
@@ -45,6 +46,7 @@ public class HoaDonService {
             LocalDate tuNgay,
             LocalDate denNgay,
             String trangThai,
+            String loaiDon,
             int page,
             int size) {
         if (tuNgay != null && denNgay != null && tuNgay.isAfter(denNgay)) {
@@ -53,12 +55,13 @@ public class HoaDonService {
         int pageNumber = Math.max(page, 1);
         int pageSize = Math.min(Math.max(size, 1), 100);
         Integer status = getTrangThai(trangThai);
+        Integer type = getLoaiDon(loaiDon);
         Pageable pageable = PageRequest.of(
                 pageNumber - 1,
                 pageSize,
                 Sort.by(Sort.Direction.DESC, "ngayTao")
         );
-        Specification<HoaDon> specification = taoBoLoc(ma, tuNgay, denNgay, status);
+        Specification<HoaDon> specification = taoBoLoc(ma, tuNgay, denNgay, status, type);
         Page<HoaDon> result = hoaDonRepository.findAll(specification, pageable);
         return PageResponse.from(result.map(HoaDonListDto::from));
     }
@@ -135,11 +138,24 @@ public class HoaDonService {
         }
     }
 
+
+    private Integer getLoaiDon(String loaiDon) {
+        if (loaiDon == null || loaiDon.isBlank()) {
+            return null;
+        }
+        LoaiHoaDon loai = LoaiHoaDon.phanTich(loaiDon);
+        if (loai == null) {
+            throw AppException.badRequest("Loại hóa đơn không hợp lệ");
+        }
+        return loai.getMa();
+    }
+
     private Specification<HoaDon> taoBoLoc(
             String ma,
             LocalDate tuNgay,
             LocalDate denNgay,
-            Integer trangThai) {
+            Integer trangThai,
+            Integer loaiHoaDon) {
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             if (ma != null && !ma.isBlank()) {
@@ -162,6 +178,9 @@ public class HoaDonService {
             }
             if (trangThai != null) {
                 predicates.add(cb.equal(root.get("trangThai"), trangThai));
+            }
+            if (loaiHoaDon != null) {
+                predicates.add(cb.equal(root.get("loaiHoaDon"), loaiHoaDon));
             }
             return cb.and(predicates.toArray(new Predicate[0]));
         };

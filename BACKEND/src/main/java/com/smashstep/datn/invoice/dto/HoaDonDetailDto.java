@@ -35,7 +35,13 @@ public class HoaDonDetailDto {
     private Integer maLoaiHoaDon;
     private String trangThai;
     private Integer maTrangThai;
+    private Integer maTrangThaiTiepTheo;
+    private String trangThaiTiepTheo;
     private String phuongThucThanhToan;
+    private String trangThaiThanhToan;
+    private Integer maTrangThaiThanhToan;
+    private String ngayThanhToan;
+    private String donViVanChuyen;
 
     private BigDecimal tongTien;
     private BigDecimal tienGiamGia;
@@ -55,6 +61,7 @@ public class HoaDonDetailDto {
         PhuongThucThanhToan phuongThuc = hoaDon.getIdPhuongThucThanhToan();
         LoaiHoaDon loai = LoaiHoaDon.tuMa(hoaDon.getLoaiHoaDon());
         TrangThaiHoaDon trangThai = TrangThaiHoaDon.tuMa(hoaDon.getTrangThai());
+        TrangThaiHoaDon trangThaiTiepTheo = TrangThaiHoaDon.trangThaiTiepTheo(hoaDon.getTrangThai());
 
         return HoaDonDetailDto.builder()
                 .id(hoaDon.getId())
@@ -73,7 +80,13 @@ public class HoaDonDetailDto {
                 .maLoaiHoaDon(hoaDon.getLoaiHoaDon())
                 .trangThai(trangThai != null ? trangThai.getNhan() : "Không xác định")
                 .maTrangThai(hoaDon.getTrangThai())
+                .maTrangThaiTiepTheo(trangThaiTiepTheo != null ? trangThaiTiepTheo.getMa() : null)
+                .trangThaiTiepTheo(trangThaiTiepTheo != null ? trangThaiTiepTheo.getNhan() : null)
                 .phuongThucThanhToan(phuongThuc != null ? phuongThuc.getTenPhuongThuc() : null)
+                .trangThaiThanhToan(hoaDon.getNgayThanhToan() != null ? "Đã thanh toán" : "Chưa thanh toán")
+                .maTrangThaiThanhToan(hoaDon.getNgayThanhToan() != null ? 1 : 0)
+                .ngayThanhToan(formatDateTime(hoaDon.getNgayThanhToan()))
+                .donViVanChuyen(hoaDon.getDonViVanChuyen())
                 .tongTien(zero(hoaDon.getTongTien()))
                 .tienGiamGia(zero(hoaDon.getTienGiamGia()))
                 .phiVanChuyen(zero(hoaDon.getPhiVanChuyen()))
@@ -88,6 +101,10 @@ public class HoaDonDetailDto {
 
     private static String formatDate(java.time.LocalDateTime value) {
         return value == null ? null : value.toLocalDate().format(DateTimeFormatter.ISO_LOCAL_DATE);
+    }
+
+    private static String formatDateTime(java.time.LocalDateTime value) {
+        return value == null ? null : value.format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss"));
     }
 
     private static BigDecimal zero(BigDecimal value) {

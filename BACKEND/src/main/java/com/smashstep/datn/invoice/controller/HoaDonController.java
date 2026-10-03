@@ -32,10 +32,11 @@ public class HoaDonController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate tuNgay,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate denNgay,
             @RequestParam(required = false) String trangThai,
+            @RequestParam(required = false) String loaiDon,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "10") int size) {
         PageResponse<HoaDonListDto> data = hoaDonService.timKiem(
-                ma, tuNgay, denNgay, trangThai, page, size
+                ma, tuNgay, denNgay, trangThai, loaiDon, page, size
         );
         return ApiResponse.ok("Lấy danh sách hóa đơn thành công", data);
     }

@@ -1,246 +1,672 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
-import { invoiceData } from '../services/invoiceData'
+import { invoiceService } from '../services/invoiceService'
 
 const route = useRoute()
 const router = useRouter()
-const invoice = computed(() => invoiceData.find(item => item.code === route.params.code) || invoiceData[0])
+
+const loading = ref(true)
+const invoice = ref(null)
+const selectedStatus = ref('')
+const showStatusModal = ref(false)
+const showHistoryModal = ref(false)
+const updatingStatus = ref(false)
+const loadingHistory = ref(false)
+const historyItems = ref([])
+const showConfirmModal = ref(false)
+const confirmSubmitting = ref(false)
+const toast = ref({ visible: false, type: 'success', title: '', message: '' })
+let toastTimer = null
 
 const steps = [
-  { key: 'waiting', label: 'Chờ xác nhận', icon: 'bi-hourglass-split' },
-  { key: 'confirmed', label: 'Đã xác nhận', icon: 'bi-check2-circle' },
-  { key: 'ready', label: 'Chờ giao hàng', icon: 'bi-box-seam' },
-  { key: 'shipping', label: 'Đang giao hàng', icon: 'bi-truck' },
-  { key: 'delivered', label: 'Đã giao hàng', icon: 'bi-bag-check' },
-  { key: 'done', label: 'Hoàn thành', icon: 'bi-flag' }
+  { key: 'waiting', label: 'Chờ xác nhận', icon: 'bi-hourglass-split', value: 0 },
+  { key: 'confirmed', label: 'Đã xác nhận', icon: 'bi-check2-circle', value: 1 },
+  { key: 'ready', label: 'Chờ giao hàng', icon: 'bi-box-seam', value: 2 },
+  { key: 'shipping', label: 'Đang giao hàng', icon: 'bi-truck', value: 3 },
+  { key: 'delivered', label: 'Đã giao hàng', icon: 'bi-bag-check', value: 4 },
+  { key: 'done', label: 'Hoàn thành', icon: 'bi-flag', value: 5 }
 ]
-const progress = computed(() => {
-  const s = invoice.value.statusClass
-  if (s === 'cancel' || s === 'refund') return -1
-  if (s === 'waiting') return 0
-  if (s === 'confirmed') return 1
-  if (s === 'ready') return 2
-  if (s === 'shipping') return 3
-  if (s === 'delivered') return 4
-  return 5
-})
-const tone = computed(() => ({ done: 'success', cancel: 'danger', refund: 'danger', waiting: 'warn' }[invoice.value.statusClass] || ''))
 
-const subtotal = computed(() => (invoice.value.items || []).reduce((sum, item) => sum + item.price * item.quantity, 0))
-const discountPct = computed(() => (invoice.value.discount > 0 && subtotal.value > 0 ? Math.round(invoice.value.discount / subtotal.value * 100) : 0))
-const unitAfter = (price) => Math.round(price * (1 - discountPct.value / 100))
-
-function money(value) { return `${Number(value || 0).toLocaleString('vi-VN')} đ` }
-function orderType(type) { return type === 'online' ? 'Trực tuyến' : type === 'delivery' ? 'Giao hàng' : 'Cửa hàng' }
-function printInvoice() { window.print() }
-
-/* ---------- Danh sách sản phẩm: lọc / sắp xếp / khoảng giá ---------- */
-const productQuery = ref('')
-const productVariant = ref('all')
-const sortBy = ref('default')
-const maxPrice = ref(0)
-
-const items = computed(() => (invoice.value.items || []).map(item => {
-  const [color = '', size = ''] = String(item.variant || '').split('/').map(s => s.trim())
-  return { ...item, color, size }
+const statusOptions = steps.map(step => ({
+  value: step.value,
+  key: step.key,
+  label: step.label
 }))
-const priceCeil = computed(() => Math.max(0, ...items.value.map(i => i.price)))
-watch(priceCeil, (v) => { maxPrice.value = v }, { immediate: true })
 
-const productVariants = computed(() => [...new Set(items.value.map(item => item.variant).filter(Boolean))])
-const filteredItems = computed(() => {
-  const q = productQuery.value.trim().toLowerCase()
-  const list = items.value.filter(item => {
-    const text = `${item.name || ''} ${item.variant || ''} ${item.sku || ''}`.toLowerCase()
-    return (!q || text.includes(q)) &&
-      (productVariant.value === 'all' || item.variant === productVariant.value) &&
-      item.price <= maxPrice.value
-  })
-  if (sortBy.value === 'asc') list.sort((a, b) => a.price - b.price)
-  if (sortBy.value === 'desc') list.sort((a, b) => b.price - a.price)
-  return list
+const progress = computed(() => {
+  const code = Number(invoice.value?.statusCode)
+  return steps.some(step => step.value === code) ? code : -1
 })
+
+// BE quyết định trạng thái kế tiếp hợp lệ; FE chỉ hiển thị lựa chọn mà BE trả về.
+const nextStatus = computed(() => {
+  if (!invoice.value?.nextStatusCode && invoice.value?.nextStatusCode !== 0) return null
+  return {
+    value: Number(invoice.value.nextStatusCode),
+    label: invoice.value.nextStatusLabel || 'Trạng thái kế tiếp'
+  }
+})
+
+const canUpdateStatus = computed(() => Boolean(nextStatus.value))
+
+const subtotal = computed(() => Number(invoice.value?.totalBeforeAdjustments ?? 0))
+
+function money(value) {
+  return `${Number(value || 0).toLocaleString('vi-VN')} đ`
+}
+
+function orderType(type) {
+  if (!type) return 'Chưa cập nhật'
+  if (type === 'online' || type === 'Trực tuyến') return 'Trực tuyến'
+  if (type === 'store' || type === 'Tại quầy') return 'Tại quầy'
+  return type
+}
+
+function formatDate(value) {
+  if (!value) return '—'
+  const date = new Date(`${value}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleDateString('vi-VN')
+}
+
+function formatHistoryDate(value) {
+  return value || '—'
+}
+
+function mapInvoice(data) {
+  const statusCode = Number(data?.maTrangThai)
+  const status = statusOptions.find(item => item.value === statusCode)
+
+  return {
+    id: data?.id,
+    code: data?.maHoaDon || route.params.code,
+    employee: data?.tenNhanVien || 'Chưa cập nhật',
+    employeeId: data?.idNhanVien,
+    employeeCode: data?.maNhanVien || '—',
+    customer: data?.tenKhachHang || data?.hoTenNguoiNhan || 'Khách lẻ',
+    customerCode: data?.maKhachHang || '—',
+    phone: data?.soDienThoai || '—',
+    recipient: data?.hoTenNguoiNhan || data?.tenKhachHang || '—',
+    recipientPhone: data?.soDienThoaiNguoiNhan || data?.soDienThoai || '—',
+    date: formatDate(data?.ngayTao),
+    rawDate: data?.ngayTao,
+    updatedDate: formatDate(data?.ngayCapNhat),
+    totalBeforeAdjustments: Number(data?.tongTien ?? 0),
+    total: Number(data?.thanhTien ?? 0),
+    discount: Number(data?.tienGiamGia ?? 0),
+    shippingFee: Number(data?.phiVanChuyen ?? 0),
+    status: data?.trangThai || status?.label || 'Không xác định',
+    statusClass: data?.lopTrangThai || status?.key || 'unknown',
+    statusCode: statusCode,
+    nextStatusCode: data?.maTrangThaiTiepTheo,
+    nextStatusLabel: data?.trangThaiTiepTheo,
+    type: data?.loaiHoaDon || data?.maLoaiHoaDon,
+    payment: data?.phuongThucThanhToan || 'Chưa cập nhật',
+    paymentStatus: data?.trangThaiThanhToan || 'Chưa cập nhật',
+    paymentStatusCode: Number.isFinite(Number(data?.maTrangThaiThanhToan)) ? Number(data?.maTrangThaiThanhToan) : null,
+    paymentDate: data?.ngayThanhToan || null,
+    address: data?.diaChiGiaoHang || data?.diaChi || 'Chưa cập nhật',
+    shippingCarrier: data?.donViVanChuyen || '—',
+    note: data?.ghiChu || '—',
+    items: (data?.chiTietHoaDon || []).map(item => ({
+      id: item?.id,
+      productDetailId: item?.idSanPhamChiTiet,
+      productDetailCode: item?.maSanPhamChiTiet || '—',
+      sku: item?.maSku || '—',
+      name: item?.tenSanPham || 'Sản phẩm',
+      variant: [item?.mauSac, item?.kichThuoc].filter(Boolean).join(' / ') || '—',
+      quantity: Number(item?.soLuong || 0),
+      price: Number(item?.donGia || 0),
+      lineTotal: Number(item?.thanhTien ?? (Number(item?.donGia || 0) * Number(item?.soLuong || 0)))
+    }))
+  }
+}
+
+async function loadInvoice() {
+  loading.value = true
+  try {
+    const response = await invoiceService.getById(route.params.code)
+    if (!response?.success || !response?.data) {
+      throw new Error(response?.message || 'Không thể tải chi tiết hóa đơn')
+    }
+    invoice.value = mapInvoice(response.data)
+  } catch (error) {
+    invoice.value = null
+    showLocalToast(
+      'error',
+      'Không thể tải dữ liệu',
+      error?.response?.data?.message || error?.message || 'Không thể tải chi tiết hóa đơn.'
+    )
+  } finally {
+    loading.value = false
+  }
+}
+
+function openStatusModal() {
+  if (!canUpdateStatus.value || updatingStatus.value) return
+  selectedStatus.value = nextStatus.value.value
+  showStatusModal.value = true
+}
+
+function closeStatusModal() {
+  if (updatingStatus.value) return
+  showStatusModal.value = false
+  selectedStatus.value = ''
+}
+
+function openConfirmModal() {
+  if (!canUpdateStatus.value || !selectedStatus.value || updatingStatus.value) return
+
+  // Ẩn modal chọn trạng thái trước khi mở modal xác nhận.
+  // Tránh 2 modal chồng lên nhau khiến popup xác nhận bị che.
+  showStatusModal.value = false
+  showConfirmModal.value = true
+}
+
+function closeConfirmModal() {
+  if (confirmSubmitting.value) return
+  showConfirmModal.value = false
+  if (canUpdateStatus.value) {
+    showStatusModal.value = true
+  }
+}
+
+function showLocalToast(type, title, message) {
+  toast.value = { visible: true, type, title, message }
+  if (toastTimer) window.clearTimeout(toastTimer)
+  toastTimer = window.setTimeout(() => {
+    toast.value.visible = false
+  }, 4500)
+}
+
+async function saveStatus() {
+  // FE không quyết định trạng thái kế tiếp. BE là nơi kiểm tra trạng thái hiện tại
+  // và trạng thái mới có hợp lệ hay không. FE chỉ gửi giá trị người dùng đã chọn.
+  // Chỉ gửi trạng thái kế tiếp do BE trả về. Không tự tính trạng thái ở FE.
+  const newCode = Number(nextStatus.value?.value)
+  if (!Number.isInteger(newCode)) {
+    showLocalToast('error', 'Cập nhật thất bại', 'BE chưa cung cấp trạng thái kế tiếp hợp lệ. Vui lòng tải lại dữ liệu.')
+    return
+  }
+
+  confirmSubmitting.value = true
+  updatingStatus.value = true
+  try {
+    const response = await invoiceService.updateStatus(invoice.value.code, {
+      trangThai: newCode
+    })
+
+    if (!response?.success) {
+      throw new Error(response?.message || 'Không thể cập nhật trạng thái hóa đơn')
+    }
+
+    if (response.data) {
+      invoice.value = mapInvoice(response.data)
+    } else {
+      await loadInvoice()
+    }
+
+    showConfirmModal.value = false
+    showStatusModal.value = false
+    selectedStatus.value = ''
+    const message = response.message || 'Cập nhật trạng thái hóa đơn thành công'
+    showLocalToast('success', 'Cập nhật thành công', message)
+  } catch (error) {
+    const message = error?.response?.data?.message || error?.message || 'Không thể cập nhật trạng thái hóa đơn.'
+    showConfirmModal.value = false
+    showLocalToast('error', 'Cập nhật thất bại', message)
+  } finally {
+    confirmSubmitting.value = false
+    updatingStatus.value = false
+  }
+}
+
+async function openHistoryModal() {
+  showHistoryModal.value = true
+  loadingHistory.value = true
+
+  try {
+    const response = await invoiceService.getHistory(invoice.value.code)
+    if (!response?.success) {
+      throw new Error(response?.message || 'Không thể tải lịch sử hóa đơn')
+    }
+
+    // BE đã trả theo ngayTao DESC; giữ nguyên thứ tự để item mới nhất ở trên.
+    historyItems.value = Array.isArray(response.data) ? response.data : []
+  } catch (error) {
+    historyItems.value = []
+    showLocalToast(
+      'error',
+      'Không thể tải lịch sử',
+      error?.response?.data?.message || error?.message || 'Không thể tải lịch sử hóa đơn.'
+    )
+  } finally {
+    loadingHistory.value = false
+  }
+}
+
+function closeHistoryModal() {
+  showHistoryModal.value = false
+}
+
+function historyActor(item) {
+  return item?.tenNhanVien || (item?.idNhanVien != null ? `Nhân viên #${item.idNhanVien}` : 'Hệ thống / chưa xác định')
+}
+
+function historyAction(item) {
+  if (item?.ghiChu) return item.ghiChu
+  return item?.trangThai ? `Chuyển sang trạng thái: ${item.trangThai}` : 'Cập nhật hóa đơn'
+}
+
+function printInvoice() {
+  window.print()
+}
+
+onMounted(loadInvoice)
 </script>
 
 <template>
   <AdminLayout>
-    <main class="ss-page">
-      <!-- Dòng đầu trang -->
-      <div class="meta-row">
-        <div class="meta">
-          <span>Mã đơn hàng: <b>{{ invoice.code }}</b></span>
-          <span class="dim">Ngày tạo: {{ invoice.date }}</span>
-          <span class="ss-pill dot" :class="tone">{{ invoice.status }}</span>
-        </div>
-        <div class="ss-actions">
-          <button v-if="invoice.type === 'store'" class="ss-btn primary" @click="router.push('/ban-hang')">Quay lại Bán hàng tại quầy</button>
-          <button class="ss-btn" @click="router.push('/hoa-don')">Quay lại danh sách</button>
+    <main class="detail-page container-fluid">
+      <div class="page-title-row">
+        <div>
+          <div class="breadcrumb">
+            <span>Trang chủ</span><b>/</b>
+            <RouterLink to="/hoa-don">Hóa đơn</RouterLink><b>/</b>
+            <strong>Chi tiết</strong>
+          </div>
+          <h1>Quản Lý Hóa Đơn</h1>
         </div>
       </div>
 
-      <!-- Hàng 1: trạng thái + tổng kết -->
-      <div class="grid-top">
-        <section class="ss-card">
-          <div class="ss-head"><div class="ss-head-icon"><i class="bi bi-clipboard2-check"></i></div><h2>Trạng thái đơn hàng</h2></div>
+      <button class="back-link" @click="router.push('/hoa-don')">
+        <i class="bi bi-chevron-left"></i>
+        <span>Chi tiết hóa đơn: <b>{{ invoice?.code || route.params.code }}</b></span>
+      </button>
 
-          <div v-if="progress >= 0" class="timeline">
-            <div v-for="(step, index) in steps" :key="step.key" class="step" :class="{ reached: index <= progress, current: index === progress }">
-              <div class="node"><i :class="['bi', step.icon]"></i></div>
-              <div class="step-label">{{ step.label }}</div>
-              <small v-if="index <= progress">{{ invoice.date }}</small>
+      <div v-if="loading" class="panel card shadow-sm loading-panel">
+        <div class="spinner-border spinner-border-sm text-primary me-2"></div>
+        Đang tải chi tiết hóa đơn...
+      </div>
+
+      <div v-else class="detail-layout">
+        <div class="main-column">
+          <section class="panel card shadow-sm timeline-panel">
+            <h2><i class="bi bi-clipboard2-check"></i> Trạng thái đơn hàng</h2>
+
+            <div v-if="progress >= 0" class="timeline">
+              <div
+                v-for="(step, index) in steps"
+                :key="step.key"
+                class="timeline-step"
+                :class="{ reached: index <= progress, current: index === progress }"
+              >
+                <div class="timeline-node">
+                  <i :class="['bi', step.icon]"></i>
+                </div>
+                <div class="step-label">{{ step.label }}</div>
+                <small v-if="index <= progress">{{ invoice.date }}</small>
+              </div>
+            </div>
+
+            <div v-else class="cancel-state">
+              <span class="cancel-icon"><i class="bi bi-x-circle"></i></span>
+              <div>
+                <strong>{{ invoice.status }}</strong>
+                <p>Đơn hàng đã dừng ở trạng thái này.</p>
+              </div>
+            </div>
+
+            <div class="timeline-actions">
+              <button
+                class="soft-button btn btn-outline-primary btn-sm"
+                type="button"
+                @click="openHistoryModal"
+              >
+                <i class="bi bi-clock-history"></i>
+                Lịch sử thao tác
+              </button>
+
+              <button
+                v-if="canUpdateStatus"
+                class="status-update-button btn btn-primary"
+                type="button"
+                @click="openStatusModal"
+              >
+                <i class="bi bi-arrow-repeat"></i>
+                Cập nhật trạng thái
+              </button>
+            </div>
+          </section>
+
+          <div class="info-grid">
+            <section class="panel card shadow-sm info-panel">
+              <h2><i class="bi bi-person-lock"></i> Thông tin khách hàng</h2>
+              <div class="info-row"><span>Tên khách hàng</span><strong>{{ invoice.customer }}</strong></div>
+              <div class="info-row"><span>Mã khách hàng</span><strong>{{ invoice.customerCode }}</strong></div>
+              <div class="info-row"><span>Số điện thoại</span><strong>{{ invoice.phone }}</strong></div>
+              <div class="info-row"><span>Người nhận</span><strong>{{ invoice.recipient }}</strong></div>
+              <div class="info-row"><span>SĐT nhận hàng</span><strong>{{ invoice.recipientPhone }}</strong></div>
+            </section>
+
+            <section class="panel card shadow-sm info-panel">
+              <h2><i class="bi bi-geo-alt"></i> Thông tin giao hàng</h2>
+              <div class="info-row address-row">
+                <span>Địa chỉ giao hàng</span><strong>{{ invoice.address || 'Chưa cập nhật' }}</strong>
+              </div>
+              <div class="info-row">
+                <span>Loại đơn</span>
+                <strong><span class="type-pill">{{ orderType(invoice.type) }}</span></strong>
+              </div>
+              <div class="info-row"><span>Đơn vị vận chuyển</span><strong>{{ invoice.shippingCarrier }}</strong></div>
+              <div class="info-row"><span>Ghi chú</span><strong>{{ invoice.note }}</strong></div>
+            </section>
+          </div>
+
+          <section class="panel card shadow-sm products-panel">
+            <h2><i class="bi bi-box-seam"></i> Danh sách sản phẩm</h2>
+            <div class="product-table-wrap">
+              <table class="product-table table table-hover align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th>Sản phẩm</th><th>Phân loại</th><th>Đơn giá</th>
+                    <th>Số lượng</th><th>Thành tiền</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(item, index) in invoice.items" :key="index">
+                    <td>
+                      <div class="product-name">
+                        <span class="product-thumb"><i class="bi bi-bag"></i></span>
+                        <strong>{{ item.name }}</strong>
+                      </div>
+                    </td>
+                    <td>{{ item.variant }}</td>
+                    <td>{{ money(item.price) }}</td>
+                    <td>{{ item.quantity }}</td>
+                    <td class="product-total">{{ money(item.lineTotal) }}</td>
+                  </tr>
+                  <tr v-if="!invoice.items?.length">
+                    <td colspan="5" class="empty-products">Không có sản phẩm.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <aside class="side-column">
+          <section class="panel card shadow-sm payment-panel">
+            <h2><i class="bi bi-calendar2-check"></i> Tổng kết thanh toán</h2>
+            <div class="amount-row"><span>Tổng tiền hàng</span><strong>{{ money(subtotal) }}</strong></div>
+            <div class="amount-row"><span>Giảm giá</span><strong class="discount">− {{ money(invoice.discount) }}</strong></div>
+            <div class="amount-row"><span>Phí vận chuyển</span><strong>+ {{ money(invoice.shippingFee) }}</strong></div>
+            <div class="grand-total"><span>TỔNG TIỀN</span><strong>{{ money(invoice.total) }}</strong></div>
+          </section>
+
+          <section class="panel card shadow-sm payment-history">
+            <h2><i class="bi bi-credit-card"></i> Thông tin thanh toán</h2>
+            <div class="payment-method">
+              <div>
+                <span>Phương thức thanh toán</span>
+                <strong>{{ invoice.payment }}</strong>
+              </div>
+            </div>
+            <div class="payment-amount-row"><span>Thành tiền</span><strong>{{ money(invoice.total) }}</strong></div>
+            <div class="payment-status-row">
+              <span>Trạng thái thanh toán</span>
+              <strong :class="invoice.paymentStatusCode === 1 ? 'payment-status paid' : 'payment-status unpaid'">
+                <i :class="invoice.paymentStatusCode === 1 ? 'bi bi-check-circle-fill' : 'bi bi-clock-fill'"></i>
+                {{ invoice.paymentStatus }}
+              </strong>
+            </div>
+            <div v-if="invoice.paymentDate" class="payment-status-row">
+              <span>Ngày thanh toán</span><strong>{{ invoice.paymentDate }}</strong>
+            </div>
+            <button class="print-button btn btn-primary" type="button" @click="printInvoice">
+              <i class="bi bi-printer"></i> In hóa đơn
+            </button>
+          </section>
+
+          <section class="panel card shadow-sm invoice-meta">
+            <h2><i class="bi bi-info-circle"></i> Thông tin hóa đơn</h2>
+            <div class="info-row"><span>Mã hóa đơn</span><strong>{{ invoice.code }}</strong></div>
+            <div class="info-row"><span>Nhân viên</span><strong>{{ invoice.employee }}</strong></div>
+            <div class="info-row"><span>Mã nhân viên</span><strong>{{ invoice.employeeCode }}</strong></div>
+            <div class="info-row"><span>Ngày tạo</span><strong>{{ invoice.date }}</strong></div>
+            <div class="info-row"><span>Ngày cập nhật</span><strong>{{ invoice.updatedDate }}</strong></div>
+            <div class="info-row">
+              <span>Trạng thái</span>
+              <strong><span :class="['status-pill', invoice.statusClass]">{{ invoice.status }}</span></strong>
+            </div>
+          </section>
+        </aside>
+      </div>
+
+      <!-- Toast cục bộ cho thao tác cập nhật DB -->
+      <div v-if="toast.visible" class="invoice-toast toast show" role="alert" aria-live="assertive">
+        <div class="toast-icon" :class="toast.type === 'success' ? 'success' : 'error'">
+          <i :class="toast.type === 'success' ? 'bi bi-check-lg' : 'bi bi-x-lg'"></i>
+        </div>
+        <div class="toast-body">
+          <strong>{{ toast.title }}</strong>
+          <span>{{ toast.message }}</span>
+        </div>
+        <button type="button" class="btn-close ms-auto" aria-label="Đóng" @click="toast.visible = false"></button>
+      </div>
+
+      <!-- Modal xác nhận thao tác có ghi dữ liệu -->
+      <div
+        v-if="showConfirmModal"
+        class="modal fade show d-block status-modal-backdrop confirm-layer"
+        tabindex="-1"
+        role="dialog"
+        aria-modal="true"
+        @click.self="closeConfirmModal"
+      >
+        <div class="modal-dialog modal-dialog-centered modal-sm">
+          <div class="modal-content status-modal confirm-modal">
+            <div class="confirm-icon"><i class="bi bi-question-lg"></i></div>
+            <div class="modal-body text-center pt-0">
+              <h5 class="confirm-title">Xác nhận cập nhật</h5>
+              <p class="confirm-message">
+                Bạn có chắc chắn muốn chuyển đơn <strong>{{ invoice.code }}</strong>
+                từ <strong>{{ invoice.status }}</strong> sang <strong>{{ nextStatus?.label }}</strong> không?
+              </p>
+            </div>
+            <div class="modal-footer justify-content-center">
+              <button type="button" class="btn btn-light modal-cancel-button" :disabled="confirmSubmitting" @click="closeConfirmModal">Hủy</button>
+              <button type="button" class="btn btn-primary modal-save-button" :disabled="confirmSubmitting" @click="saveStatus">
+                <span v-if="confirmSubmitting" class="spinner-border spinner-border-sm me-1"></span>
+                <span v-else>Đồng ý</span>
+              </button>
             </div>
           </div>
-          <div v-else class="cancel-state">
-            <span class="cancel-icon"><i class="bi bi-x-circle"></i></span>
-            <div><strong>{{ invoice.status }}</strong><p>Đơn hàng đã dừng ở trạng thái này.</p></div>
-          </div>
-        </section>
-
-        <section class="ss-card">
-          <div class="ss-head"><div class="ss-head-icon"><i class="bi bi-cash-stack"></i></div><h2>Tổng kết thanh toán</h2></div>
-          <div class="kv"><span>Tổng tiền hàng</span><b>{{ money(subtotal) }}</b></div>
-          <div class="kv"><span>Phiếu giảm giá</span><b>{{ invoice.discount ? `${discountPct}% (-${money(invoice.discount)})` : '—' }}</b></div>
-          <div class="kv"><span>Phí vận chuyển</span><b>{{ invoice.shippingFee ? `+ ${money(invoice.shippingFee)}` : '—' }}</b></div>
-          <div class="total"><span>Tổng tiền</span><strong>{{ money(invoice.total) }}</strong></div>
-        </section>
+        </div>
       </div>
 
-      <!-- Hàng 2: khách hàng / giao hàng / thanh toán -->
-      <div class="grid-mid">
-        <section class="ss-card">
-          <div class="ss-head"><div class="ss-head-icon"><i class="bi bi-person"></i></div><h2>Thông tin khách hàng</h2></div>
-          <div class="kv"><span>Tên khách hàng</span><b>{{ invoice.customer || 'Khách vãng lai' }}</b></div>
-          <div class="kv"><span>Số điện thoại</span><b>{{ invoice.phone || '—' }}</b></div>
-          <div class="kv"><span>Email</span><b>{{ invoice.email || 'Không có' }}</b></div>
-        </section>
-
-        <section class="ss-card">
-          <div class="ss-head"><div class="ss-head-icon"><i class="bi bi-geo-alt"></i></div><h2>Thông tin giao hàng</h2></div>
-          <div class="kv"><span>Địa chỉ</span><b class="addr">{{ invoice.address || '—' }}</b></div>
-          <div class="kv"><span>Loại đơn</span><b>{{ orderType(invoice.type) }}</b></div>
-          <div class="kv"><span>Nhân viên</span><b>{{ invoice.employee || '—' }}</b></div>
-        </section>
-
-        <section class="ss-card">
-          <div class="ss-head"><div class="ss-head-icon"><i class="bi bi-clock-history"></i></div><h2>Lịch sử thanh toán</h2></div>
-          <div class="pay">
-            <div>
-              <strong>{{ invoice.payment === 'COD' ? 'Thanh toán khi nhận hàng (COD)' : invoice.payment }}</strong>
-              <small>Thanh toán đơn hàng lúc {{ invoice.date }}</small>
-              <span class="paid" :class="{ unpaid: invoice.statusClass === 'cancel' }">{{ invoice.statusClass === 'cancel' ? 'Chưa thanh toán' : 'Đã thanh toán' }}</span>
+      <!-- Modal cập nhật trạng thái -->
+      <div
+        v-if="showStatusModal"
+        class="modal fade show d-block status-modal-backdrop"
+        tabindex="-1"
+        role="dialog"
+        aria-modal="true"
+        @click.self="closeStatusModal"
+      >
+        <div class="modal-dialog modal-dialog-centered modal-md">
+          <div class="modal-content status-modal">
+            <div class="modal-header">
+              <h5 class="modal-title">Cập nhật trạng thái đơn hàng</h5>
+              <button
+                type="button"
+                class="btn-close"
+                aria-label="Đóng"
+                :disabled="updatingStatus"
+                @click="closeStatusModal"
+              ></button>
             </div>
-            <strong class="amount">{{ money(invoice.total) }}</strong>
+
+            <div class="modal-body">
+              <div class="status-info-grid">
+                <div>
+                  <span>Mã đơn hàng</span>
+                  <strong>{{ invoice.code }}</strong>
+                </div>
+                <div>
+                  <span>Ngày tạo</span>
+                  <strong>{{ invoice.date }}</strong>
+                </div>
+                <div>
+                  <span>Trạng thái hiện tại</span>
+                  <strong>{{ invoice.status }}</strong>
+                </div>
+                <div>
+                  <span>Trạng thái mới</span>
+                  <strong class="next-status-text">{{ nextStatus?.label }}</strong>
+                </div>
+              </div>
+
+              <label class="form-label mt-3 mb-2">Chọn trạng thái mới</label>
+              <select
+                v-model="selectedStatus"
+                class="form-select"
+                :disabled="updatingStatus"
+              >
+                <option value="">Chọn trạng thái mới</option>
+                <option
+                  v-if="nextStatus"
+                  :value="nextStatus.value"
+                >
+                  {{ nextStatus.label }}
+                </option>
+              </select>
+              <div class="form-text">
+                Chỉ được chuyển sang trạng thái kế tiếp, không được cập nhật ngược hoặc bỏ qua trạng thái.
+              </div>
+            </div>
+
+            <div class="modal-footer">
+              <button
+                type="button"
+                class="btn btn-light modal-cancel-button"
+                :disabled="updatingStatus"
+                @click="closeStatusModal"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                class="btn btn-primary modal-save-button"
+                :disabled="!selectedStatus || updatingStatus"
+                @click="openConfirmModal"
+              >
+                <span v-if="updatingStatus" class="spinner-border spinner-border-sm me-1"></span>
+                <i v-else class="bi bi-check2 me-1"></i>
+                Lưu
+              </button>
+            </div>
           </div>
-          <button class="ss-btn primary block print" @click="printInvoice"><i class="bi bi-printer"></i> In hóa đơn</button>
-        </section>
+        </div>
       </div>
 
-      <!-- Hàng 3: danh sách sản phẩm -->
-      <section class="ss-card">
-        <div class="ss-head"><div class="ss-head-icon"><i class="bi bi-box-seam"></i></div><h2>Danh sách sản phẩm ({{ filteredItems.length }})</h2></div>
+      <!-- Modal lịch sử thao tác -->
+      <div
+        v-if="showHistoryModal"
+        class="modal fade show d-block history-modal-backdrop"
+        tabindex="-1"
+        role="dialog"
+        aria-modal="true"
+        @click.self="closeHistoryModal"
+      >
+        <div class="modal-dialog modal-dialog-centered modal-lg history-modal-dialog">
+          <div class="modal-content history-modal">
+            <div class="modal-header">
+              <div>
+                <h5 class="modal-title">Lịch sử thao tác</h5>
+                <small class="text-muted">Đơn hàng {{ invoice.code }}</small>
+              </div>
+              <button
+                type="button"
+                class="btn-close"
+                aria-label="Đóng"
+                @click="closeHistoryModal"
+              ></button>
+            </div>
 
-        <div class="filters">
-          <div class="ss-field"><span class="ss-label strong">Tìm kiếm</span>
-            <div class="ss-search"><i class="bi bi-search"></i><input class="ss-input" v-model="productQuery" placeholder="Tên sản phẩm, màu, size..." /></div>
-          </div>
-          <div class="ss-field"><span class="ss-label strong">Loại sản phẩm</span>
-            <select class="ss-select" v-model="productVariant"><option value="all">Tất cả loại</option><option v-for="variant in productVariants" :key="variant" :value="variant">{{ variant }}</option></select>
-          </div>
-          <div class="ss-field"><span class="ss-label strong">Sắp xếp</span>
-            <select class="ss-select" v-model="sortBy"><option value="default">Mặc định</option><option value="asc">Giá tăng dần</option><option value="desc">Giá giảm dần</option></select>
+            <div class="modal-body history-body">
+              <div v-if="loadingHistory" class="history-loading">
+                <div class="spinner-border spinner-border-sm text-primary me-2"></div>
+                Đang tải lịch sử...
+              </div>
+
+              <div v-else-if="!historyItems.length" class="history-empty">
+                <i class="bi bi-clock-history"></i>
+                <p>Chưa có lịch sử thao tác.</p>
+              </div>
+
+              <div v-else class="history-timeline">
+                <div
+                  v-for="item in historyItems"
+                  :key="item.id"
+                  class="history-item"
+                >
+                  <div class="history-dot">
+                    <i class="bi bi-check2"></i>
+                  </div>
+                  <div class="history-card">
+                    <div class="history-card-top">
+                      <strong>{{ historyActor(item) }}</strong>
+                      <span>{{ formatHistoryDate(item.ngayTao) }}</span>
+                    </div>
+                    <div class="history-meta">
+                      <span><i class="bi bi-person-badge"></i> Vai trò: {{ item.vaiTro || 'Chưa có dữ liệu' }}</span>
+                      <span><i class="bi bi-arrow-right-circle"></i> Trạng thái: {{ item.trangThai || '—' }}</span>
+                    </div>
+                    <p>{{ historyAction(item) }}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="modal-footer">
+              <button type="button" class="btn btn-light modal-cancel-button" @click="closeHistoryModal">
+                Đóng
+              </button>
+            </div>
           </div>
         </div>
-
-        <div class="range">
-          <span class="ss-hint">Khoảng giá: 0 – {{ money(maxPrice) }}</span>
-          <input type="range" min="0" :max="priceCeil" step="10000" v-model.number="maxPrice" />
-        </div>
-
-        <div class="ss-table-wrap">
-          <table class="ss-table">
-            <thead>
-              <tr><th class="w-stt c">STT</th><th>Mã SPCT</th><th>Ảnh</th><th>Sản phẩm</th><th>Màu sắc</th><th class="c">Size</th><th class="c">Số lượng</th><th>Thời gian</th><th class="r">Giảm giá</th><th class="r">Đơn giá</th></tr>
-            </thead>
-            <tbody>
-              <tr v-for="(item, index) in filteredItems" :key="index">
-                <td class="c">{{ index + 1 }}</td>
-                <td><span class="ss-code">{{ item.sku || '—' }}</span></td>
-                <td><span class="thumb"><img v-if="item.image" :src="item.image" alt="" /><i v-else class="bi bi-image"></i></span></td>
-                <td><span class="ss-strong">{{ item.name }}</span><span v-if="item.category" class="ss-sub">{{ item.category }}</span></td>
-                <td>{{ item.color || '—' }}</td>
-                <td class="c">{{ item.size || '—' }}</td>
-                <td class="c">{{ item.quantity }}</td>
-                <td class="nowrap">{{ invoice.date }}</td>
-                <td class="r">{{ discountPct ? `-${discountPct}%` : '—' }}</td>
-                <td class="r nowrap">
-                  <span v-if="discountPct" class="ss-sub strike">{{ money(item.price) }}</span>
-                  <span class="ss-code">{{ money(unitAfter(item.price)) }}</span>
-                </td>
-              </tr>
-              <tr v-if="!filteredItems.length"><td colspan="10" class="ss-empty"><i class="bi bi-search"></i>Không tìm thấy sản phẩm phù hợp.</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
+      </div>
     </main>
   </AdminLayout>
 </template>
 
 <style scoped>
-.meta-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--ss-ink); }
-.meta b { font-weight: 700; }
-.meta .dim { color: var(--ss-faint); font-size: 11px; }
+.detail-page{max-width:1700px;margin:0 auto;padding:24px 24px 36px;color:#263943}
+.page-title-row{margin-bottom:20px}.breadcrumb{font-size:11px;color:#8c9ba5;margin-bottom:5px}.breadcrumb b{padding:0 9px;color:#c4d0d7}.breadcrumb a{color:#536c79;text-decoration:none}.breadcrumb strong{color:#1689cf;font-weight:600}.page-title-row h1{margin:0;font-size:23px;color:#203744;font-weight:750}
+.back-link{display:flex;align-items:center;gap:10px;border:0;background:transparent;color:#435b67;padding:0 0 16px 3px;font-size:15px;font-weight:650;cursor:pointer}.back-link i{font-size:15px;color:#1689cf}.back-link b{color:#1689cf}
+.detail-layout{display:grid;grid-template-columns:minmax(0,1.85fr) minmax(285px,.9fr);gap:18px;align-items:start}.main-column,.side-column{display:grid;gap:16px;min-width:0}.panel{background:#fff;border:1px solid #e5edf1!important;border-radius:14px;box-shadow:0 3px 12px rgba(35,73,91,.045)!important;padding:19px}
+.panel h2{display:flex;align-items:center;gap:9px;margin:0 0 20px;color:#263f4b;font-size:13px;font-weight:700}.panel h2 i{color:#1689cf;font-size:14px}
+.timeline-panel{padding-bottom:16px}.timeline{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));position:relative;padding:7px 0 0;gap:0}.timeline:before{content:"";position:absolute;left:8.2%;right:8.2%;height:2px;background:#dce9ef;top:22px}.timeline-step{position:relative;display:flex;align-items:center;flex-direction:column;text-align:center;min-width:0}.timeline-node{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:#eaf1f5;color:#91a4ae;border:2px solid #fff;box-shadow:0 0 0 1px #dbe7ed;z-index:1;font-size:14px}.timeline-step.reached .timeline-node{background:#1689cf;color:white;box-shadow:0 0 0 1px #1689cf}.timeline-step.current .timeline-node{box-shadow:0 0 0 4px #d9f0fb,0 0 0 5px #1689cf}.step-label{font-size:11px;font-weight:650;color:#91a0a8;margin-top:11px;line-height:1.4}.timeline-step.reached .step-label{color:#147fb9}.timeline-step small{font-size:9px;color:#98a7ae;margin-top:5px}
+.timeline-actions{display:flex;flex-direction:column;align-items:flex-end;gap:9px;margin-top:18px}.soft-button,.status-update-button{height:36px;border-radius:9px;padding:0 15px;font-size:11px;font-weight:700}.soft-button{border:1px solid #d6e7ef;background:#f7fbfd;color:#477182}.soft-button:hover{background:#e9f6fc;color:#0878bd}.status-update-button{min-width:180px;background:#1689cf;border-color:#1689cf}.status-update-button:hover{background:#0d72b0;border-color:#0d72b0}
+.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.info-panel{padding:18px 19px 10px}.info-panel h2{margin-bottom:13px}.info-row{display:flex;justify-content:space-between;align-items:flex-start;gap:15px;padding:11px 0;border-bottom:1px solid #edf2f5;font-size:11px}.info-row:last-child{border-bottom:0}.info-row>span{color:#82949e;flex:0 0 auto}.info-row>strong{color:#334d59;font-weight:650;text-align:right;line-height:1.55;min-width:0}.address-row strong{max-width:65%}.type-pill{display:inline-block;border-radius:5px;background:#e4f3ff;color:#167db9;padding:4px 8px;font-size:10px}
+.products-panel{padding:19px 0 0}.products-panel h2{padding:0 19px}.product-table-wrap{overflow-x:auto}.product-table{width:100%;border-collapse:collapse;min-width:650px}.product-table thead{background:#edf5fa}.product-table th{height:39px;padding:0 13px;text-align:left;font-size:10px;color:#607b8a;font-weight:700;white-space:nowrap}.product-table td{padding:12px 13px;border-bottom:1px solid #edf2f5;color:#5a707b;font-size:11px;white-space:nowrap}.product-name{display:flex;align-items:center;gap:9px}.product-name strong{color:#344e5a;font-size:11px}.product-thumb{width:36px;height:36px;border-radius:7px;background:#eaf5fb;color:#1689cf;display:grid;place-items:center;font-size:16px}.product-total{color:#1681c3!important;font-weight:700}.empty-products{text-align:center!important;color:#91a0a8!important}
+.payment-panel h2,.payment-history h2,.invoice-meta h2{margin-bottom:18px}.amount-row{display:flex;justify-content:space-between;gap:12px;margin:0 0 13px;font-size:11px}.amount-row span{color:#7e909a}.amount-row strong{color:#334c58;font-weight:650;white-space:nowrap}.amount-row .discount{color:#16966f}.grand-total{border-top:1px solid #e5edf1;margin-top:17px;padding-top:15px;display:flex;justify-content:space-between;gap:10px;align-items:center}.grand-total span{font-size:12px;color:#55707d;font-weight:650}.grand-total strong{font-size:18px;color:#1689cf}
+.payment-history{min-height:245px;display:flex;flex-direction:column}.payment-method{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.payment-method strong{display:block;color:#3b5662;font-size:11px;font-weight:650;line-height:1.5}.payment-method small{display:block;color:#91a0a8;font-size:10px;margin-top:7px}.paid-tag{color:#168b68;font-size:10px;font-weight:650;white-space:nowrap}.paid-amount{text-align:right;color:#344e5a;font-size:13px;margin-top:10px}.print-button{height:42px;width:100%;margin-top:auto;border:1px solid #1689cf;border-radius:10px;background:#1689cf;color:#fff;font-size:12px;font-weight:700;cursor:pointer;--bs-btn-bg:#1689cf;--bs-btn-border-color:#1689cf;--bs-btn-hover-bg:#0d72b0;--bs-btn-hover-border-color:#0d72b0}.print-button:hover{background:#d9effa}.invoice-meta{padding-bottom:10px}.status-pill{display:inline-block;border-radius:13px;padding:5px 9px;background:#e7f3fc;color:#1679b5;font-size:10px}.status-pill.done,.status-pill.delivered{background:#e8f7ef;color:#168455}.status-pill.waiting{background:#fff4dd;color:#a86a08}.status-pill.cancel{background:#ffebed;color:#c64f5b}.status-pill.shipping{background:#e6f4ff;color:#1678b8}
+.cancel-state{display:flex;align-items:center;gap:13px;padding:8px 0 18px}.cancel-icon{width:40px;height:40px;border-radius:50%;background:#ffebed;color:#c64f5b;display:grid;place-items:center;font-size:19px}.cancel-state strong{color:#c64f5b;font-size:13px}.cancel-state p{margin:5px 0 0;color:#84949d;font-size:11px}
+.loading-panel{display:flex;align-items:center;min-height:110px;color:#667c87;font-size:12px}
 
-.grid-top { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 16px; }
-.grid-mid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
-@media (max-width: 1100px) { .grid-top, .grid-mid { grid-template-columns: 1fr; } }
+.invoice-toast{position:fixed;top:88px;right:24px;z-index:1200;min-width:340px;max-width:430px;display:flex;align-items:center;gap:11px;padding:13px 14px;border:1px solid #e3eaee;border-radius:12px;background:#fff;box-shadow:0 12px 32px rgba(30,55,68,.18)}.toast-icon{width:34px;height:34px;flex:0 0 34px;border-radius:50%;display:grid;place-items:center;font-size:15px}.toast-icon.success{background:#e7f7ee;color:#16935f}.toast-icon.error{background:#ffebed;color:#d14958}.invoice-toast .toast-body{display:flex;flex-direction:column;gap:3px;min-width:0}.invoice-toast .toast-body strong{font-size:12px;color:#263f4b}.invoice-toast .toast-body span{font-size:11px;color:#687f8a;line-height:1.4}.confirm-modal{padding-top:18px}.confirm-icon{width:56px;height:56px;margin:2px auto 13px;border:3px solid #1689cf;border-radius:50%;display:grid;place-items:center;color:#1689cf;font-size:25px}.confirm-title{font-size:18px;font-weight:750;color:#263f4b;margin-bottom:8px}.confirm-message{font-size:12px;color:#667c87;line-height:1.55;margin:0}.confirm-message strong{color:#334d59}.payment-method span,.payment-amount-row span{display:block;color:#8497a0;font-size:10px;margin-bottom:5px}.payment-amount-row{display:flex;justify-content:space-between;gap:12px;margin-top:18px;padding-top:14px;border-top:1px solid #edf2f5;font-size:11px}.payment-amount-row strong{color:#344e5a;font-size:13px}.payment-note{margin-top:12px;color:#93a1a8;font-size:9.5px;line-height:1.45}.status-modal-backdrop{background:rgba(26,39,48,.52);z-index:1060}.status-modal-backdrop.confirm-layer{z-index:1075}.history-modal-backdrop{background:rgba(26,39,48,.52);z-index:1060}.status-modal,.history-modal{border:0;border-radius:14px;box-shadow:0 16px 45px rgba(25,46,58,.22)}.status-modal .modal-header,.history-modal .modal-header{border-bottom:1px solid #edf2f5;padding:18px 20px}.status-modal .modal-title,.history-modal .modal-title{color:#263f4b;font-size:16px;font-weight:750}.status-modal .modal-body,.history-modal .modal-body{padding:20px}.status-modal .modal-footer,.history-modal .modal-footer{border-top:1px solid #edf2f5;padding:14px 20px}
+.status-info-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.status-info-grid>div{padding:11px 12px;border:1px solid #e6eef2;border-radius:9px;background:#f9fbfc}.status-info-grid span{display:block;color:#8497a0;font-size:10px;margin-bottom:5px}.status-info-grid strong{display:block;color:#334d59;font-size:12px}.next-status-text{color:#1689cf!important}.status-modal .form-select{height:40px;border-radius:9px;font-size:12px;box-shadow:none;border-color:#d8e5eb}.status-modal .form-select:focus{border-color:#1689cf;box-shadow:0 0 0 .2rem rgba(22,137,207,.12)}.status-modal .form-text{font-size:10px;color:#8a9aa2;margin-top:7px}.modal-cancel-button{min-width:82px;border:1px solid #dbe5e9;color:#536b76;background:#f7fafb}.modal-save-button{min-width:82px;background:#1689cf;border-color:#1689cf}.modal-save-button:hover{background:#0d72b0;border-color:#0d72b0}
+.history-modal-dialog{max-width:760px}.history-modal{max-height:85vh}.history-body{overflow-y:auto;max-height:65vh}.history-loading,.history-empty{min-height:180px;display:flex;align-items:center;justify-content:center;color:#8798a1;font-size:12px}.history-empty{flex-direction:column;gap:8px}.history-empty i{font-size:30px;color:#c3d0d6}.history-empty p{margin:0}.history-timeline{position:relative;padding:5px 4px 5px 42px}.history-timeline:before{content:"";position:absolute;left:13px;top:12px;bottom:12px;width:2px;background:#dce9ef}.history-item{position:relative;padding-bottom:16px}.history-item:last-child{padding-bottom:0}.history-dot{position:absolute;left:-42px;top:2px;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:#e8f5fb;color:#1689cf;border:1px solid #cde8f5;z-index:1;font-size:12px}.history-card{border:1px solid #e5edf1;border-radius:11px;padding:13px 14px;background:#fff}.history-card-top{display:flex;align-items:center;justify-content:space-between;gap:12px}.history-card-top strong{font-size:12px;color:#334d59}.history-card-top span{font-size:10px;color:#93a1a8;white-space:nowrap}.history-meta{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:7px}.history-meta span{font-size:10px;color:#7c909a}.history-meta i{color:#1689cf;margin-right:3px}.history-card p{margin:8px 0 0;color:#526a76;font-size:11px;line-height:1.5}
+@media(max-width:1050px){.detail-layout{grid-template-columns:minmax(0,1.4fr) minmax(260px,.9fr)}.info-grid{grid-template-columns:1fr}.timeline{grid-template-columns:repeat(3,minmax(0,1fr));row-gap:20px}.timeline:before{display:none}}
+@media(max-width:760px){.invoice-toast{left:12px;right:12px;top:78px;min-width:0;max-width:none}.detail-page{padding:15px}.detail-layout{grid-template-columns:1fr}.info-grid{grid-template-columns:1fr}.panel{padding:16px}.timeline{grid-template-columns:repeat(3,minmax(0,1fr));row-gap:18px}.step-label{font-size:10px}.back-link{font-size:13px}.status-info-grid{grid-template-columns:1fr}.history-modal-dialog{margin:10px}.history-body{max-height:65vh}.timeline-actions{align-items:stretch}.soft-button,.status-update-button{width:100%}}
+@media print{.detail-page{padding:0}.back-link,.timeline-actions,.print-button{display:none}.detail-layout{grid-template-columns:1fr 1fr}.panel{box-shadow:none;break-inside:avoid}}
 
-/* key / value */
-.kv { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 9px 0; font-size: 12px; }
-.kv + .kv { border-top: 1px dashed var(--ss-line); }
-.kv span { color: var(--ss-muted); flex: 0 0 auto; }
-.kv b { font-weight: 700; color: var(--ss-text); text-align: right; }
-.kv b.addr { max-width: 62%; line-height: 1.45; }
-.total { display: flex; align-items: center; justify-content: space-between; margin-top: auto; padding-top: 14px; border-top: 1px solid var(--ss-border); }
-.total span { font-size: 13px; font-weight: 700; color: var(--ss-text); }
-.total strong { font-size: 18px; font-weight: 700; color: var(--ss-primary); }
-
-/* timeline */
-.timeline { display: flex; padding: 14px 0 6px; }
-.step { flex: 1; position: relative; display: flex; flex-direction: column; align-items: center; gap: 7px; text-align: center; min-width: 0; }
-.step::before { content: ""; position: absolute; top: 19px; right: 50%; width: 100%; height: 2px; background: var(--ss-border); }
-.step:first-child::before { display: none; }
-.step.reached::before { background: var(--ss-primary); }
-.node { position: relative; z-index: 1; width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; font-size: 16px; background: #fff; border: 2px solid var(--ss-border); color: var(--ss-faint); }
-.step.reached .node { background: var(--ss-primary); border-color: var(--ss-primary); color: #fff; }
-.step.current .node { box-shadow: 0 0 0 5px rgba(40, 121, 227, .15); }
-.step-label { font-size: 11px; font-weight: 700; color: var(--ss-faint); }
-.step.reached .step-label { color: var(--ss-primary); }
-.step small { font-size: 10px; color: var(--ss-faint); }
-.cancel-state { display: flex; align-items: center; gap: 14px; padding: 18px; border-radius: 10px; background: var(--ss-danger-bg); }
-.cancel-icon { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; background: #fff; color: var(--ss-danger); font-size: 18px; }
-.cancel-state strong { color: var(--ss-danger); font-size: 13px; }
-.cancel-state p { color: var(--ss-muted); font-size: 11px; margin-top: 2px; }
-
-/* thanh toán */
-.pay { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
-.pay > div { display: flex; flex-direction: column; gap: 4px; }
-.pay strong { font-size: 12px; color: var(--ss-ink); }
-.pay small { font-size: 10.5px; color: var(--ss-faint); }
-.paid { margin-top: 2px; font-size: 11px; font-weight: 700; color: var(--ss-success); }
-.paid.unpaid { color: var(--ss-danger); }
-.amount { font-size: 13px; color: var(--ss-primary) !important; white-space: nowrap; }
-.print { margin-top: auto; }
-
-/* sản phẩm */
-.filters { display: grid; grid-template-columns: 2fr 1.2fr 1fr; gap: 14px; }
-@media (max-width: 760px) { .filters { grid-template-columns: 1fr; } }
-.range { display: flex; flex-direction: column; gap: 4px; }
-.range input[type="range"] { width: 100%; accent-color: var(--ss-primary); }
-.thumb { width: 44px; height: 44px; border-radius: 8px; background: var(--ss-surface); border: 1px solid var(--ss-line); display: grid; place-items: center; color: var(--ss-faint); font-size: 18px; overflow: hidden; }
-.thumb img { width: 100%; height: 100%; object-fit: cover; }
-.strike { text-decoration: line-through; margin: 0 0 2px; }
+.payment-status-row { display:flex; justify-content:space-between; gap:16px; align-items:center; padding:12px 0; border-top:1px solid #edf2f7; }
+.payment-status { display:inline-flex; align-items:center; gap:6px; }
+.payment-status.paid { color:#16a34a; }
+.payment-status.unpaid { color:#d97706; }
 </style>

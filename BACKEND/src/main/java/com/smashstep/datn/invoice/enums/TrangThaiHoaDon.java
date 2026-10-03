@@ -27,6 +27,13 @@ public enum TrangThaiHoaDon {
     public String getNhan() { return nhan; }
     public String getLop() { return lop; }
 
+    public static TrangThaiHoaDon trangThaiTiepTheo(Integer maHienTai) {
+        if (maHienTai == null || maHienTai < CHO_XAC_NHAN.ma || maHienTai >= HOAN_THANH.ma) {
+            return null;
+        }
+        return tuMa(maHienTai + 1);
+    }
+
     public static TrangThaiHoaDon tuMa(Integer ma) {
         if (ma == null) return null;
         for (TrangThaiHoaDon t : values()) {

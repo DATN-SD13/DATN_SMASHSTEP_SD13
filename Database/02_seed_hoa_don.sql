@@ -128,3 +128,16 @@ GO
 SELECT TOP 20 ma_hoa_don, loai_hoa_don, trang_thai, tong_tien, tien_giam_gia, phi_van_chuyen, thanh_tien, ngay_tao
 FROM hoa_don ORDER BY ngay_tao DESC, id DESC;
 GO
+
+UPDATE hoa_don
+SET loai_hoa_don = 1,
+    ngay_cap_nhat = SYSDATETIME()
+WHERE loai_hoa_don = 2;
+GO
+
+-- Kiểm tra sau migration: chỉ được còn 0 hoặc 1.
+SELECT loai_hoa_don, COUNT(*) AS so_luong
+FROM hoa_don
+GROUP BY loai_hoa_don
+ORDER BY loai_hoa_don;
+GO
