@@ -39,8 +39,7 @@ function normalizeType(value) {
 
 function formatDate(value) {
   if (!value) return '—'
-  const date = new Date(`${value}T00:00:00`)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('vi-VN')
+  return String(value)
 }
 
 function mapInvoice(item) {
@@ -145,8 +144,7 @@ function view(invoice) { router.push(`/hoa-don/${encodeURIComponent(invoice.code
 function exportExcel() { /* Xuất Excel không thay đổi database nên không hiện thông báo */ }
 
 watch(() => query.value.type, () => {
-  // InvoiceFilter emits the complete filter object; the explicit search handler
-  // performs the API request and resets pagination.
+
 })
 
 onMounted(() => loadInvoices(1, true))

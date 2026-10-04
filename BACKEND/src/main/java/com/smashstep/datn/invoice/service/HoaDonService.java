@@ -97,6 +97,38 @@ public class HoaDonService {
             throw AppException.badRequest("Trạng thái hóa đơn không hợp lệ");
         }
         HoaDon hoaDon = timHoaDon(ma);
+        Integer trangThaiHienTai = hoaDon.getTrangThai();
+
+        if (request.getTrangThai() == TrangThaiHoaDon.DA_HUY.getMa()) {
+            if (trangThaiHienTai != null && trangThaiHienTai == TrangThaiHoaDon.HOAN_THANH.getMa()) {
+                throw AppException.badRequest("Đơn hàng đã hoàn thành, không thể hủy.");
+            }
+            if (trangThaiHienTai != null && trangThaiHienTai == TrangThaiHoaDon.DA_HUY.getMa()) {
+                throw AppException.badRequest("Đơn hàng đã được hủy, không thể hủy lại.");
+            }
+            if (trangThaiHienTai != null && trangThaiHienTai == TrangThaiHoaDon.HOAN_TIEN.getMa()) {
+                throw AppException.badRequest("Đơn hàng đã hoàn tiền, không thể hủy.");
+            }
+            if (trangThaiHienTai == null || trangThaiHienTai < TrangThaiHoaDon.CHO_XAC_NHAN.getMa()
+                    || trangThaiHienTai > TrangThaiHoaDon.DA_GIAO_HANG.getMa()) {
+                throw AppException.badRequest("Đơn hàng hiện tại không thể hủy.");
+            }
+        } else {
+            if (trangThaiHienTai != null && trangThaiHienTai == TrangThaiHoaDon.HOAN_THANH.getMa()) {
+                throw AppException.badRequest("Đơn hàng đã hoàn thành, không thể cập nhật trạng thái.");
+            }
+            if (trangThaiHienTai != null && trangThaiHienTai == TrangThaiHoaDon.DA_HUY.getMa()) {
+                throw AppException.badRequest("Đơn hàng đã được hủy, không thể cập nhật trạng thái.");
+            }
+            if (trangThaiHienTai != null && trangThaiHienTai == TrangThaiHoaDon.HOAN_TIEN.getMa()) {
+                throw AppException.badRequest("Đơn hàng đã hoàn tiền, không thể cập nhật trạng thái.");
+            }
+            TrangThaiHoaDon trangThaiKeTiep = TrangThaiHoaDon.trangThaiTiepTheo(trangThaiHienTai);
+            if (trangThaiKeTiep == null || request.getTrangThai() != trangThaiKeTiep.getMa()) {
+                throw AppException.badRequest("Chỉ được chuyển sang trạng thái kế tiếp của đơn hàng.");
+            }
+        }
+
         if (request.getIdNhanVien() != null) {
             NhanVien nhanVien = nhanVienRepository.findById(request.getIdNhanVien())
                     .orElseThrow(() -> AppException.notFound("Không tìm thấy nhân viên"));
@@ -104,6 +136,7 @@ public class HoaDonService {
         }
         hoaDon.setTrangThai(request.getTrangThai());
         hoaDon.setNgayCapNhat(LocalDateTime.now());
+
         hoaDonRepository.save(hoaDon);
         LichSuHoaDon lichSu = new LichSuHoaDon();
         lichSu.setIdHoaDon(hoaDon);

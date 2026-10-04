@@ -27,7 +27,7 @@ public class LichSuHoaDonDto {
                 .maTrangThai(lichSu.getTrangThai())
                 .trangThai(trangThai != null ? trangThai.getNhan() : "Không xác định")
                 .ghiChu(lichSu.getGhiChu())
-                .ngayTao(lichSu.getNgayTao() == null ? null : lichSu.getNgayTao().format(DateTimeFormatter.ISO_LOCAL_DATE))
+                .ngayTao(lichSu.getNgayTao() == null ? null : lichSu.getNgayTao().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss")))
                 .build();
     }
 }

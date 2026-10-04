@@ -66,8 +66,8 @@ public class HoaDonDetailDto {
         return HoaDonDetailDto.builder()
                 .id(hoaDon.getId())
                 .maHoaDon(hoaDon.getMaHoaDon())
-                .ngayTao(formatDate(hoaDon.getNgayTao()))
-                .ngayCapNhat(formatDate(hoaDon.getNgayCapNhat()))
+                .ngayTao(formatDateTime(hoaDon.getNgayTao()))
+                .ngayCapNhat(formatDateTime(hoaDon.getNgayCapNhat()))
                 .idKhachHang(khachHang != null ? khachHang.getId() : null)
                 .tenKhachHang(khachHang != null ? khachHang.getTenKhachHang() : hoaDon.getHoTenNguoiNhan())
                 .maKhachHang(khachHang != null ? khachHang.getMaKhachHang() : null)
@@ -97,10 +97,6 @@ public class HoaDonDetailDto {
                 .ghiChu(hoaDon.getGhiChu())
                 .chiTietHoaDon(chiTietHoaDon)
                 .build();
-    }
-
-    private static String formatDate(java.time.LocalDateTime value) {
-        return value == null ? null : value.toLocalDate().format(DateTimeFormatter.ISO_LOCAL_DATE);
     }
 
     private static String formatDateTime(java.time.LocalDateTime value) {

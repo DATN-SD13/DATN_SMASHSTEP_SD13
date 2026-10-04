@@ -49,7 +49,7 @@ public class HoaDonListDto {
                 .maNhanVien(nv != null ? nv.getMaNhanVien() : null)
                 .tenKhachHang(firstNotBlank(kh != null ? kh.getTenKhachHang() : null, h.getHoTenNguoiNhan(), "Khách lẻ"))
                 .soDienThoai(firstNotBlank(h.getSoDienThoaiNguoiNhan(), kh != null ? kh.getSoDienThoai() : null, ""))
-                .ngayTao(h.getNgayTao() != null ? h.getNgayTao().toLocalDate().format(DateTimeFormatter.ISO_LOCAL_DATE) : null)
+                .ngayTao(h.getNgayTao() != null ? h.getNgayTao().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss")) : null)
                 .tongTien(nz(h.getTongTien()))
                 .tienGiamGia(nz(h.getTienGiamGia()))
                 .phiVanChuyen(nz(h.getPhiVanChuyen()))
