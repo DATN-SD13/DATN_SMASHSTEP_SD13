@@ -15,13 +15,13 @@ class ThuocTinhSanPhamServiceTest {
 
     @Test
     void rejectsMissingAttributeCodeAndInvalidHex() {
-        assertThrows(AppException.class, () -> service.save("brands", null, new ThuocTinhRequest("", "Nike", "", null, 1)));
-        assertThrows(AppException.class, () -> service.save("colors", null, new ThuocTinhRequest("RED", "Đỏ", "", "red", 1)));
+        assertThrows(AppException.class, () -> service.luuThuocTinh("brands", null, new ThuocTinhRequest("", "Nike", "", null, 1)));
+        assertThrows(AppException.class, () -> service.luuThuocTinh("colors", null, new ThuocTinhRequest("RED", "Đỏ", "", "red", 1)));
     }
 
     @Test
     void rejectsUnknownTypeAndTooLongSize() {
-        assertThrows(AppException.class, () -> service.list("unknown", 0, 10, "", null));
-        assertThrows(AppException.class, () -> service.save("sizes", null, new ThuocTinhRequest(null, "x".repeat(51), "", null, 1)));
+        assertThrows(AppException.class, () -> service.layDanhSach("unknown", 0, 10, "", null));
+        assertThrows(AppException.class, () -> service.luuThuocTinh("sizes", null, new ThuocTinhRequest(null, "x".repeat(51), "", null, 1)));
     }
 }

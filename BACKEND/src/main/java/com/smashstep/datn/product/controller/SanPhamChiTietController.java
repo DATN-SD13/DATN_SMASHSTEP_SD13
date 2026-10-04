@@ -1,60 +1,74 @@
 package com.smashstep.datn.product.controller;
 
-import com.smashstep.datn.product.dto.ProductDtos.*;
+import com.smashstep.datn.common.response.PageResponse;
 import com.smashstep.datn.product.dto.*;
+import com.smashstep.datn.product.dto.DuLieuSanPham.BienTheDocLap;
+import com.smashstep.datn.product.dto.DuLieuSanPham.DanhSachBienTheRequest;
 import com.smashstep.datn.product.service.SanPhamChiTietService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.*;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api")
 @CrossOrigin(originPatterns = {"http://localhost:*", "http://127.0.0.1:*"})
 @RequiredArgsConstructor
 public class SanPhamChiTietController {
-    private final SanPhamChiTietService service;
+    private final SanPhamChiTietService sanPhamChiTietService;
 
     @GetMapping("/product-details")
-    public PageResponse<VariantResponse> list(@RequestParam(defaultValue="0") int page,
-            @RequestParam(defaultValue="10") int size, @RequestParam(required=false) String keyword,
-            @RequestParam(required=false) Integer status, @RequestParam(required=false) Long productId,
-            @RequestParam(required=false) Long colorId, @RequestParam(required=false) Long sizeId,
-            @RequestParam(required=false) Boolean active) {
-        return service.getVariants(page, size, keyword, status, productId, colorId, sizeId, active);
+    public PageResponse<BienTheResponse> layDanhSach(
+            @RequestParam(value = "page", defaultValue = "0") int trang,
+            @RequestParam(value = "size", defaultValue = "10") int kichThuocTrang,
+            @RequestParam(value = "keyword", required = false) String tuKhoa,
+            @RequestParam(value = "status", required = false) Integer trangThai,
+            @RequestParam(value = "productId", required = false) Long sanPhamId,
+            @RequestParam(value = "colorId", required = false) Long mauSacId,
+            @RequestParam(value = "sizeId", required = false) Long kichThuocId,
+            @RequestParam(value = "active", required = false) Boolean kichHoat) {
+        return sanPhamChiTietService.layDanhSach(trang, kichThuocTrang, tuKhoa,
+                trangThai, sanPhamId, mauSacId, kichThuocId, kichHoat);
     }
 
     @GetMapping("/product-details/{id}")
-    public VariantResponse detail(@PathVariable Long id) { return service.getVariantById(id); }
+    public BienTheResponse layChiTiet(@PathVariable Long id) {
+        return sanPhamChiTietService.layChiTiet(id);
+    }
 
     @PostMapping("/product-details")
     @ResponseStatus(HttpStatus.CREATED)
-    public VariantResponse create(@Validated(StandaloneVariant.class) @RequestBody VariantCreateRequest request) {
-        return service.createVariant(request);
+    public BienTheResponse themBienThe(
+            @Validated(BienTheDocLap.class) @RequestBody SanPhamChiTietThemRequest yeuCau) {
+        return sanPhamChiTietService.themSanPhamChiTiet(yeuCau);
     }
 
     @PutMapping("/product-details/{id}")
-    public VariantResponse update(@PathVariable Long id, @Valid @RequestBody VariantUpdateRequest request) {
-        return service.updateVariant(id, request);
+    public BienTheResponse suaBienThe(@PathVariable Long id,
+            @Valid @RequestBody SanPhamChiTietSuaRequest yeuCau) {
+        return sanPhamChiTietService.suaSanPhamChiTiet(id, yeuCau);
     }
 
     @PatchMapping("/product-details/{id}/status")
-    public VariantResponse status(@PathVariable Long id, @Valid @RequestBody VariantStatusRequest request) {
-        return service.updateStatus(id, request.getTrangThai());
+    public BienTheResponse doiTrangThai(@PathVariable Long id,
+            @Valid @RequestBody SanPhamChiTietTrangThaiRequest yeuCau) {
+        return sanPhamChiTietService.doiTrangThai(id, yeuCau.getTrangThai());
     }
 
     @GetMapping("/products/{productId}/variants")
-    public java.util.List<VariantResponse> variants(@PathVariable Long productId) {
-        return service.getVariantsByProduct(productId);
+    public List<BienTheResponse> layTheoSanPham(@PathVariable("productId") Long sanPhamId) {
+        return sanPhamChiTietService.layTheoSanPham(sanPhamId);
     }
 
     @PostMapping("/products/{productId}/variants")
     @ResponseStatus(HttpStatus.CREATED)
-    public Object createForProduct(@PathVariable Long productId,
-            @Valid @RequestBody VariantSubmissionRequest request) {
-        return request.isBatch()
-                ? service.createBatch(productId, request.getVariants())
-                : service.createVariant(productId, request.getVariants().get(0));
+    public Object themTheoSanPham(@PathVariable("productId") Long sanPhamId,
+            @Valid @RequestBody DanhSachBienTheRequest yeuCau) {
+        if (yeuCau.isHangLoat()) {
+            return sanPhamChiTietService.themDanhSachBienThe(sanPhamId, yeuCau.getVariants());
+        }
+        return sanPhamChiTietService.themSanPhamChiTiet(sanPhamId, yeuCau.getVariants().get(0));
     }
 }

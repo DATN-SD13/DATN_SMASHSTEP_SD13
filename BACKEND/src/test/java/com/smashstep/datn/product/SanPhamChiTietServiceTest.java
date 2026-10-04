@@ -26,7 +26,7 @@ class SanPhamChiTietServiceTest {
     @BeforeEach
     void setup() {
         product = new SanPham(); product.setId(1L); product.setMaSanPham("SP001");
-        when(products.findLockedById(1L)).thenReturn(Optional.of(product));
+        when(products.timVaKhoaTheoId(1L)).thenReturn(Optional.of(product));
     }
     private SanPhamChiTietThemRequest request(String code, String sku, Long sizeId) {
         return new SanPhamChiTietThemRequest(1L, code, sku, 1L, sizeId, 2, new BigDecimal("1200000"), true, 1);

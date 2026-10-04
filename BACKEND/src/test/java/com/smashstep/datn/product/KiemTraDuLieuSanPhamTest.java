@@ -4,6 +4,7 @@ import com.smashstep.datn.product.dto.DuLieuSanPham.*;
 import com.smashstep.datn.product.dto.*;
 import com.smashstep.datn.product.service.QuyTacSanPham;
 import jakarta.validation.Validation;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.Test;
 import java.math.BigDecimal;
 import java.util.List;
@@ -29,18 +30,18 @@ class KiemTraDuLieuSanPhamTest {
     }
 
     @Test
-    void acceptsValidVariantAndValidatesNestedBatch() {
+    void acceptsValidVariantAndValidatesNestedBatch() throws Exception {
         try (var factory = Validation.buildDefaultValidatorFactory()) {
             var valid = new SanPhamChiTietThemRequest(1L, "SP-1", "SKU-1", 1L, 1L, 0, new BigDecimal("1200000.50"), true, 1);
             assertTrue(factory.getValidator().validate(valid).isEmpty());
-            assertFalse(factory.getValidator().validate(new BienTheHangLoatRequest(List.of())).isEmpty());
+            assertFalse(factory.getValidator().validate(JsonMapper.builder().build().readValue("{\"variants\":[]}", DanhSachBienTheRequest.class)).isEmpty());
         }
     }
 
     @Test
     void boundsPaginationAndEscapesSearchWildcards() {
-        assertThrows(RuntimeException.class, () -> QuyTacSanPham.page(-1, 10));
-        assertThrows(RuntimeException.class, () -> QuyTacSanPham.page(0, 101));
-        assertEquals("%sp\\%\\_\\[%", QuyTacSanPham.like(" SP%_[ "));
+        assertThrows(RuntimeException.class, () -> QuyTacSanPham.taoPhanTrang(-1, 10));
+        assertThrows(RuntimeException.class, () -> QuyTacSanPham.taoPhanTrang(0, 101));
+        assertEquals("%sp\\%\\_\\[%", QuyTacSanPham.taoMauTimKiem(" SP%_[ "));
     }
 }

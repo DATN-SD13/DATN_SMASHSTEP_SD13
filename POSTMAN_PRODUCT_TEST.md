@@ -4,6 +4,10 @@ Project: `D:\DATN_SD13\DATN_SMASHSTEP_SD13`, branch `quang`.
 Backend: Java 17, Spring Boot 4.0.0, Spring Data JPA, Jakarta Validation,
 Lombok, SQL Server; dùng Maven Wrapper hiện có.
 
+**BASE URL:** `http://localhost:8080`
+
+API prefix: `/api`. Trong Postman đặt `baseUrl=http://localhost:8080/api`.
+
 ## 1. Chuẩn bị
 
 Chạy trong PowerShell:
@@ -12,12 +16,12 @@ Chạy trong PowerShell:
 cd D:\DATN_SD13\DATN_SMASHSTEP_SD13\BACKEND
 .\mvnw.cmd clean compile
 .\mvnw.cmd test
-.\mvnw.cmd spring-boot:run '-Dspring-boot.run.arguments=--server.port=18080'
+.\mvnw.cmd spring-boot:run
 ```
 
-Chờ log `Started DatnApplication` và Tomcat nghe cổng 18080.
-Lượt kiểm tra này dùng 18080 vì 8080 đang được dùng. Port mặc định trong
-`application.properties` vẫn là 8080; tham số chạy không sửa file cấu hình.
+Chờ log `Started DatnApplication` và Tomcat nghe cổng 8080.
+Lần kiểm tra hiện tại khởi động thành công trên cổng mặc định 8080,
+không sửa `application.properties`.
 SQL Server phải chạy và cấu hình kết nối hiện có phải hợp lệ. Không đổi password
 trong code hoặc chạy lại SQL để test API. `spring.jpa.hibernate.ddl-auto=none`.
 
@@ -25,7 +29,7 @@ Tạo Postman Environment, chọn environment trước khi gửi request:
 
 | Biến | Giá trị |
 | --- | --- |
-| baseUrl | http://localhost:18080/api |
+| baseUrl | http://localhost:8080/api |
 | runKey | Chuỗi khác nhau cho mỗi lượt, ví dụ 20261003_1600 |
 | categoryId, brandId, materialId, styleId, collarId, originId | ID lấy từ API thuộc tính |
 | colorId, sizeId, sizeId2 | ID màu và hai kích thước khác nhau lấy từ API |
@@ -37,6 +41,25 @@ Postman thay `{{categoryId}}` bằng số trước khi gửi. Không gửi ID ch
 Không mặc định ID bằng 1: database hiện có thể chưa có dữ liệu reference.
 
 Module chưa có user context xác thực; không gửi ID nhân viên giả cho audit.
+
+
+### Thứ tự test Postman
+
+1. GET thuộc tính và lấy ID thật; POST thuộc tính nếu danh sách trống.
+2. POST sản phẩm, lưu `productId`.
+3. GET danh sách sản phẩm.
+4. GET chi tiết sản phẩm.
+5. PUT sản phẩm.
+6. PATCH trạng thái sản phẩm; có thể bật lại bằng trạng thái 1.
+7. POST biến thể, lưu `variantId`.
+8. GET danh sách biến thể.
+9. GET chi tiết biến thể.
+10. PUT biến thể.
+11. PATCH trạng thái biến thể.
+12. GET/POST ảnh, lưu `imageId`, rồi PUT ảnh.
+13. Chạy các negative test ở mục 11.
+
+Các phần bên dưới ghi đầy đủ URL, JSON và mã HTTP kỳ vọng cho từng bước.
 
 ## 2. Lấy hoặc tạo dữ liệu thuộc tính trước
 
@@ -125,7 +148,8 @@ POST/PUT size: `giaTri` là **String**, không ép về Integer:
 ```
 
 Nếu size 40.5 đã có thì lấy ID từ GET, không tạo trùng. Tạo size thứ hai, ví dụ
-"41", để lưu vào `sizeId2`. Mã/giá trị/tên trùng bị trả 409 theo kiểm tra service.
+"41", để lưu vào `sizeId2`. Trùng mã của bảy loại thuộc tính hoặc trùng `giaTri`
+kích thước trả 409. Tên thuộc tính giống nhau nhưng mã khác nhau vẫn được phép.
 Request cũng chấp nhận `maDanhMuc/tenDanhMuc/moTa`, `maThuongHieu/tenThuongHieu`,
 `maChatLieu/tenChatLieu`, `maKieuDang/tenKieuDang`, `maCoGiay/tenCoGiay`,
 `maXuatXu/tenXuatXu`. **Response thuộc tính giữ format chung**:
@@ -161,7 +185,7 @@ POST `{{baseUrl}}/products`:
 }
 ```
 
-Kỳ vọng **201**, response ProductResponse có `id`, mã/tên/ID và tên thuộc tính,
+Kỳ vọng **201**, response SanPhamResponse có `id`, mã/tên/ID và tên thuộc tính,
 `ngayTao`, `tongSoLuong=0`, `soBienThe=0`, `tongSoBienThe=0`;
 giá min/max và ảnh chính null khi chưa có dữ liệu. Mã/tên được trim.
 
@@ -190,7 +214,7 @@ GET `{{baseUrl}}/products/{{productId}}` trả:
 }
 ```
 
-123 chỉ minh họa response; dùng `productId` thực tế. ProductResponse còn có
+123 chỉ minh họa response; dùng `productId` thực tế. SanPhamResponse còn có
 `giaThapNhat`, `giaCaoNhat`, `soMau`, `soKichThuoc`, `anhChinh`.
 `soBienThe` và `tongSoBienThe` là cùng số lượng, giữ cả hai tên để tương thích.
 Aggregate tính trên tất cả biến thể, kể cả biến thể ngừng hoạt động.
@@ -235,7 +259,7 @@ POST `{{baseUrl}}/products/{{productId}}/variants` với một object:
 }
 ```
 
-Kỳ vọng **201**, một VariantResponse có `id`, `sanPhamId`, `productId`, mã/tên
+Kỳ vọng **201**, một BienTheResponse có `id`, `sanPhamId`, `productId`, mã/tên
 sản phẩm, mã/tên/HEX màu, ID/giá trị size và giá/tồn/kích hoạt/trạng thái.
 `sanPhamId`, `productId`, `idSanPham` trong response là cùng ID.
 `maChiTietSanPham` và `sku` trim, kiểm tra trùng không phân biệt hoa/thường.
@@ -277,7 +301,7 @@ ID request chấp nhận alias `productId`/`idSanPham`, `idMauSac`, `idKichThuoc
 
 GET `{{baseUrl}}/products/{{productId}}/variants`: array tất cả biến thể của sản phẩm.
 
-GET `{{baseUrl}}/product-details/{{variantId}}`: một VariantResponse.
+GET `{{baseUrl}}/product-details/{{variantId}}`: một BienTheResponse.
 
 GET `{{baseUrl}}/product-details?page=0&size=10&productId={{productId}}&active=true`:
 PageResponse. Filter: `productId`, `colorId`, `sizeId`, `status`, `active`.
@@ -395,18 +419,21 @@ GET detail/list sản phẩm và biến thể để kiểm tra `anhChinh` sau th
 | POST product thiếu/để trống tên hoặc mã | 400, errors chỉ rõ field |
 | GET product ID 9223372036854775807 | 404, Không tìm thấy sản phẩm |
 | PUT product gửi mã khác mã cũ | 400, mã không được thay đổi |
-| POST product dùng danhMucId 9223372036854775807 | 400, danh mục không tồn tại |
+| POST product dùng danhMucId 9223372036854775807 | 404, Không tìm thấy danh mục |
 | POST variant giaBan = 0 | 400, field giaBan |
 | POST variant soLuong = -1 | 400, field soLuong |
 | POST variant đổi mã CTSP nhưng giữ SKU đã có | 409, SKU đã tồn tại |
 | POST variant giữ mã CTSP đã có, đổi SKU | 409, mã biến thể đã tồn tại |
 | POST variant mã/SKU mới nhưng cùng product + color + size đã có | 409, trùng tổ hợp |
-| POST variant màu/size không tồn tại | 400, message rõ thuộc tính không tồn tại |
+| POST variant màu/size không tồn tại | 404, Không tìm thấy màu sắc/kích thước |
+| POST variant dùng sanPhamId không tồn tại | 404, Không tìm thấy sản phẩm |
 | POST /product-details không gửi sanPhamId | 400, errors.sanPhamId |
 | Nested POST variant gửi sanPhamId khác path | 400, biến thể phải thuộc sản phẩm đang chọn |
 | POST batch variants rỗng hoặc chứa null | 400 |
 | GET variant/attribute ID không tồn tại | 404, message tương ứng |
-| POST attribute trùng mã hoặc tên/giá trị | 409 |
+| POST/PUT attribute trùng mã hoặc size trùng giaTri | 409 |
+| POST attribute có tên đã tồn tại nhưng mã mới | 201 |
+| PUT attribute ID không tồn tại, kể cả gửi mã đã có | 404 |
 | POST/PUT color HEX khác #RRGGBB | 400 |
 | PATCH status = 2 hoặc null | 400 |
 | GET list page=-1 hoặc size=101 | 400 |
@@ -429,8 +456,11 @@ Response validation mẫu:
 
 Nested variant có field path như `variants[0].soLuong`.
 Lỗi nghiệp vụ có format `{"message":"..."}`. Không trả entity JPA/proxy.
-Checkout chưa có common AppException/ApiResponse/GlobalExceptionHandler;
-module giữ DTO và ProductExceptionHandler hiện có, không đổi response frontend.
+Đã chuyển exception và handler cũ sang `common/exception/AppException.java`
+và `GlobalExceptionHandler.java`; `PageResponse` được tách sang `common/response`.
+Module dùng chung các class này, không tạo exception riêng cho từng nghiệp vụ.
+Checkout trước lượt này không có package common hoặc `ApiResponse`; response
+JSON hiện có được giữ để frontend không cần sửa. Phân trang vẫn bắt đầu từ 0.
 
 ## 12. Database và transaction
 
@@ -466,48 +496,144 @@ module giữ DTO và ProductExceptionHandler hiện có, không đổi response 
 
 ## 14. Kết quả kiểm tra local ngày 03/10/2026
 
-- `.\mvnw.cmd clean compile`: **BUILD SUCCESS**, Java 17, 63 file nguồn.
-- `.\mvnw.cmd test`: **BUILD SUCCESS**, 29 test; 0 failure, 0 error, 0 skipped.
-- Có 11 integration test trên SQL Server thật, kiểm tra HTTP CRUD, FK,
-  aggregate, field alias, DTO update, batch, filter active, ảnh và validation.
-  Dữ liệu test rollback; không sửa test của module khác.
-- Spring Boot: **SUCCESS**, `Started DatnApplication`, Tomcat cổng **18080**.
-  Lần chạy 8080 bị xung đột cổng với tiến trình có sẵn; không dừng tiến trình đó
-  hoặc sửa `application.properties`.
-- HTTP thực tế GET products, product-details và cả tám thuộc tính: **200**.
-  API detail/ảnh/biến thể với ID không tồn tại trả **404** theo service.
-- SQL Server hiện có 0 sản phẩm, 0 biến thể và không có thuộc tính hoạt động.
-  Tạo reference qua POST thuộc tính trước khi test sản phẩm bằng Postman.
-- Không có PropertyReferenceException, QueryCreationException, JPQL validation
-  error, BeanCreationException hoặc ambiguous mapping trong các lần chạy thành công.
-- Database/schema/SQL/entity/dependency/config và frontend không thay đổi trong lượt này.
-- **POSTMAN READY: YES**, baseUrl `http://localhost:18080/api`.
+- `.\mvnw.cmd clean compile`: **BUILD SUCCESS**, Java 17, **76 file nguồn**.
+- `.\mvnw.cmd test`: **BUILD SUCCESS**, **31 test**, 0 failure, 0 error, 0 skipped.
+- Có **13 integration test trên SQL Server thật**: HTTP CRUD, FK trả 404,
+  kiểm tra trùng đúng mã/giá trị thuộc tính, aggregate, field alias, batch,
+  filter active, ảnh và validation. Các test ghi dữ liệu được rollback;
+  không sửa test của module khác.
+- Spring Boot: **SUCCESS**, log `Started DatnApplication`, Tomcat cổng **8080**.
+  Process chạy bằng code mới trong local checkout này.
+- Kiểm tra HTTP thực tế trên 8080: danh sách products, product-details và cả
+  tám thuộc tính trả **200**. ID sản phẩm/biến thể/thuộc tính không tồn tại
+  trả **404**; page âm và active không hợp lệ trả **400**.
+- Không có lỗi PropertyReferenceException, QueryCreationException, JPQL
+  validation, BeanCreationException hoặc ambiguous mapping khi khởi động.
+- `git diff -- Database/01_sqlSD13.sql` và `git diff -- sql_sd013.sql`
+  không có output. File SQL thực tế là `sql_sd013.sql`.
+- Đối chiếu SHA256 trước/sau: SQL, entity, dependency, Maven wrapper,
+  cấu hình kết nối, test của module khác và frontend giữ nguyên trong lượt này.
+  Một số file đã có thay đổi local từ trước; các thay đổi đó được giữ nguyên.
+- **DATABASE / SCHEMA MODIFIED BY THIS TASK: NO**.
+- **POSTMAN GUIDE: EXISTS; POSTMAN READY: YES**.
 
-## 15. File của lượt backend này
+## 15. File thực tế của lượt này
 
-Đường dẫn bên dưới tính từ `D:\DATN_SD13\DATN_SMASHSTEP_SD13`.
-Các file module đã có từ lượt trước được giữ; không tạo lại module.
+Root checkout: `D:\DATN_SD13\DATN_SMASHSTEP_SD13`, branch `quang`.
+Danh sách dưới đây chỉ tính thay đổi của lượt dọn lại tên tiếng Việt và hoàn thiện
+backend; code đã hoàn thành từ các lượt trước được tái sử dụng.
 
-### FILES CREATED (2)
+### FILES CREATED (1)
 
-- BACKEND/src/main/java/com/smashstep/datn/product/controller/ProductImageController.java
-- POSTMAN_PRODUCT_TEST.md
+- [PageResponse.java](D:/DATN_SD13/DATN_SMASHSTEP_SD13/BACKEND/src/main/java/com/smashstep/datn/common/response/PageResponse.java)
 
-### FILES MODIFIED (10)
+Tách class phân trang đang dùng từ DTO cũ sang common; giữ JSON
+`content`, `number`, `size`, `totalElements`, `totalPages` và page bắt đầu 0.
 
-- BACKEND/src/main/java/com/smashstep/datn/product/controller/ProductController.java
-- BACKEND/src/main/java/com/smashstep/datn/product/controller/ProductVariantController.java
-- BACKEND/src/main/java/com/smashstep/datn/product/controller/ProductAttributeController.java
-- BACKEND/src/main/java/com/smashstep/datn/product/controller/ProductExceptionHandler.java
-- BACKEND/src/main/java/com/smashstep/datn/product/dto/ProductDtos.java
-- BACKEND/src/main/java/com/smashstep/datn/product/repository/HinhAnhSanPhamRepository.java
-- BACKEND/src/main/java/com/smashstep/datn/product/service/ProductService.java
-- BACKEND/src/main/java/com/smashstep/datn/product/service/VariantService.java
-- BACKEND/src/main/java/com/smashstep/datn/product/service/ProductAttributeService.java
-- BACKEND/src/test/java/com/smashstep/datn/product/ProductDatabaseIntegrationTest.java
+### FILES RENAMED (23)
 
-### Phần còn lại
+Các file bên phải tồn tại thật và chứa logic; import/reference đã cập nhật.
 
-Không còn lỗi compile/test/start của code product trong các kiểm tra trên.
-Ảnh chỉ hỗ trợ URL dùng chung cho sản phẩm theo schema hiện tại; upload file
-và ảnh theo màu chưa có. Không thêm schema/storage để thực hiện hai phần này.
+| File trước | File hiện tại |
+| --- | --- |
+| BACKEND/src/main/java/com/smashstep/datn/product/controller/ProductAttributeController.java | [ThuocTinhSanPhamController.java](D:/DATN_SD13/DATN_SMASHSTEP_SD13/BACKEND/src/main/java/com/smashstep/datn/product/controller/ThuocTinhSanPhamController.java) |
+| BACKEND/src/main/java/com/smashstep/datn/product/controller/ProductExceptionHandler.java | [GlobalExceptionHandler.java](D:/DATN_SD13/DATN_SMASHSTEP_SD13/BACKEND/src/main/java/com/smashstep/datn/common/exception/GlobalExceptionHandler.java) |
+| BACKEND/src/main/java/com/smashstep/datn/product/dto/ImageRequest.java | [HinhAnhSanPhamRequest.java](D:/DATN_SD13/DATN_SMASHSTEP_SD13/BACKEND/src/main/java/com/smashstep/datn/product/dto/HinhAnhSanPhamRequest.java) |
+| BACKEND/src/main/java/com/smashstep/datn/product/dto/ImageResponse.java | [HinhAnhSanPhamResponse.java](D:/DATN_SD13/DATN_SMASHSTEP_SD13/BACKEND/src/main/java/com/smashstep/datn/product/dto/HinhAnhSanPhamResponse.java) |
+| BACKEND/src/main/java/com/smashstep/datn/product/dto/ProductCreateRequest.java | [SanPhamThemRequest.java](D:/DATN_SD13/DATN_SMASHSTEP_SD13/BACKEND/src/main/java/com/smashstep/datn/product/dto/SanPhamThemRequest.java) |
+| BACKEND/src/main/java/com/smashstep/datn/product/dto/ProductDetailResponse.java | [SanPhamChiTietResponse.java](D:/DATN_SD13/DATN_SMASHSTEP_SD13/BACKEND/src/main/java/com/smashstep/datn/product/dto/SanPhamChiTietResponse.java) |
+| BACKEND/src/main/java/com/smashstep/datn/product/dto/ProductDtos.java | [DuLieuSanPham.java](D:/DATN_SD13/DATN_SMASHSTEP_SD13/BACKEND/src/main/java/com/smashstep/datn/product/dto/DuLieuSanPham.java) |
+| BACKEND/src/main/java/com/smashstep/datn/product/dto/ProductResponse.java | [SanPhamResponse.java](D:/DATN_SD13/DATN_SMASHSTEP_SD13/BACKEND/src/main/java/com/smashstep/datn/product/dto/SanPhamResponse.java) |
+| BACKEND/src/main/java/com/smashstep/datn/product/dto/ProductStatusRequest.java | [SanPhamTrangThaiRequest.java](D:/DATN_SD13/DATN_SMASHSTEP_SD13/BACKEND/src/main/java/com/smashstep/datn/product/dto/SanPhamTrangThaiRequest.java) |
+| BACKEND/src/main/java/com/smashstep/datn/product/dto/ProductUpdateRequest.java | [SanPhamSuaRequest.java](D:/DATN_SD13/DATN_SMASHSTEP_SD13/BACKEND/src/main/java/com/smashstep/datn/product/dto/SanPhamSuaRequest.java) |
+| BACKEND/src/main/java/com/smashstep/datn/product/dto/VariantCreateRequest.java | [SanPhamChiTietThemRequest.java](D:/DATN_SD13/DATN_SMASHSTEP_SD13/BACKEND/src/main/java/com/smashstep/datn/product/dto/SanPhamChiTietThemRequest.java) |
+| BACKEND/src/main/java/com/smashstep/datn/product/dto/VariantResponse.java | [BienTheResponse.java](D:/DATN_SD13/DATN_SMASHSTEP_SD13/BACKEND/src/main/java/com/smashstep/datn/product/dto/BienTheResponse.java) |
+| BACKEND/src/main/java/com/smashstep/datn/product/dto/VariantStatusRequest.java | [SanPhamChiTietTrangThaiRequest.java](D:/DATN_SD13/DATN_SMASHSTEP_SD13/BACKEND/src/main/java/com/smashstep/datn/product/dto/SanPhamChiTietTrangThaiRequest.java) |
+| BACKEND/src/main/java/com/smashstep/datn/product/dto/VariantUpdateRequest.java | [SanPhamChiTietSuaRequest.java](D:/DATN_SD13/DATN_SMASHSTEP_SD13/BACKEND/src/main/java/com/smashstep/datn/product/dto/SanPhamChiTietSuaRequest.java) |
+| BACKEND/src/main/java/com/smashstep/datn/product/repository/InventorySummary.java | [TongHopSanPham.java](D:/DATN_SD13/DATN_SMASHSTEP_SD13/BACKEND/src/main/java/com/smashstep/datn/product/repository/TongHopSanPham.java) |
+| BACKEND/src/main/java/com/smashstep/datn/product/service/ProductAttributeService.java | [ThuocTinhSanPhamService.java](D:/DATN_SD13/DATN_SMASHSTEP_SD13/BACKEND/src/main/java/com/smashstep/datn/product/service/ThuocTinhSanPhamService.java) |
+| BACKEND/src/main/java/com/smashstep/datn/product/service/ProductException.java | [AppException.java](D:/DATN_SD13/DATN_SMASHSTEP_SD13/BACKEND/src/main/java/com/smashstep/datn/common/exception/AppException.java) |
+| BACKEND/src/main/java/com/smashstep/datn/product/service/ProductRules.java | [QuyTacSanPham.java](D:/DATN_SD13/DATN_SMASHSTEP_SD13/BACKEND/src/main/java/com/smashstep/datn/product/service/QuyTacSanPham.java) |
+| BACKEND/src/test/java/com/smashstep/datn/product/ProductAttributeServiceTest.java | [ThuocTinhSanPhamServiceTest.java](D:/DATN_SD13/DATN_SMASHSTEP_SD13/BACKEND/src/test/java/com/smashstep/datn/product/ThuocTinhSanPhamServiceTest.java) |
+| BACKEND/src/test/java/com/smashstep/datn/product/ProductDatabaseIntegrationTest.java | [SanPhamTichHopTest.java](D:/DATN_SD13/DATN_SMASHSTEP_SD13/BACKEND/src/test/java/com/smashstep/datn/product/SanPhamTichHopTest.java) |
+| BACKEND/src/test/java/com/smashstep/datn/product/ProductServiceTest.java | [SanPhamServiceTest.java](D:/DATN_SD13/DATN_SMASHSTEP_SD13/BACKEND/src/test/java/com/smashstep/datn/product/SanPhamServiceTest.java) |
+| BACKEND/src/test/java/com/smashstep/datn/product/ProductValidationTest.java | [KiemTraDuLieuSanPhamTest.java](D:/DATN_SD13/DATN_SMASHSTEP_SD13/BACKEND/src/test/java/com/smashstep/datn/product/KiemTraDuLieuSanPhamTest.java) |
+| BACKEND/src/test/java/com/smashstep/datn/product/VariantServiceTest.java | [SanPhamChiTietServiceTest.java](D:/DATN_SD13/DATN_SMASHSTEP_SD13/BACKEND/src/test/java/com/smashstep/datn/product/SanPhamChiTietServiceTest.java) |
+
+Hai file exception chuyển sang common theo tên yêu cầu `AppException` và
+`GlobalExceptionHandler`. Handler vẫn áp dụng cho module product để không đổi
+cách xử lý lỗi của module khác. Không tồn tại hai bộ exception song song.
+
+### FILES MODIFIED (10, giữ nguyên đường dẫn)
+
+- [SanPhamController.java](D:/DATN_SD13/DATN_SMASHSTEP_SD13/BACKEND/src/main/java/com/smashstep/datn/product/controller/SanPhamController.java)
+- [SanPhamChiTietController.java](D:/DATN_SD13/DATN_SMASHSTEP_SD13/BACKEND/src/main/java/com/smashstep/datn/product/controller/SanPhamChiTietController.java)
+- [HinhAnhSanPhamController.java](D:/DATN_SD13/DATN_SMASHSTEP_SD13/BACKEND/src/main/java/com/smashstep/datn/product/controller/HinhAnhSanPhamController.java)
+- [SanPhamService.java](D:/DATN_SD13/DATN_SMASHSTEP_SD13/BACKEND/src/main/java/com/smashstep/datn/product/service/SanPhamService.java)
+- [SanPhamChiTietService.java](D:/DATN_SD13/DATN_SMASHSTEP_SD13/BACKEND/src/main/java/com/smashstep/datn/product/service/SanPhamChiTietService.java)
+- [HinhAnhSanPhamService.java](D:/DATN_SD13/DATN_SMASHSTEP_SD13/BACKEND/src/main/java/com/smashstep/datn/product/service/HinhAnhSanPhamService.java)
+- [SanPhamRepository.java](D:/DATN_SD13/DATN_SMASHSTEP_SD13/BACKEND/src/main/java/com/smashstep/datn/product/repository/SanPhamRepository.java)
+- [SanPhamChiTietRepository.java](D:/DATN_SD13/DATN_SMASHSTEP_SD13/BACKEND/src/main/java/com/smashstep/datn/product/repository/SanPhamChiTietRepository.java)
+- [HinhAnhSanPhamRepository.java](D:/DATN_SD13/DATN_SMASHSTEP_SD13/BACKEND/src/main/java/com/smashstep/datn/product/repository/HinhAnhSanPhamRepository.java)
+- [POSTMAN_PRODUCT_TEST.md](D:/DATN_SD13/DATN_SMASHSTEP_SD13/POSTMAN_PRODUCT_TEST.md)
+
+Các file đã đổi tên và sửa nội dung nằm ở mục RENAMED, không tính lặp lại ở đây.
+Repository dùng đúng Java property của Entity. Projection `TongHopSanPham`
+khớp alias của query tổng hợp và đã được kiểm tra bằng integration test.
+
+### FILES DELETED
+
+**0 file xóa độc lập.** Các đường dẫn tên cũ đã chuyển sang tên mới ở bảng trên.
+Đã bỏ một DTO batch lồng không còn được dùng; API batch vẫn hoạt động qua
+`DuLieuSanPham.DanhSachBienTheRequest`.
+
+### Controller, service và DTO đã tồn tại trên ổ đĩa
+
+| Folder | File chính |
+| --- | --- |
+| `BACKEND/src/main/java/com/smashstep/datn/product/controller` | SanPhamController, SanPhamChiTietController, ThuocTinhSanPhamController, HinhAnhSanPhamController |
+| `BACKEND/src/main/java/com/smashstep/datn/product/service` | SanPhamService, SanPhamChiTietService, ThuocTinhSanPhamService, HinhAnhSanPhamService, QuyTacSanPham |
+| `BACKEND/src/main/java/com/smashstep/datn/product/dto` | 11 DTO sản phẩm/biến thể/ảnh và DuLieuSanPham |
+
+DTO dùng class Java thông thường, Jakarta Validation, không dùng record.
+`SanPhamChiTietResponse` chứa product/variants/images;
+`BienTheResponse` chứa thông tin một biến thể. Cấu trúc JSON không đổi.
+
+`SanPhamService`: themSanPham, layDanhSachSanPham, layChiTietSanPham,
+suaSanPham, doiTrangThai.
+
+`SanPhamChiTietService`: themSanPhamChiTiet, themDanhSachBienThe,
+layDanhSach, layTheoSanPham, layChiTiet, suaSanPhamChiTiet, doiTrangThai.
+
+`ThuocTinhSanPhamService`: layLuaChon, layDanhSach, layChiTiet,
+luuThuocTinh, doiTrangThai; dùng chung cho tám loại thuộc tính.
+
+`HinhAnhSanPhamService`: themAnh, layDanhSachAnh, suaAnhTheoId, xoaAnhTheoId;
+giữ các endpoint ảnh theo sản phẩm và quy tắc một ảnh chính.
+
+### Checklist
+
+| Hạng mục | Kết quả |
+| --- | --- |
+| product/dto | EXISTS |
+| product/service | EXISTS |
+| product/controller | EXISTS |
+| PRODUCT create/list/detail/update/status | DONE |
+| BIẾN THỂ create/list/detail/update/status và batch | DONE |
+| THUỘC TÍNH GET/create/update/status tám loại | DONE |
+| ẢNH GET/POST/PUT/DELETE | DONE |
+| COMPILE | BUILD SUCCESS |
+| TEST | 31 passed |
+| SPRING BOOT START | SUCCESS, 8080 |
+| DATABASE / SCHEMA MODIFIED BY THIS TASK | NO |
+| FRONTEND MODIFIED BY THIS TASK | NO |
+| POSTMAN READY | YES |
+| Tên file/class mới trong module product | Tiếng Việt không dấu |
+
+Không còn file Java tên Product*, Variant*, Image* hoặc Inventory* trong module
+product và các test product trên ổ đĩa. Các đường dẫn cũ vẫn có thể xuất hiện
+trong `git status` vì index có thay đổi từ trước; chúng không còn trong source.
+Lượt này không chạy git add, commit, push, checkout branch hoặc tạo worktree.
+
+Không còn lỗi compile/test/start trong các kiểm tra trên. Ảnh lưu URL theo sản
+phẩm đúng Entity/SQL thực tế; không thêm cột màu hoặc storage ngoài.

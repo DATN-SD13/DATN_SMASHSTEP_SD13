@@ -11,4 +11,9 @@ public class HinhAnhSanPhamResponse {
     private Long id;
     private String urlAnh;
     private Boolean isAnhChinh;
+    private Long sanPhamId;
+
+    public HinhAnhSanPhamResponse(Long id, String urlAnh, Boolean isAnhChinh) {
+        this(id, urlAnh, isAnhChinh, null);
+    }
 }

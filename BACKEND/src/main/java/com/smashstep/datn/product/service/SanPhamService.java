@@ -1,152 +1,227 @@
 package com.smashstep.datn.product.service;
 
-import com.smashstep.datn.product.dto.ProductDtos.*;
+import com.smashstep.datn.common.exception.AppException;
+import com.smashstep.datn.common.response.PageResponse;
 import com.smashstep.datn.product.dto.*;
 import com.smashstep.datn.product.entity.*;
 import com.smashstep.datn.product.repository.*;
+import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import jakarta.persistence.criteria.Predicate;
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class SanPhamService {
-    private final SanPhamRepository products;
-    private final SanPhamChiTietRepository variants;
-    private final HinhAnhSanPhamRepository images;
-    private final DanhMucRepository categories;
-    private final ThuongHieuRepository brands;
-    private final ChatLieuRepository materials;
-    private final KieuDangRepository styles;
-    private final CoGiayRepository collars;
-    private final XuatXuRepository origins;
+    private final SanPhamRepository sanPhamRepository;
+    private final SanPhamChiTietRepository sanPhamChiTietRepository;
+    private final HinhAnhSanPhamRepository hinhAnhRepository;
+    private final DanhMucRepository danhMucRepository;
+    private final ThuongHieuRepository thuongHieuRepository;
+    private final ChatLieuRepository chatLieuRepository;
+    private final KieuDangRepository kieuDangRepository;
+    private final CoGiayRepository coGiayRepository;
+    private final XuatXuRepository xuatXuRepository;
 
-    public PageResponse<ProductResponse> getProducts(int page, int size, String keyword, Integer status,
-            Long categoryId, Long brandId, Long materialId, Long styleId, Long collarId, Long originId) {
-        ProductRules.status(status);
-        Specification<SanPham> filter = (root, query, cb) -> {
-            List<Predicate> conditions = new ArrayList<>();
-            if (!ProductRules.trim(keyword).isEmpty()) {
-                String pattern = ProductRules.like(keyword);
-                conditions.add(cb.or(cb.like(cb.lower(root.get("maSanPham")), pattern, '\\'),
-                        cb.like(cb.lower(root.get("tenSanPham")), pattern, '\\')));
+    public PageResponse<SanPhamResponse> layDanhSachSanPham(int trang, int kichThuocTrang,
+            String tuKhoa, Integer trangThai, Long danhMucId, Long thuongHieuId,
+            Long chatLieuId, Long kieuDangId, Long coGiayId, Long xuatXuId) {
+        QuyTacSanPham.kiemTraTrangThai(trangThai);
+        Specification<SanPham> boLoc = (bang, truyVan, tieuChi) -> {
+            List<Predicate> dieuKien = new ArrayList<>();
+            if (!QuyTacSanPham.boKhoangTrang(tuKhoa).isEmpty()) {
+                String mauTimKiem = QuyTacSanPham.taoMauTimKiem(tuKhoa);
+                dieuKien.add(tieuChi.or(
+                        tieuChi.like(tieuChi.lower(bang.get("maSanPham")), mauTimKiem, '\\'),
+                        tieuChi.like(tieuChi.lower(bang.get("tenSanPham")), mauTimKiem, '\\')));
             }
-            if (status != null) conditions.add(cb.equal(root.get("trangThai"), status));
-            Map<String, Long> attributes = new LinkedHashMap<>();
-            attributes.put("idDanhMuc", categoryId); attributes.put("idThuongHieu", brandId);
-            attributes.put("idChatLieu", materialId); attributes.put("idKieuDang", styleId);
-            attributes.put("idCoGiay", collarId); attributes.put("idXuatXu", originId);
-            attributes.forEach((field, id) -> {
-                if (id != null) conditions.add(cb.equal(root.get(field).get("id"), id));
-            });
-            return cb.and(conditions.toArray(Predicate[]::new));
+            if (trangThai != null) {
+                dieuKien.add(tieuChi.equal(bang.get("trangThai"), trangThai));
+            }
+            if (danhMucId != null) {
+                dieuKien.add(tieuChi.equal(bang.get("idDanhMuc").get("id"), danhMucId));
+            }
+            if (thuongHieuId != null) {
+                dieuKien.add(tieuChi.equal(bang.get("idThuongHieu").get("id"), thuongHieuId));
+            }
+            if (chatLieuId != null) {
+                dieuKien.add(tieuChi.equal(bang.get("idChatLieu").get("id"), chatLieuId));
+            }
+            if (kieuDangId != null) {
+                dieuKien.add(tieuChi.equal(bang.get("idKieuDang").get("id"), kieuDangId));
+            }
+            if (coGiayId != null) {
+                dieuKien.add(tieuChi.equal(bang.get("idCoGiay").get("id"), coGiayId));
+            }
+            if (xuatXuId != null) {
+                dieuKien.add(tieuChi.equal(bang.get("idXuatXu").get("id"), xuatXuId));
+            }
+            return tieuChi.and(dieuKien.toArray(Predicate[]::new));
         };
-        Page<SanPham> result = products.findAll(filter, ProductRules.page(page, size));
-        List<Long> ids = result.getContent().stream().map(SanPham::getId).toList();
-        Map<Long, InventorySummary> totals = summaries(ids);
-        Map<Long, String> mainImages = HinhAnhSanPhamService.mainImageUrls(images, ids);
-        return PageResponse.from(result.map(p -> toResponse(p, totals.get(p.getId()), mainImages.get(p.getId()))));
+        Page<SanPham> ketQua = sanPhamRepository.findAll(boLoc,
+                QuyTacSanPham.taoPhanTrang(trang, kichThuocTrang));
+        List<Long> danhSachId = ketQua.getContent().stream().map(SanPham::getId).toList();
+        Map<Long, TongHopSanPham> tongHop = layTongHop(danhSachId);
+        Map<Long, String> anhChinh = HinhAnhSanPhamService.layAnhChinh(hinhAnhRepository, danhSachId);
+        return PageResponse.from(ketQua.map(sanPham ->
+                chuyenSangResponse(sanPham, tongHop.get(sanPham.getId()), anhChinh.get(sanPham.getId()))));
     }
 
-    public ProductDetailResponse getProductById(Long id) {
-        SanPham product = find(id);
-        InventorySummary total = summaries(List.of(id)).get(id);
-        String mainImage = HinhAnhSanPhamService.mainImageUrls(images, List.of(id)).get(id);
-        return new ProductDetailResponse(toResponse(product, total, mainImage),
-                variants.findByIdSanPham_IdOrderByIdAsc(id).stream().map(v -> SanPhamChiTietService.withImage(v, mainImage)).toList(),
-                images.findByIdSanPham_IdOrderByIdAsc(id).stream().map(HinhAnhSanPhamService::toResponse).toList());
-    }
-
-    @Transactional
-    public ProductResponse createProduct(ProductCreateRequest request) {
-        String code = ProductRules.trim(request.getMaSanPham());
-        if (products.existsByMaSanPhamIgnoreCase(code)) throw ProductException.conflict("Mã sản phẩm đã tồn tại");
-        SanPham product = new SanPham();
-        product.setMaSanPham(code);
-        product.setNgayTao(LocalDateTime.now());
-        apply(product, request);
-        return toResponse(products.save(product), null);
+    public SanPhamChiTietResponse layChiTietSanPham(Long id) {
+        SanPham sanPham = timSanPham(id);
+        TongHopSanPham tongHop = layTongHop(List.of(id)).get(id);
+        String anhChinh = HinhAnhSanPhamService.layAnhChinh(hinhAnhRepository, List.of(id)).get(id);
+        List<BienTheResponse> bienThe = new ArrayList<>();
+        for (SanPhamChiTiet chiTiet : sanPhamChiTietRepository.findByIdSanPham_IdOrderByIdAsc(id)) {
+            bienThe.add(SanPhamChiTietService.chuyenSangResponse(chiTiet, anhChinh));
+        }
+        List<HinhAnhSanPhamResponse> hinhAnh = new ArrayList<>();
+        for (HinhAnhSanPham anh : hinhAnhRepository.findByIdSanPham_IdOrderByIdAsc(id)) {
+            hinhAnh.add(HinhAnhSanPhamService.chuyenSangResponse(anh));
+        }
+        return new SanPhamChiTietResponse(chuyenSangResponse(sanPham, tongHop, anhChinh), bienThe, hinhAnh);
     }
 
     @Transactional
-    public ProductResponse updateProduct(Long id, ProductUpdateRequest request) {
-        SanPham product = products.findLockedById(id).orElseThrow(() -> ProductException.notFound("Không tìm thấy sản phẩm"));
-        if (request.getMaSanPham() != null && !Objects.equals(product.getMaSanPham(), ProductRules.trim(request.getMaSanPham())))
-            throw ProductException.badRequest("Mã sản phẩm không được thay đổi khi sửa");
-        apply(product, request.toProductCreateRequest());
-        product.setNgayCapNhat(LocalDateTime.now());
-        return toResponse(products.save(product), summaries(List.of(id)).get(id));
+    public SanPhamResponse themSanPham(SanPhamThemRequest yeuCau) {
+        String maSanPham = QuyTacSanPham.boKhoangTrang(yeuCau.getMaSanPham());
+        if (sanPhamRepository.existsByMaSanPhamIgnoreCase(maSanPham)) {
+            throw AppException.conflict("Mã sản phẩm đã tồn tại");
+        }
+        SanPham sanPham = new SanPham();
+        sanPham.setMaSanPham(maSanPham);
+        sanPham.setNgayTao(LocalDateTime.now());
+        capNhatDuLieu(sanPham, yeuCau);
+        return chuyenSangResponse(sanPhamRepository.save(sanPham), null);
     }
 
     @Transactional
-    public ProductResponse updateStatus(Long id, Integer status) {
-        ProductRules.status(status);
-        SanPham product = products.findLockedById(id).orElseThrow(() -> ProductException.notFound("Không tìm thấy sản phẩm"));
-        product.setTrangThai(status);
-        product.setNgayCapNhat(LocalDateTime.now());
-        return toResponse(products.save(product), summaries(List.of(id)).get(id));
+    public SanPhamResponse suaSanPham(Long id, SanPhamSuaRequest yeuCau) {
+        SanPham sanPham = sanPhamRepository.timVaKhoaTheoId(id)
+                .orElseThrow(() -> AppException.notFound("Không tìm thấy sản phẩm"));
+        if (yeuCau.getMaSanPham() != null
+                && !Objects.equals(sanPham.getMaSanPham(), QuyTacSanPham.boKhoangTrang(yeuCau.getMaSanPham()))) {
+            throw AppException.badRequest("Mã sản phẩm không được thay đổi khi sửa");
+        }
+        capNhatDuLieu(sanPham, yeuCau.chuyenSangThemRequest());
+        sanPham.setNgayCapNhat(LocalDateTime.now());
+        return chuyenSangResponse(sanPhamRepository.save(sanPham), layTongHop(List.of(id)).get(id));
     }
 
-    private void apply(SanPham p, ProductCreateRequest r) {
-        DanhMuc category = categories.findById(r.getDanhMucId()).orElseThrow(() -> ProductException.badRequest("Danh mục không tồn tại"));
-        ThuongHieu brand = brands.findById(r.getThuongHieuId()).orElseThrow(() -> ProductException.badRequest("Thương hiệu không tồn tại"));
-        ChatLieu material = materials.findById(r.getChatLieuId()).orElseThrow(() -> ProductException.badRequest("Chất liệu không tồn tại"));
-        KieuDang style = styles.findById(r.getKieuDangId()).orElseThrow(() -> ProductException.badRequest("Kiểu dáng không tồn tại"));
-        CoGiay collar = collars.findById(r.getCoGiayId()).orElseThrow(() -> ProductException.badRequest("Cổ giày không tồn tại"));
-        XuatXu origin = origins.findById(r.getXuatXuId()).orElseThrow(() -> ProductException.badRequest("Xuất xứ không tồn tại"));
-        selected(category.getTrangThai(), p.getIdDanhMuc() == null ? null : p.getIdDanhMuc().getId(), category.getId());
-        selected(brand.getTrangThai(), p.getIdThuongHieu() == null ? null : p.getIdThuongHieu().getId(), brand.getId());
-        selected(material.getTrangThai(), p.getIdChatLieu() == null ? null : p.getIdChatLieu().getId(), material.getId());
-        selected(style.getTrangThai(), p.getIdKieuDang() == null ? null : p.getIdKieuDang().getId(), style.getId());
-        selected(collar.getTrangThai(), p.getIdCoGiay() == null ? null : p.getIdCoGiay().getId(), collar.getId());
-        selected(origin.getTrangThai(), p.getIdXuatXu() == null ? null : p.getIdXuatXu().getId(), origin.getId());
-        p.setIdDanhMuc(category); p.setIdThuongHieu(brand); p.setIdChatLieu(material);
-        p.setIdKieuDang(style); p.setIdCoGiay(collar); p.setIdXuatXu(origin);
-        p.setTenSanPham(ProductRules.trim(r.getTenSanPham()));
-        p.setMoTaChiTiet(ProductRules.trim(r.getMoTaChiTiet()));
-        p.setTrangThai(r.getTrangThai());
+    @Transactional
+    public SanPhamResponse doiTrangThai(Long id, Integer trangThai) {
+        QuyTacSanPham.kiemTraTrangThai(trangThai);
+        SanPham sanPham = sanPhamRepository.timVaKhoaTheoId(id)
+                .orElseThrow(() -> AppException.notFound("Không tìm thấy sản phẩm"));
+        sanPham.setTrangThai(trangThai);
+        sanPham.setNgayCapNhat(LocalDateTime.now());
+        return chuyenSangResponse(sanPhamRepository.save(sanPham), layTongHop(List.of(id)).get(id));
     }
 
-    static void selected(Integer status, Long currentId, Long selectedId) {
-        if (!Objects.equals(status, 1) && !Objects.equals(currentId, selectedId))
-            throw ProductException.badRequest("Thuộc tính được chọn đã ngừng hoạt động");
+    private void capNhatDuLieu(SanPham sanPham, SanPhamThemRequest yeuCau) {
+        DanhMuc danhMuc = danhMucRepository.findById(yeuCau.getDanhMucId())
+                .orElseThrow(() -> AppException.notFound("Không tìm thấy danh mục"));
+        ThuongHieu thuongHieu = thuongHieuRepository.findById(yeuCau.getThuongHieuId())
+                .orElseThrow(() -> AppException.notFound("Không tìm thấy thương hiệu"));
+        ChatLieu chatLieu = chatLieuRepository.findById(yeuCau.getChatLieuId())
+                .orElseThrow(() -> AppException.notFound("Không tìm thấy chất liệu"));
+        KieuDang kieuDang = kieuDangRepository.findById(yeuCau.getKieuDangId())
+                .orElseThrow(() -> AppException.notFound("Không tìm thấy kiểu dáng"));
+        CoGiay coGiay = coGiayRepository.findById(yeuCau.getCoGiayId())
+                .orElseThrow(() -> AppException.notFound("Không tìm thấy cổ giày"));
+        XuatXu xuatXu = xuatXuRepository.findById(yeuCau.getXuatXuId())
+                .orElseThrow(() -> AppException.notFound("Không tìm thấy xuất xứ"));
+        QuyTacSanPham.kiemTraThuocTinhHoatDong(danhMuc.getTrangThai(),
+                sanPham.getIdDanhMuc() == null ? null : sanPham.getIdDanhMuc().getId(), danhMuc.getId());
+        QuyTacSanPham.kiemTraThuocTinhHoatDong(thuongHieu.getTrangThai(),
+                sanPham.getIdThuongHieu() == null ? null : sanPham.getIdThuongHieu().getId(), thuongHieu.getId());
+        QuyTacSanPham.kiemTraThuocTinhHoatDong(chatLieu.getTrangThai(),
+                sanPham.getIdChatLieu() == null ? null : sanPham.getIdChatLieu().getId(), chatLieu.getId());
+        QuyTacSanPham.kiemTraThuocTinhHoatDong(kieuDang.getTrangThai(),
+                sanPham.getIdKieuDang() == null ? null : sanPham.getIdKieuDang().getId(), kieuDang.getId());
+        QuyTacSanPham.kiemTraThuocTinhHoatDong(coGiay.getTrangThai(),
+                sanPham.getIdCoGiay() == null ? null : sanPham.getIdCoGiay().getId(), coGiay.getId());
+        QuyTacSanPham.kiemTraThuocTinhHoatDong(xuatXu.getTrangThai(),
+                sanPham.getIdXuatXu() == null ? null : sanPham.getIdXuatXu().getId(), xuatXu.getId());
+        sanPham.setIdDanhMuc(danhMuc);
+        sanPham.setIdThuongHieu(thuongHieu);
+        sanPham.setIdChatLieu(chatLieu);
+        sanPham.setIdKieuDang(kieuDang);
+        sanPham.setIdCoGiay(coGiay);
+        sanPham.setIdXuatXu(xuatXu);
+        sanPham.setTenSanPham(QuyTacSanPham.boKhoangTrang(yeuCau.getTenSanPham()));
+        sanPham.setMoTaChiTiet(QuyTacSanPham.boKhoangTrang(yeuCau.getMoTaChiTiet()));
+        sanPham.setTrangThai(yeuCau.getTrangThai());
     }
 
-    private SanPham find(Long id) {
-        return products.findById(id).orElseThrow(() -> ProductException.notFound("Không tìm thấy sản phẩm"));
+    private SanPham timSanPham(Long id) {
+        return sanPhamRepository.findById(id)
+                .orElseThrow(() -> AppException.notFound("Không tìm thấy sản phẩm"));
     }
 
-    private Map<Long, InventorySummary> summaries(List<Long> ids) {
-        if (ids.isEmpty()) return Map.of();
-        return variants.summarize(ids).stream().collect(Collectors.toMap(InventorySummary::getProductId, Function.identity()));
+    private Map<Long, TongHopSanPham> layTongHop(List<Long> danhSachId) {
+        Map<Long, TongHopSanPham> ketQua = new LinkedHashMap<>();
+        if (!danhSachId.isEmpty()) {
+            for (TongHopSanPham tongHop : sanPhamChiTietRepository.tongHopTheoSanPham(danhSachId)) {
+                ketQua.put(tongHop.getSanPhamId(), tongHop);
+            }
+        }
+        return ketQua;
     }
 
-    private ProductResponse toResponse(SanPham p, InventorySummary total) {
-        return toResponse(p, total, HinhAnhSanPhamService.mainImageUrls(images, List.of(p.getId())).get(p.getId()));
+    private SanPhamResponse chuyenSangResponse(SanPham sanPham, TongHopSanPham tongHop) {
+        String anhChinh = HinhAnhSanPhamService.layAnhChinh(hinhAnhRepository,
+                List.of(sanPham.getId())).get(sanPham.getId());
+        return chuyenSangResponse(sanPham, tongHop, anhChinh);
     }
 
-    private ProductResponse toResponse(SanPham p, InventorySummary total, String mainImage) {
-        return new ProductResponse(p.getId(), p.getMaSanPham(), p.getTenSanPham(),
-                p.getIdDanhMuc() == null ? null : p.getIdDanhMuc().getId(), p.getIdDanhMuc() == null ? null : p.getIdDanhMuc().getTenDanhMuc(),
-                p.getIdThuongHieu() == null ? null : p.getIdThuongHieu().getId(), p.getIdThuongHieu() == null ? null : p.getIdThuongHieu().getTenThuongHieu(),
-                p.getIdChatLieu() == null ? null : p.getIdChatLieu().getId(), p.getIdChatLieu() == null ? null : p.getIdChatLieu().getTenChatLieu(),
-                p.getIdKieuDang() == null ? null : p.getIdKieuDang().getId(), p.getIdKieuDang() == null ? null : p.getIdKieuDang().getTenKieuDang(),
-                p.getIdCoGiay() == null ? null : p.getIdCoGiay().getId(), p.getIdCoGiay() == null ? null : p.getIdCoGiay().getTenCoGiay(),
-                p.getIdXuatXu() == null ? null : p.getIdXuatXu().getId(), p.getIdXuatXu() == null ? null : p.getIdXuatXu().getTenXuatXu(),
-                p.getMoTaChiTiet(), p.getTrangThai(), p.getNgayTao(), p.getNgayCapNhat(),
-                total == null || total.getQuantity() == null ? 0 : total.getQuantity(),
-                total == null ? null : total.getMinPrice(), total == null ? null : total.getMaxPrice(),
-                total == null || total.getVariantCount() == null ? 0 : total.getVariantCount(),
-                total == null || total.getColorCount() == null ? 0 : total.getColorCount(),
-                total == null || total.getSizeCount() == null ? 0 : total.getSizeCount(), mainImage);
+    private SanPhamResponse chuyenSangResponse(SanPham sanPham, TongHopSanPham tongHop, String anhChinh) {
+        SanPhamResponse ketQua = new SanPhamResponse();
+        ketQua.setId(sanPham.getId());
+        ketQua.setMaSanPham(sanPham.getMaSanPham());
+        ketQua.setTenSanPham(sanPham.getTenSanPham());
+        if (sanPham.getIdDanhMuc() != null) {
+            ketQua.setDanhMucId(sanPham.getIdDanhMuc().getId());
+            ketQua.setTenDanhMuc(sanPham.getIdDanhMuc().getTenDanhMuc());
+        }
+        if (sanPham.getIdThuongHieu() != null) {
+            ketQua.setThuongHieuId(sanPham.getIdThuongHieu().getId());
+            ketQua.setTenThuongHieu(sanPham.getIdThuongHieu().getTenThuongHieu());
+        }
+        if (sanPham.getIdChatLieu() != null) {
+            ketQua.setChatLieuId(sanPham.getIdChatLieu().getId());
+            ketQua.setTenChatLieu(sanPham.getIdChatLieu().getTenChatLieu());
+        }
+        if (sanPham.getIdKieuDang() != null) {
+            ketQua.setKieuDangId(sanPham.getIdKieuDang().getId());
+            ketQua.setTenKieuDang(sanPham.getIdKieuDang().getTenKieuDang());
+        }
+        if (sanPham.getIdCoGiay() != null) {
+            ketQua.setCoGiayId(sanPham.getIdCoGiay().getId());
+            ketQua.setTenCoGiay(sanPham.getIdCoGiay().getTenCoGiay());
+        }
+        if (sanPham.getIdXuatXu() != null) {
+            ketQua.setXuatXuId(sanPham.getIdXuatXu().getId());
+            ketQua.setTenXuatXu(sanPham.getIdXuatXu().getTenXuatXu());
+        }
+        ketQua.setMoTaChiTiet(sanPham.getMoTaChiTiet());
+        ketQua.setTrangThai(sanPham.getTrangThai());
+        ketQua.setNgayTao(sanPham.getNgayTao());
+        ketQua.setNgayCapNhat(sanPham.getNgayCapNhat());
+        ketQua.setAnhChinh(anhChinh);
+        if (tongHop != null) {
+            ketQua.setTongSoLuong(Objects.requireNonNullElse(tongHop.getTongSoLuong(), 0L));
+            ketQua.setGiaThapNhat(tongHop.getGiaThapNhat());
+            ketQua.setGiaCaoNhat(tongHop.getGiaCaoNhat());
+            ketQua.setTongSoBienThe(Objects.requireNonNullElse(tongHop.getSoBienThe(), 0L));
+            ketQua.setSoMau(Objects.requireNonNullElse(tongHop.getSoMau(), 0L));
+            ketQua.setSoKichThuoc(Objects.requireNonNullElse(tongHop.getSoKichThuoc(), 0L));
+        }
+        return ketQua;
     }
-
 }

@@ -14,4 +14,3 @@ const pages = computed(() => {
     <div class="p-pages"><button class="p-btn" :disabled="busy || page.number === 0" aria-label="Trang trước" @click="emit('change', page.number - 1)"><i class="bi bi-chevron-left"></i></button><button v-for="n in pages" :key="n" class="p-btn" :class="{ primary: n === page.number }" :disabled="busy" :aria-current="n === page.number ? 'page' : undefined" @click="emit('change', n)">{{ n + 1 }}</button><span v-if="page.totalPages > 5">{{ page.number + 1 }} / {{ page.totalPages }}</span><button class="p-btn" :disabled="busy || page.number + 1 >= page.totalPages" aria-label="Trang sau" @click="emit('change', page.number + 1)"><i class="bi bi-chevron-right"></i></button></div>
   </div>
 </template>
-

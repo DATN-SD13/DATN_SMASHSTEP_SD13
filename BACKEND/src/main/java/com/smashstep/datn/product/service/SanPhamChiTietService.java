@@ -1,14 +1,15 @@
 package com.smashstep.datn.product.service;
 
-import com.smashstep.datn.product.dto.ProductDtos.*;
+import com.smashstep.datn.common.exception.AppException;
+import com.smashstep.datn.common.response.PageResponse;
 import com.smashstep.datn.product.dto.*;
 import com.smashstep.datn.product.entity.*;
 import com.smashstep.datn.product.repository.*;
+import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.data.jpa.domain.Specification;
-import jakarta.persistence.criteria.Predicate;
 import java.time.LocalDateTime;
 import java.util.*;
 
@@ -16,160 +17,226 @@ import java.util.*;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class SanPhamChiTietService {
-    private final SanPhamChiTietRepository variants;
-    private final SanPhamRepository products;
-    private final MauSacRepository colors;
-    private final KichThuocRepository sizes;
-    private final HinhAnhSanPhamRepository images;
+    private final SanPhamChiTietRepository sanPhamChiTietRepository;
+    private final SanPhamRepository sanPhamRepository;
+    private final MauSacRepository mauSacRepository;
+    private final KichThuocRepository kichThuocRepository;
+    private final HinhAnhSanPhamRepository hinhAnhRepository;
 
-    public PageResponse<VariantResponse> getVariants(int page, int size, String keyword, Integer status,
-            Long productId, Long colorId, Long sizeId) {
-        return getVariants(page, size, keyword, status, productId, colorId, sizeId, null);
+    public PageResponse<BienTheResponse> layDanhSach(int trang, int kichThuocTrang,
+            String tuKhoa, Integer trangThai, Long sanPhamId, Long mauSacId, Long kichThuocId) {
+        return layDanhSach(trang, kichThuocTrang, tuKhoa, trangThai, sanPhamId, mauSacId, kichThuocId, null);
     }
 
-    public PageResponse<VariantResponse> getVariants(int page, int size, String keyword, Integer status,
-            Long productId, Long colorId, Long sizeId, Boolean active) {
-        ProductRules.status(status);
-        Specification<SanPhamChiTiet> filter = (root, query, cb) -> {
-            List<Predicate> predicates = new ArrayList<>();
-            if (!ProductRules.trim(keyword).isEmpty()) {
-                String pattern = ProductRules.like(keyword);
-                predicates.add(cb.or(cb.like(cb.lower(root.get("sku")), pattern, '\\'),
-                        cb.like(cb.lower(root.get("maChiTietSanPham")), pattern, '\\'),
-                        cb.like(cb.lower(root.get("idSanPham").get("maSanPham")), pattern, '\\'),
-                        cb.like(cb.lower(root.get("idSanPham").get("tenSanPham")), pattern, '\\')));
+    public PageResponse<BienTheResponse> layDanhSach(int trang, int kichThuocTrang,
+            String tuKhoa, Integer trangThai, Long sanPhamId, Long mauSacId, Long kichThuocId, Boolean kichHoat) {
+        QuyTacSanPham.kiemTraTrangThai(trangThai);
+        Specification<SanPhamChiTiet> boLoc = (bang, truyVan, tieuChi) -> {
+            List<Predicate> dieuKien = new ArrayList<>();
+            if (!QuyTacSanPham.boKhoangTrang(tuKhoa).isEmpty()) {
+                String mauTimKiem = QuyTacSanPham.taoMauTimKiem(tuKhoa);
+                dieuKien.add(tieuChi.or(
+                        tieuChi.like(tieuChi.lower(bang.get("sku")), mauTimKiem, '\\'),
+                        tieuChi.like(tieuChi.lower(bang.get("maChiTietSanPham")), mauTimKiem, '\\'),
+                        tieuChi.like(tieuChi.lower(bang.get("idSanPham").get("maSanPham")), mauTimKiem, '\\'),
+                        tieuChi.like(tieuChi.lower(bang.get("idSanPham").get("tenSanPham")), mauTimKiem, '\\')));
             }
-            if (status != null) predicates.add(cb.equal(root.get("trangThai"), status));
-            if (active != null) predicates.add(cb.equal(root.get("kichHoat"), active));
-            if (productId != null) predicates.add(cb.equal(root.get("idSanPham").get("id"), productId));
-            if (colorId != null) predicates.add(cb.equal(root.get("idMauSac").get("id"), colorId));
-            if (sizeId != null) predicates.add(cb.equal(root.get("idKichThuoc").get("id"), sizeId));
-            return cb.and(predicates.toArray(Predicate[]::new));
+            if (trangThai != null) {
+                dieuKien.add(tieuChi.equal(bang.get("trangThai"), trangThai));
+            }
+            if (kichHoat != null) {
+                dieuKien.add(tieuChi.equal(bang.get("kichHoat"), kichHoat));
+            }
+            if (sanPhamId != null) {
+                dieuKien.add(tieuChi.equal(bang.get("idSanPham").get("id"), sanPhamId));
+            }
+            if (mauSacId != null) {
+                dieuKien.add(tieuChi.equal(bang.get("idMauSac").get("id"), mauSacId));
+            }
+            if (kichThuocId != null) {
+                dieuKien.add(tieuChi.equal(bang.get("idKichThuoc").get("id"), kichThuocId));
+            }
+            return tieuChi.and(dieuKien.toArray(Predicate[]::new));
         };
-        var result = variants.findAll(filter, ProductRules.page(page, size));
-        Map<Long, String> mainImages = HinhAnhSanPhamService.mainImageUrls(images,
-                result.getContent().stream().map(v -> v.getIdSanPham().getId()).distinct().toList());
-        return PageResponse.from(result.map(v -> withImage(v, mainImages.get(v.getIdSanPham().getId()))));
+        var ketQua = sanPhamChiTietRepository.findAll(boLoc,
+                QuyTacSanPham.taoPhanTrang(trang, kichThuocTrang));
+        List<Long> danhSachSanPhamId = ketQua.getContent().stream()
+                .map(chiTiet -> chiTiet.getIdSanPham().getId()).distinct().toList();
+        Map<Long, String> anhChinh = HinhAnhSanPhamService.layAnhChinh(hinhAnhRepository, danhSachSanPhamId);
+        return PageResponse.from(ketQua.map(chiTiet ->
+                chuyenSangResponse(chiTiet, anhChinh.get(chiTiet.getIdSanPham().getId()))));
     }
 
-    public List<VariantResponse> getVariantsByProduct(Long productId) {
-        products.findById(productId).orElseThrow(() -> ProductException.notFound("Không tìm thấy sản phẩm"));
-        String mainImage = HinhAnhSanPhamService.mainImageUrls(images, List.of(productId)).get(productId);
-        return variants.findByIdSanPham_IdOrderByIdAsc(productId).stream()
-                .map(v -> withImage(v, mainImage)).toList();
-    }
-
-    public VariantResponse getVariantById(Long id) {
-        SanPhamChiTiet variant = find(id);
-        Long productId = variant.getIdSanPham().getId();
-        return withImage(variant, HinhAnhSanPhamService.mainImageUrls(images, List.of(productId)).get(productId));
-    }
-
-    static VariantResponse withImage(SanPhamChiTiet variant, String mainImage) {
-        VariantResponse response = toResponse(variant);
-        response.setAnhChinh(mainImage);
-        return response;
-    }
-
-    @Transactional
-    public VariantResponse createVariant(VariantCreateRequest request) {
-        if (request.getSanPhamId() == null) throw ProductException.badRequest("ID sản phẩm không được trống");
-        return createVariant(request.getSanPhamId(), request);
-    }
-
-    @Transactional
-    public VariantResponse createVariant(Long productId, VariantCreateRequest request) {
-        if (request.getSanPhamId() != null && !productId.equals(request.getSanPhamId()))
-            throw ProductException.badRequest("Biến thể phải thuộc sản phẩm đang chọn");
-        request.setSanPhamId(productId);
-        return createOne(lockProduct(productId), request);
-    }
-
-    @Transactional
-    public List<VariantResponse> createBatch(Long productId, List<VariantCreateRequest> requests) {
-        SanPham product = lockProduct(productId);
-        Set<String> codes = new HashSet<>(), skus = new HashSet<>(), combinations = new HashSet<>();
-        for (VariantCreateRequest r : requests) {
-            if (r.getSanPhamId() != null && !productId.equals(r.getSanPhamId()))
-                throw ProductException.badRequest("Biến thể phải thuộc sản phẩm đang chọn");
-            r.setSanPhamId(productId);
-            if (!codes.add(ProductRules.trim(r.getMaChiTietSanPham()).toLowerCase(Locale.ROOT)))
-                throw ProductException.conflict("Mã biến thể trùng trong danh sách tạo");
-            if (!skus.add(ProductRules.trim(r.getSku()).toLowerCase(Locale.ROOT)))
-                throw ProductException.conflict("SKU trùng trong danh sách tạo");
-            if (!combinations.add(r.getMauSacId() + ":" + r.getKichThuocId()))
-                throw ProductException.conflict("Tổ hợp màu sắc và kích thước trùng trong danh sách tạo");
+    public List<BienTheResponse> layTheoSanPham(Long sanPhamId) {
+        sanPhamRepository.findById(sanPhamId)
+                .orElseThrow(() -> AppException.notFound("Không tìm thấy sản phẩm"));
+        String anhChinh = HinhAnhSanPhamService.layAnhChinh(hinhAnhRepository, List.of(sanPhamId)).get(sanPhamId);
+        List<BienTheResponse> ketQua = new ArrayList<>();
+        for (SanPhamChiTiet chiTiet : sanPhamChiTietRepository.findByIdSanPham_IdOrderByIdAsc(sanPhamId)) {
+            ketQua.add(chuyenSangResponse(chiTiet, anhChinh));
         }
-        List<VariantResponse> result = new ArrayList<>();
-        for (VariantCreateRequest request : requests) result.add(createOne(product, request));
-        return result;
+        return ketQua;
     }
 
-    private VariantResponse createOne(SanPham product, VariantCreateRequest r) {
-        SanPhamChiTiet v = new SanPhamChiTiet();
-        v.setIdSanPham(product);
-        v.setNgayTao(LocalDateTime.now());
-        apply(v, r);
-        return toResponse(variants.save(v));
+    public BienTheResponse layChiTiet(Long id) {
+        SanPhamChiTiet chiTiet = timChiTiet(id);
+        Long sanPhamId = chiTiet.getIdSanPham().getId();
+        String anhChinh = HinhAnhSanPhamService.layAnhChinh(hinhAnhRepository, List.of(sanPhamId)).get(sanPhamId);
+        return chuyenSangResponse(chiTiet, anhChinh);
     }
 
     @Transactional
-    public VariantResponse updateVariant(Long id, VariantUpdateRequest update) {
-        VariantCreateRequest request = update.toVariantCreateRequest();
-        SanPhamChiTiet v = find(id);
-        if (request.getSanPhamId() == null) request.setSanPhamId(v.getIdSanPham().getId());
-        if (request.getMaChiTietSanPham() == null) request.setMaChiTietSanPham(v.getMaChiTietSanPham());
-        if (!v.getIdSanPham().getId().equals(request.getSanPhamId()))
-            throw ProductException.badRequest("Không thể chuyển biến thể sang sản phẩm khác");
-        lockProduct(request.getSanPhamId());
-        apply(v, request);
-        v.setNgayCapNhat(LocalDateTime.now());
-        return toResponse(variants.save(v));
+    public BienTheResponse themSanPhamChiTiet(SanPhamChiTietThemRequest yeuCau) {
+        if (yeuCau.getSanPhamId() == null) {
+            throw AppException.badRequest("ID sản phẩm không được trống");
+        }
+        return themSanPhamChiTiet(yeuCau.getSanPhamId(), yeuCau);
     }
 
     @Transactional
-    public VariantResponse updateStatus(Long id, Integer status) {
-        ProductRules.status(status);
-        SanPhamChiTiet v = find(id);
-        lockProduct(v.getIdSanPham().getId());
-        v.setTrangThai(status);
-        v.setNgayCapNhat(LocalDateTime.now());
-        return toResponse(variants.save(v));
+    public BienTheResponse themSanPhamChiTiet(Long sanPhamId, SanPhamChiTietThemRequest yeuCau) {
+        if (yeuCau.getSanPhamId() != null && !sanPhamId.equals(yeuCau.getSanPhamId())) {
+            throw AppException.badRequest("Biến thể phải thuộc sản phẩm đang chọn");
+        }
+        yeuCau.setSanPhamId(sanPhamId);
+        return luuBienTheMoi(khoaSanPham(sanPhamId), yeuCau);
     }
 
-    private void apply(SanPhamChiTiet v, VariantCreateRequest r) {
-        Long id = v.getId() == null ? 0L : v.getId();
-        String code = ProductRules.trim(r.getMaChiTietSanPham()), sku = ProductRules.trim(r.getSku());
-        if (variants.existsByMaChiTietSanPhamIgnoreCaseAndIdNot(code, id))
-            throw ProductException.conflict("Mã biến thể đã tồn tại");
-        if (variants.existsBySkuIgnoreCaseAndIdNot(sku, id))
-            throw ProductException.conflict("SKU đã tồn tại");
-        if (variants.existsByIdSanPham_IdAndIdMauSac_IdAndIdKichThuoc_IdAndIdNot(r.getSanPhamId(), r.getMauSacId(), r.getKichThuocId(), id))
-            throw ProductException.conflict("Sản phẩm đã có biến thể với màu sắc và kích thước này");
-        MauSac color = colors.findById(r.getMauSacId()).orElseThrow(() -> ProductException.badRequest("Màu sắc không tồn tại"));
-        KichThuoc size = sizes.findById(r.getKichThuocId()).orElseThrow(() -> ProductException.badRequest("Kích thước không tồn tại"));
-        SanPhamService.selected(color.getTrangThai(), v.getIdMauSac() == null ? null : v.getIdMauSac().getId(), color.getId());
-        SanPhamService.selected(size.getTrangThai(), v.getIdKichThuoc() == null ? null : v.getIdKichThuoc().getId(), size.getId());
-        v.setMaChiTietSanPham(code); v.setSku(sku); v.setIdMauSac(color); v.setIdKichThuoc(size);
-        v.setGiaBan(r.getGiaBan()); v.setSoLuong(r.getSoLuong()); v.setKichHoat(r.getKichHoat()); v.setTrangThai(r.getTrangThai());
+    @Transactional
+    public List<BienTheResponse> themDanhSachBienThe(Long sanPhamId, List<SanPhamChiTietThemRequest> danhSach) {
+        SanPham sanPham = khoaSanPham(sanPhamId);
+        Set<String> danhSachMa = new HashSet<>();
+        Set<String> danhSachSku = new HashSet<>();
+        Set<String> danhSachMauVaSize = new HashSet<>();
+        for (SanPhamChiTietThemRequest yeuCau : danhSach) {
+            if (yeuCau.getSanPhamId() != null && !sanPhamId.equals(yeuCau.getSanPhamId())) {
+                throw AppException.badRequest("Biến thể phải thuộc sản phẩm đang chọn");
+            }
+            yeuCau.setSanPhamId(sanPhamId);
+            String ma = QuyTacSanPham.boKhoangTrang(yeuCau.getMaChiTietSanPham()).toLowerCase(Locale.ROOT);
+            String sku = QuyTacSanPham.boKhoangTrang(yeuCau.getSku()).toLowerCase(Locale.ROOT);
+            if (!danhSachMa.add(ma)) {
+                throw AppException.conflict("Mã chi tiết sản phẩm trùng trong danh sách tạo");
+            }
+            if (!danhSachSku.add(sku)) {
+                throw AppException.conflict("SKU trùng trong danh sách tạo");
+            }
+            if (!danhSachMauVaSize.add(yeuCau.getMauSacId() + ":" + yeuCau.getKichThuocId())) {
+                throw AppException.conflict("Biến thể màu và kích thước trùng trong danh sách tạo");
+            }
+        }
+        List<BienTheResponse> ketQua = new ArrayList<>();
+        for (SanPhamChiTietThemRequest yeuCau : danhSach) {
+            ketQua.add(luuBienTheMoi(sanPham, yeuCau));
+        }
+        return ketQua;
     }
 
-    private SanPham lockProduct(Long id) {
-        return products.findLockedById(id).orElseThrow(() -> ProductException.notFound("Không tìm thấy sản phẩm"));
-    }
-    private SanPhamChiTiet find(Long id) {
-        return variants.findById(id).orElseThrow(() -> ProductException.notFound("Không tìm thấy biến thể"));
+    private BienTheResponse luuBienTheMoi(SanPham sanPham, SanPhamChiTietThemRequest yeuCau) {
+        SanPhamChiTiet chiTiet = new SanPhamChiTiet();
+        chiTiet.setIdSanPham(sanPham);
+        chiTiet.setNgayTao(LocalDateTime.now());
+        capNhatDuLieu(chiTiet, yeuCau);
+        return chuyenSangResponse(sanPhamChiTietRepository.save(chiTiet), null);
     }
 
-    public static VariantResponse toResponse(SanPhamChiTiet v) {
-        return new VariantResponse(v.getId(), v.getIdSanPham().getId(), v.getIdSanPham().getMaSanPham(),
-                v.getIdSanPham().getTenSanPham(), v.getMaChiTietSanPham(), v.getSku(),
-                v.getIdMauSac() == null ? null : v.getIdMauSac().getId(),
-                v.getIdMauSac() == null ? null : v.getIdMauSac().getTenMauSac(),
-                v.getIdMauSac() == null ? null : v.getIdMauSac().getMaMauHex(),
-                v.getIdKichThuoc() == null ? null : v.getIdKichThuoc().getId(),
-                v.getIdKichThuoc() == null ? null : v.getIdKichThuoc().getGiaTri(),
-                v.getSoLuong(), v.getGiaBan(), v.getKichHoat(), v.getTrangThai(), v.getNgayTao(), v.getNgayCapNhat(), null,
-                v.getIdMauSac() == null ? null : v.getIdMauSac().getMaMauSac());
+    @Transactional
+    public BienTheResponse suaSanPhamChiTiet(Long id, SanPhamChiTietSuaRequest yeuCauSua) {
+        SanPhamChiTietThemRequest yeuCau = yeuCauSua.chuyenSangThemRequest();
+        SanPhamChiTiet chiTiet = timChiTiet(id);
+        if (yeuCau.getSanPhamId() == null) {
+            yeuCau.setSanPhamId(chiTiet.getIdSanPham().getId());
+        }
+        if (yeuCau.getMaChiTietSanPham() == null) {
+            yeuCau.setMaChiTietSanPham(chiTiet.getMaChiTietSanPham());
+        }
+        if (!chiTiet.getIdSanPham().getId().equals(yeuCau.getSanPhamId())) {
+            throw AppException.badRequest("Không thể chuyển biến thể sang sản phẩm khác");
+        }
+        khoaSanPham(yeuCau.getSanPhamId());
+        capNhatDuLieu(chiTiet, yeuCau);
+        chiTiet.setNgayCapNhat(LocalDateTime.now());
+        return chuyenSangResponse(sanPhamChiTietRepository.save(chiTiet), null);
+    }
+
+    @Transactional
+    public BienTheResponse doiTrangThai(Long id, Integer trangThai) {
+        QuyTacSanPham.kiemTraTrangThai(trangThai);
+        SanPhamChiTiet chiTiet = timChiTiet(id);
+        khoaSanPham(chiTiet.getIdSanPham().getId());
+        chiTiet.setTrangThai(trangThai);
+        chiTiet.setNgayCapNhat(LocalDateTime.now());
+        return chuyenSangResponse(sanPhamChiTietRepository.save(chiTiet), null);
+    }
+
+    private void capNhatDuLieu(SanPhamChiTiet chiTiet, SanPhamChiTietThemRequest yeuCau) {
+        Long id = chiTiet.getId() == null ? 0L : chiTiet.getId();
+        String ma = QuyTacSanPham.boKhoangTrang(yeuCau.getMaChiTietSanPham());
+        String sku = QuyTacSanPham.boKhoangTrang(yeuCau.getSku());
+        if (sanPhamChiTietRepository.existsByMaChiTietSanPhamIgnoreCaseAndIdNot(ma, id)) {
+            throw AppException.conflict("Mã chi tiết sản phẩm đã tồn tại");
+        }
+        if (sanPhamChiTietRepository.existsBySkuIgnoreCaseAndIdNot(sku, id)) {
+            throw AppException.conflict("SKU đã tồn tại");
+        }
+        // Không cho trùng màu và size trong cùng sản phẩm.
+        if (sanPhamChiTietRepository.existsByIdSanPham_IdAndIdMauSac_IdAndIdKichThuoc_IdAndIdNot(
+                yeuCau.getSanPhamId(), yeuCau.getMauSacId(), yeuCau.getKichThuocId(), id)) {
+            throw AppException.conflict("Biến thể màu và kích thước này đã tồn tại");
+        }
+        MauSac mauSac = mauSacRepository.findById(yeuCau.getMauSacId())
+                .orElseThrow(() -> AppException.notFound("Không tìm thấy màu sắc"));
+        KichThuoc kichThuoc = kichThuocRepository.findById(yeuCau.getKichThuocId())
+                .orElseThrow(() -> AppException.notFound("Không tìm thấy kích thước"));
+        QuyTacSanPham.kiemTraThuocTinhHoatDong(mauSac.getTrangThai(),
+                chiTiet.getIdMauSac() == null ? null : chiTiet.getIdMauSac().getId(), mauSac.getId());
+        QuyTacSanPham.kiemTraThuocTinhHoatDong(kichThuoc.getTrangThai(),
+                chiTiet.getIdKichThuoc() == null ? null : chiTiet.getIdKichThuoc().getId(), kichThuoc.getId());
+        chiTiet.setMaChiTietSanPham(ma);
+        chiTiet.setSku(sku);
+        chiTiet.setIdMauSac(mauSac);
+        chiTiet.setIdKichThuoc(kichThuoc);
+        chiTiet.setSoLuong(yeuCau.getSoLuong());
+        chiTiet.setGiaBan(yeuCau.getGiaBan());
+        chiTiet.setKichHoat(yeuCau.getKichHoat());
+        chiTiet.setTrangThai(yeuCau.getTrangThai());
+    }
+
+    private SanPham khoaSanPham(Long id) {
+        return sanPhamRepository.timVaKhoaTheoId(id)
+                .orElseThrow(() -> AppException.notFound("Không tìm thấy sản phẩm"));
+    }
+
+    private SanPhamChiTiet timChiTiet(Long id) {
+        return sanPhamChiTietRepository.findById(id)
+                .orElseThrow(() -> AppException.notFound("Không tìm thấy biến thể"));
+    }
+
+    static BienTheResponse chuyenSangResponse(SanPhamChiTiet chiTiet, String anhChinh) {
+        BienTheResponse ketQua = new BienTheResponse();
+        ketQua.setId(chiTiet.getId());
+        ketQua.setSanPhamId(chiTiet.getIdSanPham().getId());
+        ketQua.setMaSanPham(chiTiet.getIdSanPham().getMaSanPham());
+        ketQua.setTenSanPham(chiTiet.getIdSanPham().getTenSanPham());
+        ketQua.setMaChiTietSanPham(chiTiet.getMaChiTietSanPham());
+        ketQua.setSku(chiTiet.getSku());
+        if (chiTiet.getIdMauSac() != null) {
+            ketQua.setMauSacId(chiTiet.getIdMauSac().getId());
+            ketQua.setTenMauSac(chiTiet.getIdMauSac().getTenMauSac());
+            ketQua.setMaMauSac(chiTiet.getIdMauSac().getMaMauSac());
+            ketQua.setMaMauHex(chiTiet.getIdMauSac().getMaMauHex());
+        }
+        if (chiTiet.getIdKichThuoc() != null) {
+            ketQua.setKichThuocId(chiTiet.getIdKichThuoc().getId());
+            ketQua.setGiaTriKichThuoc(chiTiet.getIdKichThuoc().getGiaTri());
+        }
+        ketQua.setSoLuong(chiTiet.getSoLuong());
+        ketQua.setGiaBan(chiTiet.getGiaBan());
+        ketQua.setKichHoat(chiTiet.getKichHoat());
+        ketQua.setTrangThai(chiTiet.getTrangThai());
+        ketQua.setNgayTao(chiTiet.getNgayTao());
+        ketQua.setNgayCapNhat(chiTiet.getNgayCapNhat());
+        ketQua.setAnhChinh(anhChinh);
+        return ketQua;
     }
 }

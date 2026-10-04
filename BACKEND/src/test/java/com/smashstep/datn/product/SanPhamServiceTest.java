@@ -43,24 +43,24 @@ class SanPhamServiceTest {
     }
 
     @Test
-    void unknownAttributeReturnsBadRequestWithoutWriting() {
+    void unknownAttributeReturnsNotFoundWithoutWriting() {
         var ex = assertThrows(AppException.class, () -> service.themSanPham(request("SP002")));
-        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatus());
         verify(products, never()).save(any());
     }
 
     @Test
     void refusesChangingProductCode() {
-        when(products.findLockedById(1L)).thenReturn(Optional.of(product));
+        when(products.timVaKhoaTheoId(1L)).thenReturn(Optional.of(product));
         assertThrows(AppException.class, () -> service.suaSanPham(1L, new SanPhamSuaRequest("SP002", "Tên giày", 1L, 1L, 1L, 1L, 1L, 1L, "", 1)));
         verify(products, never()).save(any());
     }
 
     @Test
     void statusUpdateKeepsVariantsAndSetsTimestamp() {
-        when(products.findLockedById(1L)).thenReturn(Optional.of(product));
+        when(products.timVaKhoaTheoId(1L)).thenReturn(Optional.of(product));
         when(products.save(product)).thenReturn(product);
-        when(variants.summarize(List.of(1L))).thenReturn(List.of());
+        when(variants.tongHopTheoSanPham(List.of(1L))).thenReturn(List.of());
         service.doiTrangThai(1L, 0);
         assertEquals(0, product.getTrangThai());
         assertNotNull(product.getNgayCapNhat());
@@ -70,7 +70,7 @@ class SanPhamServiceTest {
 
     @Test
     void selectingNewMainImageClearsPreviousMain() {
-        when(products.findLockedById(1L)).thenReturn(Optional.of(product));
+        when(products.timVaKhoaTheoId(1L)).thenReturn(Optional.of(product));
         var previous = new HinhAnhSanPham(); previous.setId(10L); previous.setIsAnhChinh(true);
         when(images.findByIdSanPham_IdOrderByIdAsc(1L)).thenReturn(List.of(previous));
         when(images.save(any())).thenAnswer(i -> i.getArgument(0));
@@ -81,7 +81,7 @@ class SanPhamServiceTest {
 
     @Test
     void rejectsNonHttpImageAndReturns404ForUnknownProduct() {
-        when(products.findLockedById(1L)).thenReturn(Optional.of(product));
+        when(products.timVaKhoaTheoId(1L)).thenReturn(Optional.of(product));
         assertThrows(AppException.class, () -> imageService.themAnh(1L, new HinhAnhSanPhamRequest("javascript:alert(1)", true)));
         assertEquals(HttpStatus.NOT_FOUND, assertThrows(AppException.class, () -> service.layChiTietSanPham(99L)).getStatus());
         verify(images, never()).save(any());

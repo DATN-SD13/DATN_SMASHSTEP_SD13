@@ -1,46 +1,102 @@
 <script setup>
-import { ref, reactive, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { productService, errorMessage } from '../services/productService'
-const props = defineProps({ productId: Number, images: { type: Array, default: () => [] } })
-const emit = defineEmits(['changed'])
-const newImage = reactive({ urlAnh: '', isAnhChinh: false })
-const urls = ref({}), failed = ref({}), busy = ref(false), error = ref('')
-watch(() => props.images, images => {
-  urls.value = Object.fromEntries(images.map(i => [i.id, i.urlAnh]))
-  failed.value = {}
-}, { immediate: true })
-async function act(operation) {
-  if (busy.value) return
-  busy.value = true; error.value = ''
-  try { await operation(); emit('changed') } catch (e) { error.value = errorMessage(e) } finally { busy.value = false }
-}
+import { imageUrl, validateImageFile } from '../services/imageUtils'
+import ProductImagePicker from './ProductImagePicker.vue'
+import ConfirmModal from './ConfirmModal.vue'
+import { useConfirmation } from '../composables/useConfirmation'
+
+const props = defineProps({
+  productId: Number, productCode: String, images: { type: Array, default: () => [] },
+  modelValue: Array, deferred: Boolean, loading: Boolean
+})
+const emit = defineEmits(['changed', 'update:modelValue'])
+const localImages = ref([]), failed = ref({}), error = ref(''), success = ref(''), progress = ref('')
+const drafts = computed({
+  get: () => props.modelValue ?? localImages.value,
+  set: images => { localImages.value = images; emit('update:modelValue', images) }
+})
+const { confirmation, confirming: busy, confirmError, askConfirmation, cancelConfirmation, confirmAction } = useConfirmation()
+const locked = computed(() => busy.value || props.loading)
+watch(() => props.images, () => { failed.value = {} })
+
 function add() {
-  act(async () => {
-    await productService.addImage(props.productId, { urlAnh: newImage.urlAnh.trim(), isAnhChinh: newImage.isAnhChinh })
-    newImage.urlAnh = ''; newImage.isAnhChinh = false
+  if (locked.value || confirmation.value || !props.productId || !drafts.value.length) return
+  error.value = ''; success.value = ''
+  const selection = drafts.value.map(image => ({ ...image }))
+  for (const image of selection) {
+    const message = validateImageFile(image.file)
+    if (message) { error.value = message; return }
+  }
+  const id = props.productId
+  askConfirmation({ title: 'Xác nhận thêm hình ảnh',
+    message: `Bạn có chắc muốn thêm các hình ảnh đã chọn cho sản phẩm ${props.productCode || id}?`,
+    details: [{ label: 'Số ảnh', value: selection.length },
+      { label: 'Tệp ảnh', value: selection.map(image => image.file.name).join('\n') },
+      { label: 'Ảnh chính được chọn', value: selection.find(image => image.isAnhChinh)?.file.name || 'Giữ ảnh chính hiện tại; ảnh đầu tiên tự làm chính nếu chưa có ảnh.' }]
+  }, async () => {
+    let uploaded = 0
+    const remaining = selection.filter(image => drafts.value.some(item => item.key === image.key))
+    error.value = ''
+    try {
+      for (const image of remaining) {
+        progress.value = `Đang tải ảnh ${uploaded + 1}/${remaining.length}...`
+        await productService.uploadImage(id, image)
+        drafts.value = drafts.value.filter(item => item.key !== image.key)
+        uploaded++
+      }
+      success.value = 'Thêm hình ảnh thành công.'
+    } catch (e) {
+      error.value = uploaded ? `Đã tải ${uploaded} ảnh; các ảnh còn lại chưa được lưu. Bạn có thể thử lại. ${errorMessage(e)}` : errorMessage(e)
+      throw e
+    } finally {
+      progress.value = ''
+      if (uploaded) emit('changed')
+    }
   })
 }
-function update(image, main = image.isAnhChinh) {
-  act(() => productService.updateImage(props.productId, image.id, { urlAnh: urls.value[image.id].trim(), isAnhChinh: main }))
-}
-function remove(image) {
-  if (window.confirm('Gỡ ảnh này khỏi sản phẩm?')) act(() => productService.removeImage(props.productId, image.id))
+
+function askImage(title, image, action) {
+  if (locked.value || confirmation.value) return
+  error.value = ''; success.value = ''
+  const id = props.productId, imageId = image.id, urlAnh = image.urlAnh
+  askConfirmation({ title, message: `Bạn có chắc muốn ${action} cho sản phẩm ${props.productCode || id}?`,
+    details: [{ label: 'Ảnh', value: urlAnh }] }, async () => {
+    if (action === 'gỡ ảnh này') await productService.removeImage(id, imageId)
+    else await productService.updateImage(id, imageId, { urlAnh, isAnhChinh: true })
+    success.value = action === 'gỡ ảnh này' ? 'Gỡ hình ảnh thành công.' : 'Chọn ảnh chính thành công.'
+    emit('changed')
+  })
 }
 </script>
+
 <template>
   <section class="p-card">
     <h2><i class="bi bi-images"></i> Hình ảnh sản phẩm</h2>
+    <p>Ảnh được dùng chung cho các biến thể của sản phẩm. Chọn ảnh từ máy để xem trước khi lưu.</p>
     <div v-if="error" class="alert alert-danger" role="alert">{{ error }}</div>
-    <form @submit.prevent="add"><div class="p-form-grid"><label>URL ảnh HTTP/HTTPS<input v-model="newImage.urlAnh" type="url" required maxlength="1000" placeholder="https://..." :disabled="busy" /></label><label>Ảnh chính<select v-model="newImage.isAnhChinh" :disabled="busy"><option :value="false">Không</option><option :value="true">Có</option></select></label></div><div class="p-form-actions"><button class="p-btn primary" :disabled="busy"><i class="bi bi-plus-lg"></i> Thêm ảnh</button><small>Ảnh đầu tiên tự được chọn làm ảnh chính.</small></div></form>
-    <div class="p-images" style="margin-top:18px">
-      <form v-for="image in images" :key="image.id" class="p-image" @submit.prevent="update(image)">
-        <img v-if="!failed[image.id]" :src="image.urlAnh" alt="Ảnh sản phẩm" loading="lazy" referrerpolicy="no-referrer" @error="failed[image.id] = true" /><div v-else class="p-image-error">Không tải được ảnh từ URL</div>
-        <span v-if="image.isAnhChinh" class="p-badge active">Ảnh chính</span>
-        <input v-model="urls[image.id]" type="url" required maxlength="1000" aria-label="URL ảnh" :disabled="busy" />
-        <div class="p-actions"><button class="p-btn" :disabled="busy">Lưu URL</button><button v-if="!image.isAnhChinh" class="p-btn" type="button" :disabled="busy" @click="update(image, true)">Chọn ảnh chính</button><button class="p-btn danger" type="button" :disabled="busy" @click="remove(image)">Gỡ ảnh</button></div>
-      </form>
+    <div v-if="success" class="alert alert-success" role="status">{{ success }}</div>
+    <ProductImagePicker v-model="drafts" :disabled="locked" />
+    <small v-if="deferred" class="p-image-help">Ảnh đã chọn sẽ được tải lên sau khi xác nhận lưu sản phẩm.</small>
+    <div v-else class="p-form-actions">
+      <button type="button" class="p-btn primary" :disabled="locked || !drafts.length || !productId" @click="add"><i class="bi bi-plus-lg"></i> {{ busy ? 'Đang tải ảnh...' : 'Thêm ' + drafts.length + ' ảnh' }}</button>
+      <small>Ảnh đầu tiên tự được chọn làm ảnh chính.</small>
     </div>
-    <div v-if="!images.length" class="p-empty">Sản phẩm chưa có ảnh.</div>
+    <div class="p-images" style="margin-top:18px">
+      <div v-for="image in images" :key="image.id" class="p-image">
+        <img v-if="imageUrl(image.urlAnh) && !failed[image.id]" :src="imageUrl(image.urlAnh)" alt="Ảnh sản phẩm" loading="lazy" referrerpolicy="no-referrer" @error="failed[image.id] = true" />
+        <div v-else class="p-image-error">Không tải được ảnh</div>
+        <span v-if="image.isAnhChinh" class="p-badge active">Ảnh chính</span>
+        <div class="p-actions">
+          <button v-if="!image.isAnhChinh" class="p-btn" type="button" :disabled="locked" @click="askImage('Xác nhận chọn ảnh chính', image, 'chọn ảnh này làm ảnh chính')">Chọn ảnh chính</button>
+          <button class="p-btn danger" type="button" :disabled="locked" @click="askImage('Xác nhận gỡ hình ảnh', image, 'gỡ ảnh này')">Gỡ ảnh</button>
+        </div>
+      </div>
+    </div>
+    <div v-if="!images.length && !drafts.length" class="p-empty">Sản phẩm chưa có ảnh.</div>
+    <ConfirmModal v-bind="confirmation || {}" :show="!!confirmation" :loading="busy" :error="confirmError" @confirm="confirmAction" @cancel="cancelConfirmation">
+      <p v-if="progress" role="status">{{ progress }}</p>
+      <p v-if="error && !busy" class="p-field-error">{{ error }}</p>
+    </ConfirmModal>
   </section>
 </template>
-

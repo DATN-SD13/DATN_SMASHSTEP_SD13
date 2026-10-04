@@ -18,279 +18,332 @@ import java.util.*;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class ThuocTinhSanPhamService {
-    private final DanhMucRepository categories;
-    private final ThuongHieuRepository brands;
-    private final ChatLieuRepository materials;
-    private final XuatXuRepository origins;
-    private final CoGiayRepository collars;
-    private final KieuDangRepository styles;
-    private final MauSacRepository colors;
-    private final KichThuocRepository sizes;
+    private final DanhMucRepository danhMucRepository;
+    private final ThuongHieuRepository thuongHieuRepository;
+    private final ChatLieuRepository chatLieuRepository;
+    private final XuatXuRepository xuatXuRepository;
+    private final CoGiayRepository coGiayRepository;
+    private final KieuDangRepository kieuDangRepository;
+    private final MauSacRepository mauSacRepository;
+    private final KichThuocRepository kichThuocRepository;
 
-    public Map<String, List<ThuocTinhResponse>> options() {
-        Map<String, List<ThuocTinhResponse>> result = new LinkedHashMap<>();
-        result.put("categories", categories.findAll(Sort.by("id")).stream().map(this::response).toList());
-        result.put("brands", brands.findAll(Sort.by("id")).stream().map(this::response).toList());
-        result.put("materials", materials.findAll(Sort.by("id")).stream().map(this::response).toList());
-        result.put("origins", origins.findAll(Sort.by("id")).stream().map(this::response).toList());
-        result.put("collars", collars.findAll(Sort.by("id")).stream().map(this::response).toList());
-        result.put("styles", styles.findAll(Sort.by("id")).stream().map(this::response).toList());
-        result.put("colors", colors.findAll(Sort.by("id")).stream().map(this::response).toList());
-        result.put("sizes", sizes.findAll(Sort.by("id")).stream().map(this::response).toList());
-        return result;
+    public Map<String, List<ThuocTinhResponse>> layLuaChon() {
+        Map<String, List<ThuocTinhResponse>> ketQua = new LinkedHashMap<>();
+        ketQua.put("categories", danhMucRepository.findAll(Sort.by("id")).stream().map(this::chuyenSangResponse).toList());
+        ketQua.put("brands", thuongHieuRepository.findAll(Sort.by("id")).stream().map(this::chuyenSangResponse).toList());
+        ketQua.put("materials", chatLieuRepository.findAll(Sort.by("id")).stream().map(this::chuyenSangResponse).toList());
+        ketQua.put("origins", xuatXuRepository.findAll(Sort.by("id")).stream().map(this::chuyenSangResponse).toList());
+        ketQua.put("collars", coGiayRepository.findAll(Sort.by("id")).stream().map(this::chuyenSangResponse).toList());
+        ketQua.put("styles", kieuDangRepository.findAll(Sort.by("id")).stream().map(this::chuyenSangResponse).toList());
+        ketQua.put("colors", mauSacRepository.findAll(Sort.by("id")).stream().map(this::chuyenSangResponse).toList());
+        ketQua.put("sizes", kichThuocRepository.findAll(Sort.by("id")).stream().map(this::chuyenSangResponse).toList());
+        return ketQua;
     }
 
-    public PageResponse<ThuocTinhResponse> list(String type, int page, int size, String keyword, Integer status) {
-        QuyTacSanPham.status(status);
-        var pageable = QuyTacSanPham.page(page, size);
-        return switch (type) {
-            case "categories" -> PageResponse.from(categories.findAll(search(keyword, status, "maDanhMuc", "tenDanhMuc"), pageable).map(this::response));
-            case "brands" -> PageResponse.from(brands.findAll(search(keyword, status, "maThuongHieu", "tenThuongHieu"), pageable).map(this::response));
-            case "materials" -> PageResponse.from(materials.findAll(search(keyword, status, "maChatLieu", "tenChatLieu"), pageable).map(this::response));
-            case "origins" -> PageResponse.from(origins.findAll(search(keyword, status, "maXuatXu", "tenXuatXu"), pageable).map(this::response));
-            case "collars" -> PageResponse.from(collars.findAll(search(keyword, status, "maCoGiay", "tenCoGiay"), pageable).map(this::response));
-            case "styles" -> PageResponse.from(styles.findAll(search(keyword, status, "maKieuDang", "tenKieuDang"), pageable).map(this::response));
-            case "colors" -> PageResponse.from(colors.findAll(search(keyword, status, "maMauSac", "tenMauSac"), pageable).map(this::response));
-            case "sizes" -> PageResponse.from(sizes.findAll(search(keyword, status, null, "giaTri"), pageable).map(this::response));
-            default -> throw AppException.badRequest("Loại thuộc tính không hợp lệ");
-        };
-    }
-
-    private <T> Specification<T> search(String keyword, Integer status, String codeField, String nameField) {
-        return (root, query, cb) -> {
-            List<Predicate> predicates = new ArrayList<>();
-            if (!QuyTacSanPham.trim(keyword).isEmpty()) {
-                String pattern = QuyTacSanPham.like(keyword);
-                Predicate name = cb.like(cb.lower(root.get(nameField)), pattern, '\\');
-                predicates.add(codeField == null ? name : cb.or(name, cb.like(cb.lower(root.get(codeField)), pattern, '\\')));
-            }
-            if (status != null) predicates.add(cb.equal(root.get("trangThai"), status));
-            return cb.and(predicates.toArray(Predicate[]::new));
-        };
-    }
-
-    public ThuocTinhResponse detail(String type, Long id) {
-        return switch (type) {
-            case "categories" -> response(categories.findById(id).orElseThrow(() -> AppException.notFound("Không tìm thấy danh mục")));
-            case "brands" -> response(brands.findById(id).orElseThrow(() -> AppException.notFound("Không tìm thấy thương hiệu")));
-            case "materials" -> response(materials.findById(id).orElseThrow(() -> AppException.notFound("Không tìm thấy chất liệu")));
-            case "origins" -> response(origins.findById(id).orElseThrow(() -> AppException.notFound("Không tìm thấy xuất xứ")));
-            case "collars" -> response(collars.findById(id).orElseThrow(() -> AppException.notFound("Không tìm thấy cổ giày")));
-            case "styles" -> response(styles.findById(id).orElseThrow(() -> AppException.notFound("Không tìm thấy kiểu dáng")));
-            case "colors" -> response(colors.findById(id).orElseThrow(() -> AppException.notFound("Không tìm thấy màu sắc")));
-            case "sizes" -> response(sizes.findById(id).orElseThrow(() -> AppException.notFound("Không tìm thấy kích thước")));
-            default -> throw AppException.badRequest("Loại thuộc tính không hợp lệ");
-        };
-    }
-
-    private <T> Specification<T> duplicate(Long id, String codeField, String nameField, ThuocTinhRequest r) {
-        return (root, query, cb) -> {
-            Predicate name = cb.equal(cb.lower(root.get(nameField)), QuyTacSanPham.trim(r.getTen()).toLowerCase(Locale.ROOT));
-            Predicate same = codeField == null ? name : cb.or(name,
-                    cb.equal(cb.lower(root.get(codeField)), QuyTacSanPham.trim(r.getMa()).toLowerCase(Locale.ROOT)));
-            return cb.and(cb.notEqual(root.get("id"), id == null ? 0L : id), same);
-        };
-    }
-
-    @Transactional
-    public ThuocTinhResponse save(String type, Long id, ThuocTinhRequest r) {
-        QuyTacSanPham.status(r.getTrangThai());
-        if (!"sizes".equals(type) && !QuyTacSanPham.trim(r.getMa()).matches("^[A-Za-z0-9][A-Za-z0-9._-]{0,49}$"))
-            throw AppException.badRequest("Mã thuộc tính bắt buộc, tối đa 50 ký tự Latin/số, dấu chấm, gạch dưới hoặc gạch ngang");
-        if ("sizes".equals(type) && QuyTacSanPham.trim(r.getTen()).length() > 50)
-            throw AppException.badRequest("Giá trị kích thước tối đa 50 ký tự");
-        if ("colors".equals(type) && !QuyTacSanPham.trim(r.getMaMauHex()).matches("^#[0-9a-fA-F]{6}$"))
-            throw AppException.badRequest("Mã HEX phải có dạng #RRGGBB");
-        return switch (type) {
-            case "categories" -> saveDanhMuc(id, r);
-            case "brands" -> saveThuongHieu(id, r);
-            case "materials" -> saveChatLieu(id, r);
-            case "origins" -> saveXuatXu(id, r);
-            case "collars" -> saveCoGiay(id, r);
-            case "styles" -> saveKieuDang(id, r);
-            case "colors" -> saveMauSac(id, r);
-            case "sizes" -> saveKichThuoc(id, r);
-            default -> throw AppException.badRequest("Loại thuộc tính không hợp lệ");
-        };
-    }
-
-    @Transactional
-    public ThuocTinhResponse changeStatus(String type, Long id, Integer status) {
-        QuyTacSanPham.status(status);
-        switch (type) {
+    public PageResponse<ThuocTinhResponse> layDanhSach(String loai, int trang, int kichThuocTrang, String tuKhoa, Integer trangThai) {
+        QuyTacSanPham.kiemTraTrangThai(trangThai);
+        var phanTrang = QuyTacSanPham.taoPhanTrang(trang, kichThuocTrang);
+        return switch (loai) {
             case "categories" -> {
-                DanhMuc item = categories.findById(id).orElseThrow(() -> AppException.notFound("Không tìm thấy thuộc tính"));
-                item.setTrangThai(status);
-                return response(categories.save(item));
+                var danhSach = danhMucRepository.findAll(
+                        timKiem(tuKhoa, trangThai, "maDanhMuc", "tenDanhMuc"), phanTrang);
+                yield PageResponse.from(danhSach.map(this::chuyenSangResponse));
             }
             case "brands" -> {
-                ThuongHieu item = brands.findById(id).orElseThrow(() -> AppException.notFound("Không tìm thấy thuộc tính"));
-                item.setTrangThai(status);
-                return response(brands.save(item));
+                var danhSach = thuongHieuRepository.findAll(
+                        timKiem(tuKhoa, trangThai, "maThuongHieu", "tenThuongHieu"), phanTrang);
+                yield PageResponse.from(danhSach.map(this::chuyenSangResponse));
             }
             case "materials" -> {
-                ChatLieu item = materials.findById(id).orElseThrow(() -> AppException.notFound("Không tìm thấy thuộc tính"));
-                item.setTrangThai(status);
-                return response(materials.save(item));
+                var danhSach = chatLieuRepository.findAll(
+                        timKiem(tuKhoa, trangThai, "maChatLieu", "tenChatLieu"), phanTrang);
+                yield PageResponse.from(danhSach.map(this::chuyenSangResponse));
             }
             case "origins" -> {
-                XuatXu item = origins.findById(id).orElseThrow(() -> AppException.notFound("Không tìm thấy thuộc tính"));
-                item.setTrangThai(status);
-                return response(origins.save(item));
+                var danhSach = xuatXuRepository.findAll(
+                        timKiem(tuKhoa, trangThai, "maXuatXu", "tenXuatXu"), phanTrang);
+                yield PageResponse.from(danhSach.map(this::chuyenSangResponse));
             }
             case "collars" -> {
-                CoGiay item = collars.findById(id).orElseThrow(() -> AppException.notFound("Không tìm thấy thuộc tính"));
-                item.setTrangThai(status);
-                return response(collars.save(item));
+                var danhSach = coGiayRepository.findAll(
+                        timKiem(tuKhoa, trangThai, "maCoGiay", "tenCoGiay"), phanTrang);
+                yield PageResponse.from(danhSach.map(this::chuyenSangResponse));
             }
             case "styles" -> {
-                KieuDang item = styles.findById(id).orElseThrow(() -> AppException.notFound("Không tìm thấy thuộc tính"));
-                item.setTrangThai(status);
-                return response(styles.save(item));
+                var danhSach = kieuDangRepository.findAll(
+                        timKiem(tuKhoa, trangThai, "maKieuDang", "tenKieuDang"), phanTrang);
+                yield PageResponse.from(danhSach.map(this::chuyenSangResponse));
             }
             case "colors" -> {
-                MauSac item = colors.findById(id).orElseThrow(() -> AppException.notFound("Không tìm thấy thuộc tính"));
-                item.setTrangThai(status); item.setNgayCapNhat(LocalDateTime.now());
-                return response(colors.save(item));
+                var danhSach = mauSacRepository.findAll(
+                        timKiem(tuKhoa, trangThai, "maMauSac", "tenMauSac"), phanTrang);
+                yield PageResponse.from(danhSach.map(this::chuyenSangResponse));
             }
             case "sizes" -> {
-                KichThuoc item = sizes.findById(id).orElseThrow(() -> AppException.notFound("Không tìm thấy thuộc tính"));
-                item.setTrangThai(status); item.setNgayCapNhat(LocalDateTime.now());
-                return response(sizes.save(item));
+                var danhSach = kichThuocRepository.findAll(
+                        timKiem(tuKhoa, trangThai, null, "giaTri"), phanTrang);
+                yield PageResponse.from(danhSach.map(this::chuyenSangResponse));
+            }
+            default -> throw AppException.badRequest("Loại thuộc tính không hợp lệ");
+        };
+    }
+
+    private <T> Specification<T> timKiem(String tuKhoa, Integer trangThai, String truongMa, String truongTen) {
+        return (bang, truyVan, tieuChi) -> {
+            List<Predicate> dieuKien = new ArrayList<>();
+            if (!QuyTacSanPham.boKhoangTrang(tuKhoa).isEmpty()) {
+                String mauTimKiem = QuyTacSanPham.taoMauTimKiem(tuKhoa);
+                Predicate dieuKienTen = tieuChi.like(tieuChi.lower(bang.get(truongTen)), mauTimKiem, '\\');
+                dieuKien.add(truongMa == null ? dieuKienTen : tieuChi.or(dieuKienTen, tieuChi.like(tieuChi.lower(bang.get(truongMa)), mauTimKiem, '\\')));
+            }
+            if (trangThai != null) dieuKien.add(tieuChi.equal(bang.get("trangThai"), trangThai));
+            return tieuChi.and(dieuKien.toArray(Predicate[]::new));
+        };
+    }
+
+    public ThuocTinhResponse layChiTiet(String loai, Long id) {
+        return switch (loai) {
+            case "categories" -> chuyenSangResponse(danhMucRepository.findById(id)
+                    .orElseThrow(() -> AppException.notFound("Không tìm thấy danh mục")));
+            case "brands" -> chuyenSangResponse(thuongHieuRepository.findById(id)
+                    .orElseThrow(() -> AppException.notFound("Không tìm thấy thương hiệu")));
+            case "materials" -> chuyenSangResponse(chatLieuRepository.findById(id)
+                    .orElseThrow(() -> AppException.notFound("Không tìm thấy chất liệu")));
+            case "origins" -> chuyenSangResponse(xuatXuRepository.findById(id)
+                    .orElseThrow(() -> AppException.notFound("Không tìm thấy xuất xứ")));
+            case "collars" -> chuyenSangResponse(coGiayRepository.findById(id)
+                    .orElseThrow(() -> AppException.notFound("Không tìm thấy cổ giày")));
+            case "styles" -> chuyenSangResponse(kieuDangRepository.findById(id)
+                    .orElseThrow(() -> AppException.notFound("Không tìm thấy kiểu dáng")));
+            case "colors" -> chuyenSangResponse(mauSacRepository.findById(id)
+                    .orElseThrow(() -> AppException.notFound("Không tìm thấy màu sắc")));
+            case "sizes" -> chuyenSangResponse(kichThuocRepository.findById(id)
+                    .orElseThrow(() -> AppException.notFound("Không tìm thấy kích thước")));
+            default -> throw AppException.badRequest("Loại thuộc tính không hợp lệ");
+        };
+    }
+
+    private <T> Specification<T> kiemTraTrung(Long id, String truongMa, String truongTen, ThuocTinhRequest yeuCau) {
+        String truong = truongMa == null ? truongTen : truongMa;
+        String giaTri = truongMa == null ? yeuCau.getTen() : yeuCau.getMa();
+        return (bang, truyVan, tieuChi) -> tieuChi.and(
+                tieuChi.notEqual(bang.get("id"), id == null ? 0L : id),
+                tieuChi.equal(tieuChi.lower(bang.get(truong)),
+                        QuyTacSanPham.boKhoangTrang(giaTri).toLowerCase(Locale.ROOT)));
+    }
+
+    @Transactional
+    public ThuocTinhResponse luuThuocTinh(String loai, Long id, ThuocTinhRequest yeuCau) {
+        QuyTacSanPham.kiemTraTrangThai(yeuCau.getTrangThai());
+        if (!"sizes".equals(loai) && !QuyTacSanPham.boKhoangTrang(yeuCau.getMa()).matches("^[A-Za-z0-9][A-Za-z0-9._-]{0,49}$"))
+            throw AppException.badRequest("Mã thuộc tính bắt buộc, tối đa 50 ký tự Latin/số, dấu chấm, gạch dưới hoặc gạch ngang");
+        if ("sizes".equals(loai) && QuyTacSanPham.boKhoangTrang(yeuCau.getTen()).length() > 50)
+            throw AppException.badRequest("Giá trị kích thước tối đa 50 ký tự");
+        if ("colors".equals(loai) && !QuyTacSanPham.boKhoangTrang(yeuCau.getMaMauHex()).matches("^#[0-9a-fA-F]{6}$"))
+            throw AppException.badRequest("Mã HEX phải có dạng #RRGGBB");
+        return switch (loai) {
+            case "categories" -> luuDanhMuc(id, yeuCau);
+            case "brands" -> luuThuongHieu(id, yeuCau);
+            case "materials" -> luuChatLieu(id, yeuCau);
+            case "origins" -> luuXuatXu(id, yeuCau);
+            case "collars" -> luuCoGiay(id, yeuCau);
+            case "styles" -> luuKieuDang(id, yeuCau);
+            case "colors" -> luuMauSac(id, yeuCau);
+            case "sizes" -> luuKichThuoc(id, yeuCau);
+            default -> throw AppException.badRequest("Loại thuộc tính không hợp lệ");
+        };
+    }
+
+    @Transactional
+    public ThuocTinhResponse doiTrangThai(String loai, Long id, Integer trangThai) {
+        QuyTacSanPham.kiemTraTrangThai(trangThai);
+        switch (loai) {
+            case "categories" -> {
+                DanhMuc thuocTinh = danhMucRepository.findById(id).orElseThrow(() -> AppException.notFound("Không tìm thấy thuộc tính"));
+                thuocTinh.setTrangThai(trangThai);
+                return chuyenSangResponse(danhMucRepository.save(thuocTinh));
+            }
+            case "brands" -> {
+                ThuongHieu thuocTinh = thuongHieuRepository.findById(id).orElseThrow(() -> AppException.notFound("Không tìm thấy thuộc tính"));
+                thuocTinh.setTrangThai(trangThai);
+                return chuyenSangResponse(thuongHieuRepository.save(thuocTinh));
+            }
+            case "materials" -> {
+                ChatLieu thuocTinh = chatLieuRepository.findById(id).orElseThrow(() -> AppException.notFound("Không tìm thấy thuộc tính"));
+                thuocTinh.setTrangThai(trangThai);
+                return chuyenSangResponse(chatLieuRepository.save(thuocTinh));
+            }
+            case "origins" -> {
+                XuatXu thuocTinh = xuatXuRepository.findById(id).orElseThrow(() -> AppException.notFound("Không tìm thấy thuộc tính"));
+                thuocTinh.setTrangThai(trangThai);
+                return chuyenSangResponse(xuatXuRepository.save(thuocTinh));
+            }
+            case "collars" -> {
+                CoGiay thuocTinh = coGiayRepository.findById(id).orElseThrow(() -> AppException.notFound("Không tìm thấy thuộc tính"));
+                thuocTinh.setTrangThai(trangThai);
+                return chuyenSangResponse(coGiayRepository.save(thuocTinh));
+            }
+            case "styles" -> {
+                KieuDang thuocTinh = kieuDangRepository.findById(id).orElseThrow(() -> AppException.notFound("Không tìm thấy thuộc tính"));
+                thuocTinh.setTrangThai(trangThai);
+                return chuyenSangResponse(kieuDangRepository.save(thuocTinh));
+            }
+            case "colors" -> {
+                MauSac thuocTinh = mauSacRepository.findById(id).orElseThrow(() -> AppException.notFound("Không tìm thấy thuộc tính"));
+                thuocTinh.setTrangThai(trangThai);
+                thuocTinh.setNgayCapNhat(LocalDateTime.now());
+                return chuyenSangResponse(mauSacRepository.save(thuocTinh));
+            }
+            case "sizes" -> {
+                KichThuoc thuocTinh = kichThuocRepository.findById(id).orElseThrow(() -> AppException.notFound("Không tìm thấy thuộc tính"));
+                thuocTinh.setTrangThai(trangThai); thuocTinh.setNgayCapNhat(LocalDateTime.now());
+                return chuyenSangResponse(kichThuocRepository.save(thuocTinh));
             }
             default -> throw AppException.badRequest("Loại thuộc tính không hợp lệ");
         }
     }
 
-    private ThuocTinhResponse saveDanhMuc(Long id, ThuocTinhRequest r) {
-        if (categories.exists(duplicate(id, "maDanhMuc", "tenDanhMuc", r)))
-            throw AppException.conflict("Mã hoặc tên/giá trị thuộc tính đã tồn tại");
-        DanhMuc item = id == null ? new DanhMuc() : categories.findById(id)
-                .orElseThrow(() -> AppException.notFound("Không tìm thấy thuộc tính"));
-        item.setMaDanhMuc(QuyTacSanPham.trim(r.getMa()));
-        item.setTenDanhMuc(QuyTacSanPham.trim(r.getTen()));
-        item.setMoTa(QuyTacSanPham.trim(r.getGhiChu()));
-        item.setTrangThai(r.getTrangThai());
-        return response(categories.save(item));
+    private ThuocTinhResponse luuDanhMuc(Long id, ThuocTinhRequest yeuCau) {
+        DanhMuc thuocTinh = id == null ? new DanhMuc() : danhMucRepository.findById(id)
+                .orElseThrow(() -> AppException.notFound("Không tìm thấy danh mục"));
+        if (danhMucRepository.exists(kiemTraTrung(id, "maDanhMuc", "tenDanhMuc", yeuCau))) {
+            throw AppException.conflict("Mã danh mục đã tồn tại");
+        }
+        thuocTinh.setMaDanhMuc(QuyTacSanPham.boKhoangTrang(yeuCau.getMa()));
+        thuocTinh.setTenDanhMuc(QuyTacSanPham.boKhoangTrang(yeuCau.getTen()));
+        thuocTinh.setMoTa(QuyTacSanPham.boKhoangTrang(yeuCau.getGhiChu()));
+        thuocTinh.setTrangThai(yeuCau.getTrangThai());
+        return chuyenSangResponse(danhMucRepository.save(thuocTinh));
     }
 
-    private ThuocTinhResponse response(DanhMuc item) {
-        return new ThuocTinhResponse(item.getId(), item.getMaDanhMuc(), item.getTenDanhMuc(),
-                item.getMoTa(), null, item.getTrangThai());
+    private ThuocTinhResponse chuyenSangResponse(DanhMuc thuocTinh) {
+        return new ThuocTinhResponse(thuocTinh.getId(), thuocTinh.getMaDanhMuc(), thuocTinh.getTenDanhMuc(),
+                thuocTinh.getMoTa(), null, thuocTinh.getTrangThai());
     }
 
-    private ThuocTinhResponse saveThuongHieu(Long id, ThuocTinhRequest r) {
-        if (brands.exists(duplicate(id, "maThuongHieu", "tenThuongHieu", r)))
-            throw AppException.conflict("Mã hoặc tên/giá trị thuộc tính đã tồn tại");
-        ThuongHieu item = id == null ? new ThuongHieu() : brands.findById(id)
-                .orElseThrow(() -> AppException.notFound("Không tìm thấy thuộc tính"));
-        item.setMaThuongHieu(QuyTacSanPham.trim(r.getMa()));
-        item.setTenThuongHieu(QuyTacSanPham.trim(r.getTen()));
-        item.setTrangThai(r.getTrangThai());
-        return response(brands.save(item));
+    private ThuocTinhResponse luuThuongHieu(Long id, ThuocTinhRequest yeuCau) {
+        ThuongHieu thuocTinh = id == null ? new ThuongHieu() : thuongHieuRepository.findById(id)
+                .orElseThrow(() -> AppException.notFound("Không tìm thấy thương hiệu"));
+        if (thuongHieuRepository.exists(kiemTraTrung(id, "maThuongHieu", "tenThuongHieu", yeuCau))) {
+            throw AppException.conflict("Mã thương hiệu đã tồn tại");
+        }
+        thuocTinh.setMaThuongHieu(QuyTacSanPham.boKhoangTrang(yeuCau.getMa()));
+        thuocTinh.setTenThuongHieu(QuyTacSanPham.boKhoangTrang(yeuCau.getTen()));
+        thuocTinh.setTrangThai(yeuCau.getTrangThai());
+        return chuyenSangResponse(thuongHieuRepository.save(thuocTinh));
     }
 
-    private ThuocTinhResponse response(ThuongHieu item) {
-        return new ThuocTinhResponse(item.getId(), item.getMaThuongHieu(), item.getTenThuongHieu(),
-                null, null, item.getTrangThai());
+    private ThuocTinhResponse chuyenSangResponse(ThuongHieu thuocTinh) {
+        return new ThuocTinhResponse(thuocTinh.getId(), thuocTinh.getMaThuongHieu(), thuocTinh.getTenThuongHieu(),
+                null, null, thuocTinh.getTrangThai());
     }
 
-    private ThuocTinhResponse saveChatLieu(Long id, ThuocTinhRequest r) {
-        if (materials.exists(duplicate(id, "maChatLieu", "tenChatLieu", r)))
-            throw AppException.conflict("Mã hoặc tên/giá trị thuộc tính đã tồn tại");
-        ChatLieu item = id == null ? new ChatLieu() : materials.findById(id)
-                .orElseThrow(() -> AppException.notFound("Không tìm thấy thuộc tính"));
-        item.setMaChatLieu(QuyTacSanPham.trim(r.getMa()));
-        item.setTenChatLieu(QuyTacSanPham.trim(r.getTen()));
-        item.setTrangThai(r.getTrangThai());
-        return response(materials.save(item));
+    private ThuocTinhResponse luuChatLieu(Long id, ThuocTinhRequest yeuCau) {
+        ChatLieu thuocTinh = id == null ? new ChatLieu() : chatLieuRepository.findById(id)
+                .orElseThrow(() -> AppException.notFound("Không tìm thấy chất liệu"));
+        if (chatLieuRepository.exists(kiemTraTrung(id, "maChatLieu", "tenChatLieu", yeuCau))) {
+            throw AppException.conflict("Mã chất liệu đã tồn tại");
+        }
+        thuocTinh.setMaChatLieu(QuyTacSanPham.boKhoangTrang(yeuCau.getMa()));
+        thuocTinh.setTenChatLieu(QuyTacSanPham.boKhoangTrang(yeuCau.getTen()));
+        thuocTinh.setTrangThai(yeuCau.getTrangThai());
+        return chuyenSangResponse(chatLieuRepository.save(thuocTinh));
     }
 
-    private ThuocTinhResponse response(ChatLieu item) {
-        return new ThuocTinhResponse(item.getId(), item.getMaChatLieu(), item.getTenChatLieu(),
-                null, null, item.getTrangThai());
+    private ThuocTinhResponse chuyenSangResponse(ChatLieu thuocTinh) {
+        return new ThuocTinhResponse(thuocTinh.getId(), thuocTinh.getMaChatLieu(), thuocTinh.getTenChatLieu(),
+                null, null, thuocTinh.getTrangThai());
     }
 
-    private ThuocTinhResponse saveXuatXu(Long id, ThuocTinhRequest r) {
-        if (origins.exists(duplicate(id, "maXuatXu", "tenXuatXu", r)))
-            throw AppException.conflict("Mã hoặc tên/giá trị thuộc tính đã tồn tại");
-        XuatXu item = id == null ? new XuatXu() : origins.findById(id)
-                .orElseThrow(() -> AppException.notFound("Không tìm thấy thuộc tính"));
-        item.setMaXuatXu(QuyTacSanPham.trim(r.getMa()));
-        item.setTenXuatXu(QuyTacSanPham.trim(r.getTen()));
-        item.setTrangThai(r.getTrangThai());
-        return response(origins.save(item));
+    private ThuocTinhResponse luuXuatXu(Long id, ThuocTinhRequest yeuCau) {
+        XuatXu thuocTinh = id == null ? new XuatXu() : xuatXuRepository.findById(id)
+                .orElseThrow(() -> AppException.notFound("Không tìm thấy xuất xứ"));
+        if (xuatXuRepository.exists(kiemTraTrung(id, "maXuatXu", "tenXuatXu", yeuCau))) {
+            throw AppException.conflict("Mã xuất xứ đã tồn tại");
+        }
+        thuocTinh.setMaXuatXu(QuyTacSanPham.boKhoangTrang(yeuCau.getMa()));
+        thuocTinh.setTenXuatXu(QuyTacSanPham.boKhoangTrang(yeuCau.getTen()));
+        thuocTinh.setTrangThai(yeuCau.getTrangThai());
+        return chuyenSangResponse(xuatXuRepository.save(thuocTinh));
     }
 
-    private ThuocTinhResponse response(XuatXu item) {
-        return new ThuocTinhResponse(item.getId(), item.getMaXuatXu(), item.getTenXuatXu(),
-                null, null, item.getTrangThai());
+    private ThuocTinhResponse chuyenSangResponse(XuatXu thuocTinh) {
+        return new ThuocTinhResponse(thuocTinh.getId(), thuocTinh.getMaXuatXu(), thuocTinh.getTenXuatXu(),
+                null, null, thuocTinh.getTrangThai());
     }
 
-    private ThuocTinhResponse saveCoGiay(Long id, ThuocTinhRequest r) {
-        if (collars.exists(duplicate(id, "maCoGiay", "tenCoGiay", r)))
-            throw AppException.conflict("Mã hoặc tên/giá trị thuộc tính đã tồn tại");
-        CoGiay item = id == null ? new CoGiay() : collars.findById(id)
-                .orElseThrow(() -> AppException.notFound("Không tìm thấy thuộc tính"));
-        item.setMaCoGiay(QuyTacSanPham.trim(r.getMa()));
-        item.setTenCoGiay(QuyTacSanPham.trim(r.getTen()));
-        item.setTrangThai(r.getTrangThai());
-        return response(collars.save(item));
+    private ThuocTinhResponse luuCoGiay(Long id, ThuocTinhRequest yeuCau) {
+        CoGiay thuocTinh = id == null ? new CoGiay() : coGiayRepository.findById(id)
+                .orElseThrow(() -> AppException.notFound("Không tìm thấy cổ giày"));
+        if (coGiayRepository.exists(kiemTraTrung(id, "maCoGiay", "tenCoGiay", yeuCau))) {
+            throw AppException.conflict("Mã cổ giày đã tồn tại");
+        }
+        thuocTinh.setMaCoGiay(QuyTacSanPham.boKhoangTrang(yeuCau.getMa()));
+        thuocTinh.setTenCoGiay(QuyTacSanPham.boKhoangTrang(yeuCau.getTen()));
+        thuocTinh.setTrangThai(yeuCau.getTrangThai());
+        return chuyenSangResponse(coGiayRepository.save(thuocTinh));
     }
 
-    private ThuocTinhResponse response(CoGiay item) {
-        return new ThuocTinhResponse(item.getId(), item.getMaCoGiay(), item.getTenCoGiay(),
-                null, null, item.getTrangThai());
+    private ThuocTinhResponse chuyenSangResponse(CoGiay thuocTinh) {
+        return new ThuocTinhResponse(thuocTinh.getId(), thuocTinh.getMaCoGiay(), thuocTinh.getTenCoGiay(),
+                null, null, thuocTinh.getTrangThai());
     }
 
-    private ThuocTinhResponse saveKieuDang(Long id, ThuocTinhRequest r) {
-        if (styles.exists(duplicate(id, "maKieuDang", "tenKieuDang", r)))
-            throw AppException.conflict("Mã hoặc tên/giá trị thuộc tính đã tồn tại");
-        KieuDang item = id == null ? new KieuDang() : styles.findById(id)
-                .orElseThrow(() -> AppException.notFound("Không tìm thấy thuộc tính"));
-        item.setMaKieuDang(QuyTacSanPham.trim(r.getMa()));
-        item.setTenKieuDang(QuyTacSanPham.trim(r.getTen()));
-        item.setTrangThai(r.getTrangThai());
-        return response(styles.save(item));
+    private ThuocTinhResponse luuKieuDang(Long id, ThuocTinhRequest yeuCau) {
+        KieuDang thuocTinh = id == null ? new KieuDang() : kieuDangRepository.findById(id)
+                .orElseThrow(() -> AppException.notFound("Không tìm thấy kiểu dáng"));
+        if (kieuDangRepository.exists(kiemTraTrung(id, "maKieuDang", "tenKieuDang", yeuCau))) {
+            throw AppException.conflict("Mã kiểu dáng đã tồn tại");
+        }
+        thuocTinh.setMaKieuDang(QuyTacSanPham.boKhoangTrang(yeuCau.getMa()));
+        thuocTinh.setTenKieuDang(QuyTacSanPham.boKhoangTrang(yeuCau.getTen()));
+        thuocTinh.setTrangThai(yeuCau.getTrangThai());
+        return chuyenSangResponse(kieuDangRepository.save(thuocTinh));
     }
 
-    private ThuocTinhResponse response(KieuDang item) {
-        return new ThuocTinhResponse(item.getId(), item.getMaKieuDang(), item.getTenKieuDang(),
-                null, null, item.getTrangThai());
+    private ThuocTinhResponse chuyenSangResponse(KieuDang thuocTinh) {
+        return new ThuocTinhResponse(thuocTinh.getId(), thuocTinh.getMaKieuDang(), thuocTinh.getTenKieuDang(),
+                null, null, thuocTinh.getTrangThai());
     }
 
-    private ThuocTinhResponse saveMauSac(Long id, ThuocTinhRequest r) {
-        if (colors.exists(duplicate(id, "maMauSac", "tenMauSac", r)))
-            throw AppException.conflict("Mã hoặc tên/giá trị thuộc tính đã tồn tại");
-        MauSac item = id == null ? new MauSac() : colors.findById(id)
-                .orElseThrow(() -> AppException.notFound("Không tìm thấy thuộc tính"));
-        item.setMaMauSac(QuyTacSanPham.trim(r.getMa()));
-        item.setTenMauSac(QuyTacSanPham.trim(r.getTen()));
-        item.setMaMauHex(QuyTacSanPham.trim(r.getMaMauHex()));
-        item.setTrangThai(r.getTrangThai());
-        if (id == null) item.setNgayTao(LocalDateTime.now()); else item.setNgayCapNhat(LocalDateTime.now());
-        return response(colors.save(item));
+    private ThuocTinhResponse luuMauSac(Long id, ThuocTinhRequest yeuCau) {
+        MauSac thuocTinh = id == null ? new MauSac() : mauSacRepository.findById(id)
+                .orElseThrow(() -> AppException.notFound("Không tìm thấy màu sắc"));
+        if (mauSacRepository.exists(kiemTraTrung(id, "maMauSac", "tenMauSac", yeuCau))) {
+            throw AppException.conflict("Mã màu sắc đã tồn tại");
+        }
+        thuocTinh.setMaMauSac(QuyTacSanPham.boKhoangTrang(yeuCau.getMa()));
+        thuocTinh.setTenMauSac(QuyTacSanPham.boKhoangTrang(yeuCau.getTen()));
+        thuocTinh.setMaMauHex(QuyTacSanPham.boKhoangTrang(yeuCau.getMaMauHex()));
+        thuocTinh.setTrangThai(yeuCau.getTrangThai());
+        if (id == null) {
+            thuocTinh.setNgayTao(LocalDateTime.now());
+        } else {
+            thuocTinh.setNgayCapNhat(LocalDateTime.now());
+        }
+        return chuyenSangResponse(mauSacRepository.save(thuocTinh));
     }
 
-    private ThuocTinhResponse response(MauSac item) {
-        return new ThuocTinhResponse(item.getId(), item.getMaMauSac(), item.getTenMauSac(),
-                null, item.getMaMauHex(), item.getTrangThai());
+    private ThuocTinhResponse chuyenSangResponse(MauSac thuocTinh) {
+        return new ThuocTinhResponse(thuocTinh.getId(), thuocTinh.getMaMauSac(), thuocTinh.getTenMauSac(),
+                null, thuocTinh.getMaMauHex(), thuocTinh.getTrangThai());
     }
 
-    private ThuocTinhResponse saveKichThuoc(Long id, ThuocTinhRequest r) {
-        if (sizes.exists(duplicate(id, null, "giaTri", r)))
-            throw AppException.conflict("Mã hoặc tên/giá trị thuộc tính đã tồn tại");
-        KichThuoc item = id == null ? new KichThuoc() : sizes.findById(id)
-                .orElseThrow(() -> AppException.notFound("Không tìm thấy thuộc tính"));
-        item.setGiaTri(QuyTacSanPham.trim(r.getTen()));
-        item.setGhiChu(QuyTacSanPham.trim(r.getGhiChu()));
-        item.setTrangThai(r.getTrangThai());
-        if (id == null) item.setNgayTao(LocalDateTime.now()); else item.setNgayCapNhat(LocalDateTime.now());
-        return response(sizes.save(item));
+    private ThuocTinhResponse luuKichThuoc(Long id, ThuocTinhRequest yeuCau) {
+        KichThuoc thuocTinh = id == null ? new KichThuoc() : kichThuocRepository.findById(id)
+                .orElseThrow(() -> AppException.notFound("Không tìm thấy kích thước"));
+        if (kichThuocRepository.exists(kiemTraTrung(id, null, "giaTri", yeuCau))) {
+            throw AppException.conflict("Giá trị kích thước đã tồn tại");
+        }
+        thuocTinh.setGiaTri(QuyTacSanPham.boKhoangTrang(yeuCau.getTen()));
+        thuocTinh.setGhiChu(QuyTacSanPham.boKhoangTrang(yeuCau.getGhiChu()));
+        thuocTinh.setTrangThai(yeuCau.getTrangThai());
+        if (id == null) thuocTinh.setNgayTao(LocalDateTime.now()); else thuocTinh.setNgayCapNhat(LocalDateTime.now());
+        return chuyenSangResponse(kichThuocRepository.save(thuocTinh));
     }
 
-    private ThuocTinhResponse response(KichThuoc item) {
-        return new ThuocTinhResponse(item.getId(), null, item.getGiaTri(),
-                item.getGhiChu(), null, item.getTrangThai());
+    private ThuocTinhResponse chuyenSangResponse(KichThuoc thuocTinh) {
+        return new ThuocTinhResponse(thuocTinh.getId(), null, thuocTinh.getGiaTri(),
+                thuocTinh.getGhiChu(), null, thuocTinh.getTrangThai());
     }
 }

@@ -23,31 +23,23 @@ public final class DuLieuSanPham {
     public static class DanhSachBienTheRequest {
         @NotEmpty @Size(max = 200)
         private final List<@NotNull @Valid SanPhamChiTietThemRequest> variants;
-        private final boolean batch;
+        private final boolean hangLoat;
 
         @JsonCreator
         public DanhSachBienTheRequest(@JsonProperty("variants") List<SanPhamChiTietThemRequest> variants,
-                @JsonProperty("sanPhamId") @JsonAlias({"idSanPham", "productId"}) Long productId,
-                @JsonProperty("maChiTietSanPham") String code, @JsonProperty("sku") String sku,
-                @JsonProperty("mauSacId") @JsonAlias("idMauSac") Long colorId,
-                @JsonProperty("kichThuocId") @JsonAlias("idKichThuoc") Long sizeId,
-                @JsonProperty("soLuong") Integer quantity, @JsonProperty("giaBan") BigDecimal price,
-                @JsonProperty("kichHoat") Boolean active, @JsonProperty("trangThai") Integer status) {
-            batch = variants != null;
-            SanPhamChiTietThemRequest single = new SanPhamChiTietThemRequest(productId, code, sku, colorId, sizeId,
-                    quantity, price, active, status);
-            single.setMaChiTietSanPham(code);
-            single.setSku(sku);
-            this.variants = batch ? variants : List.of(single);
+                @JsonProperty("sanPhamId") @JsonAlias({"idSanPham", "productId"}) Long sanPhamId,
+                @JsonProperty("maChiTietSanPham") String maChiTietSanPham, @JsonProperty("sku") String sku,
+                @JsonProperty("mauSacId") @JsonAlias("idMauSac") Long mauSacId,
+                @JsonProperty("kichThuocId") @JsonAlias("idKichThuoc") Long kichThuocId,
+                @JsonProperty("soLuong") Integer soLuong, @JsonProperty("giaBan") BigDecimal giaBan,
+                @JsonProperty("kichHoat") Boolean kichHoat, @JsonProperty("trangThai") Integer trangThai) {
+            hangLoat = variants != null;
+            SanPhamChiTietThemRequest bienThe = new SanPhamChiTietThemRequest(sanPhamId, maChiTietSanPham, sku, mauSacId, kichThuocId,
+                    soLuong, giaBan, kichHoat, trangThai);
+            bienThe.setMaChiTietSanPham(maChiTietSanPham);
+            bienThe.setSku(sku);
+            this.variants = hangLoat ? variants : List.of(bienThe);
         }
-    }
-
-    @Data
-    @NoArgsConstructor
-    @AllArgsConstructor
-    public static class BienTheHangLoatRequest {
-        @NotEmpty @Size(max = 200)
-        private List<@NotNull @Valid SanPhamChiTietThemRequest> variants;
     }
 
     @Data

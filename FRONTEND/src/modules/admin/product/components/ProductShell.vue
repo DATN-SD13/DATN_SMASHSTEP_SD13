@@ -14,4 +14,3 @@ defineProps({ title: String, description: String, error: String, success: String
     </main>
   </AdminLayout>
 </template>
-

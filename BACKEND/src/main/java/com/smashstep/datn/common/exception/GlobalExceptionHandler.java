@@ -13,6 +13,21 @@ import java.util.Map;
 
 @RestControllerAdvice(basePackageClasses = SanPhamController.class)
 public class GlobalExceptionHandler {
+    @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
+    public ResponseEntity<?> uploadTooLarge(Exception ex) {
+        return ResponseEntity.status(413).body(Map.of("message", "Ảnh không được vượt quá 5 MB."));
+    }
+
+    @ExceptionHandler({org.springframework.web.multipart.MultipartException.class,
+            org.springframework.web.multipart.support.MissingServletRequestPartException.class})
+    public ResponseEntity<?> invalidUpload(Exception ex) {
+        return ResponseEntity.badRequest().body(Map.of("message", "Tệp ảnh không hợp lệ hoặc chưa được chọn."));
+    }
+
+    @ExceptionHandler(org.springframework.web.HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<?> unsupportedMedia(Exception ex) {
+        return ResponseEntity.status(415).body(Map.of("message", "Định dạng nội dung không được hỗ trợ."));
+    }
     @ExceptionHandler(AppException.class)
     public ResponseEntity<?> business(AppException ex) {
         return ResponseEntity.status(ex.getStatus()).body(Map.of("message", ex.getMessage()));

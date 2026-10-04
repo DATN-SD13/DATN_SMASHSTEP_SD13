@@ -21,11 +21,37 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-/** Uses the configured SQL Server. Every test transaction is rolled back; no schema changes or committed seed data. */
+// Kiểm thử SQL Server thật; rollback dữ liệu sau mỗi test.
 @SpringBootTest(classes = DatnApplication.class, properties = {
         "spring.jpa.open-in-view=false", "spring.jpa.hibernate.ddl-auto=none", "spring.jpa.show-sql=false" })
 @Transactional
 class SanPhamTichHopTest {
+    @Test
+    void multipartUploadStoresFileAndServesItThroughRealMvcAndJpa() throws Exception {
+        var product = products.themSanPham(productRequest());
+        var output = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(new java.awt.image.BufferedImage(2, 2,
+                java.awt.image.BufferedImage.TYPE_INT_RGB), "jpg", output);
+        byte[] content = output.toByteArray();
+        var file = new org.springframework.mock.web.MockMultipartFile("file", "../../ảnh sản phẩm (1).jpg", "image/jpeg", content);
+        var response = mvc.perform(multipart("/api/products/" + product.getId() + "/images/upload").file(file)
+                        .param("isAnhChinh", "false").header("Origin", "http://localhost:5173"))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.sanPhamId").value(product.getId()))
+                .andExpect(jsonPath("$.isAnhChinh").value(true))
+                .andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:5173"))
+                .andReturn().getResponse().getContentAsString();
+        String url = JsonMapper.builder().build().readTree(response).get("urlAnh").asText();
+        assertTrue(url.matches("/uploads/products/[0-9a-f-]{36}\\.jpg"));
+        entityManager.flush(); entityManager.clear();
+        assertEquals(url, products.layChiTietSanPham(product.getId()).getProduct().getAnhChinh());
+        mvc.perform(get(url)).andExpect(status().isOk()).andExpect(content().bytes(content));
+        mvc.perform(multipart("/api/products/" + product.getId() + "/images/upload")
+                        .file(new org.springframework.mock.web.MockMultipartFile("file", "fake.jpg", "image/jpeg", new byte[20])))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").value("Tệp ảnh không hợp lệ."));
+        mvc.perform(multipart("/api/products/" + product.getId() + "/images/upload").file(file).param("mauSacId", "1"))
+                .andExpect(status().isBadRequest());
+        assertEquals(1, images.layDanhSachAnh(product.getId()).size());
+    }
     @Autowired SanPhamService products;
     @Autowired HinhAnhSanPhamService images;
     @Autowired SanPhamChiTietService variants;
@@ -42,7 +68,7 @@ class SanPhamTichHopTest {
         for (String type : List.of("categories", "brands", "materials", "styles", "collars", "origins", "colors", "sizes")) {
             var request = new ThuocTinhRequest(code, code + "-" + type, "Ghi chú kiểm thử",
                     type.equals("colors") ? "#123456" : null, 1);
-            ids.put(type, attributes.save(type, null, request).getId());
+            ids.put(type, attributes.luuThuocTinh(type, null, request).getId());
         }
         mvc = MockMvcBuilders.webAppContextSetup(context).build();
     }
@@ -61,7 +87,7 @@ class SanPhamTichHopTest {
     @Test
     void persistsVariantsAndReturnsRealPaginatedAggregates() throws Exception {
         var product = products.themSanPham(productRequest());
-        var size2 = attributes.save("sizes", null, new ThuocTinhRequest(null, code + "-size2", "", null, 1));
+        var size2 = attributes.luuThuocTinh("sizes", null, new ThuocTinhRequest(null, code + "-size2", "", null, 1));
         variants.themDanhSachBienThe(product.getId(), List.of(
                 variantRequest(product.getId(), ids.get("sizes"), 2, "1200000"),
                 variantRequest(product.getId(), size2.getId(), 3, "1500000")));
@@ -104,7 +130,7 @@ class SanPhamTichHopTest {
         assertEquals(7, refreshed.getProduct().getTongSoLuong());
         assertEquals(1, refreshed.getImages().stream().filter(HinhAnhSanPhamResponse::getIsAnhChinh).count());
         assertTrue(refreshed.getImages().stream().filter(i -> i.getId().equals(first.getId())).findFirst().orElseThrow().getIsAnhChinh());
-        assertFalse(refreshed.layDanhSach().get(0).getKichHoat());
+        assertFalse(refreshed.getVariants().get(0).getKichHoat());
         assertEquals(first.getUrlAnh(), refreshed.getProduct().getAnhChinh());
         assertEquals(first.getUrlAnh(), refreshed.getVariants().get(0).getAnhChinh());
         assertEquals(first.getUrlAnh(), variants.layTheoSanPham(product.getId()).get(0).getAnhChinh());
@@ -134,14 +160,14 @@ class SanPhamTichHopTest {
     @Test
     void attributesUseRealSearchPaginationAndStatus() {
         for (String type : ids.keySet()) {
-            assertEquals(1, attributes.list(type, 0, 5, code, 1).getTotalElements());
-            var updated = attributes.save(type, ids.get(type),
+            assertEquals(1, attributes.layDanhSach(type, 0, 5, code, 1).getTotalElements());
+            var updated = attributes.luuThuocTinh(type, ids.get(type),
                     new ThuocTinhRequest(code, code + "-updated-" + type, "Ghi chú cập nhật",
                             type.equals("colors") ? "#ABCDEF" : null, 1));
             assertTrue(updated.getTen().contains("updated"));
-            attributes.changeStatus(type, ids.get(type), 0);
-            assertEquals(1, attributes.list(type, 0, 5, code, 0).getTotalElements());
-            assertEquals(0, attributes.list(type, 0, 5, code, 1).getTotalElements());
+            attributes.doiTrangThai(type, ids.get(type), 0);
+            assertEquals(1, attributes.layDanhSach(type, 0, 5, code, 0).getTotalElements());
+            assertEquals(0, attributes.layDanhSach(type, 0, 5, code, 1).getTotalElements());
         }
     }
 
@@ -154,8 +180,7 @@ class SanPhamTichHopTest {
                 .andExpect(jsonPath("$.ngayTao").exists()).andExpect(jsonPath("$.soMau").value(0))
                 .andReturn().getResponse().getContentAsString();
         Long productId = ((Number) mapper.readValue(body, Map.class).get("id")).longValue();
-        String variantBody = mapper.writeValueAsString(new BienTheHangLoatRequest(
-                List.of(variantRequest(productId, ids.get("sizes"), 3, "1200000"))))
+        String variantBody = mapper.writeValueAsString(Map.of("variants", List.of(variantRequest(productId, ids.get("sizes"), 3, "1200000"))))
                 .replace("\"sanPhamId\"", "\"idSanPham\"").replace("\"mauSacId\"", "\"idMauSac\"")
                 .replace("\"kichThuocId\"", "\"idKichThuoc\"");
         mvc.perform(post("/api/products/" + productId + "/variants").contentType(MediaType.APPLICATION_JSON)
@@ -297,7 +322,7 @@ class SanPhamTichHopTest {
         mvc.perform(get("/api/products/" + productId)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.product.soBienThe").value(1))
                 .andExpect(jsonPath("$.product.tongSoLuong").value(12));
-        var size2 = attributes.save("sizes", null, new ThuocTinhRequest(null, code + "-second", "", null, 1));
+        var size2 = attributes.luuThuocTinh("sizes", null, new ThuocTinhRequest(null, code + "-second", "", null, 1));
         single.put("maChiTietSanPham", code + "-CT2"); single.put("sku", code + "-SKU2");
         single.put("kichThuocId", size2.getId());
         mvc.perform(post("/api/products/" + productId + "/variants").contentType(MediaType.APPLICATION_JSON)
@@ -368,7 +393,7 @@ class SanPhamTichHopTest {
                 .andExpect(jsonPath("$.errors['variants[0].giaBan']").exists());
         body.put("soLuong", 1); body.put("giaBan", 100000); body.put("mauSacId", Long.MAX_VALUE);
         mvc.perform(post("/api/products/" + product.getId() + "/variants").contentType(MediaType.APPLICATION_JSON)
-                        .content(mapper.writeValueAsString(body))).andExpect(status().isBadRequest());
+                        .content(mapper.writeValueAsString(body))).andExpect(status().isNotFound());
         body.put("mauSacId", ids.get("colors"));
         mvc.perform(post("/api/products/" + product.getId() + "/variants").contentType(MediaType.APPLICATION_JSON)
                         .content(mapper.writeValueAsString(body))).andExpect(status().isCreated());
@@ -391,12 +416,76 @@ class SanPhamTichHopTest {
         SanPhamThemRequest invalidFk = productRequest();
         invalidFk.setMaSanPham(code + "-FK"); invalidFk.setDanhMucId(Long.MAX_VALUE);
         mvc.perform(post("/api/products").contentType(MediaType.APPLICATION_JSON)
-                        .content(mapper.writeValueAsString(invalidFk))).andExpect(status().isBadRequest());
+                        .content(mapper.writeValueAsString(invalidFk))).andExpect(status().isNotFound());
         body.put("sanPhamId", product.getId()); body.put("giaBan", 0);
         mvc.perform(post("/api/product-details").contentType(MediaType.APPLICATION_JSON)
                         .content(mapper.writeValueAsString(body)))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.errors.giaBan").exists());
         mvc.perform(delete("/api/products/" + product.getId())).andExpect(status().isMethodNotAllowed());
         assertEquals(1, variants.layTheoSanPham(product.getId()).size());
+    }
+
+    @Test
+    void thuocTinhChiKiemTraTrungMaVaGiaTri() throws Exception {
+        JsonMapper mapper = JsonMapper.builder().build();
+        for (String loai : ids.keySet()) {
+            ThuocTinhResponse hienTai = attributes.layChiTiet(loai, ids.get(loai));
+            ThuocTinhRequest trung = new ThuocTinhRequest(hienTai.getMa(), hienTai.getTen(),
+                    "", hienTai.getMaMauHex(), 1);
+            mvc.perform(post("/api/product-attributes/" + loai).contentType(MediaType.APPLICATION_JSON)
+                            .content(mapper.writeValueAsString(trung)))
+                    .andExpect(status().isConflict());
+
+            if (!loai.equals("sizes")) {
+                ThuocTinhRequest cungTen = new ThuocTinhRequest(code + "-moi", hienTai.getTen(),
+                        "", hienTai.getMaMauHex(), 1);
+                mvc.perform(post("/api/product-attributes/" + loai).contentType(MediaType.APPLICATION_JSON)
+                                .content(mapper.writeValueAsString(cungTen)))
+                        .andExpect(status().isCreated())
+                        .andExpect(jsonPath("$.ten").value(hienTai.getTen()));
+            }
+            mvc.perform(put("/api/product-attributes/" + loai + "/9223372036854775807")
+                            .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(trung)))
+                    .andExpect(status().isNotFound());
+        }
+    }
+
+    @Test
+    void khoaNgoaiKhongTonTaiTra404() throws Exception {
+        JsonMapper mapper = JsonMapper.builder().build();
+        Map<String, Object> yeuCau = new LinkedHashMap<>(Map.of(
+                "maSanPham", code + "-FK", "tenSanPham", "Sản phẩm kiểm thử FK",
+                "danhMucId", ids.get("categories"), "thuongHieuId", ids.get("brands"),
+                "chatLieuId", ids.get("materials"), "kieuDangId", ids.get("styles"),
+                "coGiayId", ids.get("collars"), "xuatXuId", ids.get("origins"), "trangThai", 1));
+        Map<String, String> cacKhoaNgoai = Map.of(
+                "danhMucId", "categories", "thuongHieuId", "brands",
+                "chatLieuId", "materials", "kieuDangId", "styles",
+                "coGiayId", "collars", "xuatXuId", "origins");
+        for (var khoaNgoai : cacKhoaNgoai.entrySet()) {
+            yeuCau.put(khoaNgoai.getKey(), Long.MAX_VALUE);
+            mvc.perform(post("/api/products").contentType(MediaType.APPLICATION_JSON)
+                            .content(mapper.writeValueAsString(yeuCau)))
+                    .andExpect(status().isNotFound()).andExpect(jsonPath("$.message").exists());
+            yeuCau.put(khoaNgoai.getKey(), ids.get(khoaNgoai.getValue()));
+        }
+
+        SanPhamResponse sanPham = products.themSanPham(productRequest());
+        SanPhamChiTietThemRequest bienThe = variantRequest(sanPham.getId(), ids.get("sizes"), 1, "1200000");
+        bienThe.setMauSacId(Long.MAX_VALUE);
+        mvc.perform(post("/api/product-details").contentType(MediaType.APPLICATION_JSON)
+                        .content(mapper.writeValueAsString(bienThe)))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.message").value("Không tìm thấy màu sắc"));
+        bienThe.setMauSacId(ids.get("colors"));
+        bienThe.setKichThuocId(Long.MAX_VALUE);
+        mvc.perform(post("/api/product-details").contentType(MediaType.APPLICATION_JSON)
+                        .content(mapper.writeValueAsString(bienThe)))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.message").value("Không tìm thấy kích thước"));
+        bienThe.setKichThuocId(ids.get("sizes"));
+        bienThe.setSanPhamId(Long.MAX_VALUE);
+        mvc.perform(post("/api/product-details").contentType(MediaType.APPLICATION_JSON)
+                        .content(mapper.writeValueAsString(bienThe)))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.message").value("Không tìm thấy sản phẩm"));
+        assertTrue(variants.layTheoSanPham(sanPham.getId()).isEmpty());
     }
 }

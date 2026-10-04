@@ -1,12 +1,13 @@
 <script setup>
 import { ref, watch } from 'vue'
+import { imageUrl } from '../services/imageUtils'
 const props = defineProps({ url: String, alt: { type: String, default: 'Ảnh sản phẩm' } })
 const failed = ref(false)
 watch(() => props.url, () => { failed.value = false })
 </script>
 
 <template>
-  <img v-if="url && !failed" class="product-thumbnail" :src="url" :alt="alt" loading="lazy"
+  <img v-if="imageUrl(url) && !failed" class="product-thumbnail" :src="imageUrl(url)" :alt="alt" loading="lazy"
     referrerpolicy="no-referrer" @error="failed = true" />
   <span v-else class="product-thumbnail placeholder-image" :aria-label="url ? 'Không tải được ảnh' : 'Chưa có ảnh'">
     <i class="bi bi-image" aria-hidden="true"></i>
