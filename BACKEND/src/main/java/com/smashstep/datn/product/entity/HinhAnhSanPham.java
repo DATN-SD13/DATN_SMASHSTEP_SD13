@@ -18,8 +18,9 @@ public class HinhAnhSanPham {
     @JoinColumn(name = "id_san_pham")
     private SanPham idSanPham;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "id_mau_sac")
+    // The current SmashStep image table has no id_mau_sac column.
+    // Retain the field/accessors without selecting or writing a nonexistent column.
+    @Transient
     private MauSac idMauSac;
 
     @Column(name = "url_anh")

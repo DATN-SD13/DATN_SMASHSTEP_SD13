@@ -16,7 +16,7 @@ const nav = [
     children: [
       { label: 'Sản phẩm', to: '/san-pham' },
       { label: 'Biến thể sản phẩm', to: '/bien-the-san-pham' },
-      { label: 'Thiết lập biến thể sản phẩm', to: '/thiet-lap-bien-the' }
+      { label: 'Thiết lập biến thể sản phẩm', to: '/thuoc-tinh' }
     ]
   },
   { label: 'Quản lý khách hàng', icon: 'bi-people', to: '/khach-hang' },
