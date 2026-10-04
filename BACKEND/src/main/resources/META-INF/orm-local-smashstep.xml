@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<entity-mappings xmlns="https://jakarta.ee/xml/ns/persistence/orm"
+                 xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                 xsi:schemaLocation="https://jakarta.ee/xml/ns/persistence/orm https://jakarta.ee/xml/ns/persistence/orm/orm_3_2.xsd"
+                 version="3.2">
+    <!-- Opt-in overrides for the existing local DB; all other annotations still apply. -->
+    <entity class="com.smashstep.datn.invoice.entity.HoaDon" access="FIELD">
+        <attributes>
+            <transient name="tienGiamGia" />
+            <transient name="diaChiGiaoHang" />
+        </attributes>
+    </entity>
+    <entity class="com.smashstep.datn.invoice.entity.LichSuThanhToan" access="FIELD">
+        <attributes>
+            <transient name="idPhuongThucThanhToan" />
+        </attributes>
+    </entity>
+    <entity class="com.smashstep.datn.promotion.entity.DotGiamGia" access="FIELD">
+        <attributes>
+            <transient name="moTa" />
+        </attributes>
+    </entity>
+    <entity class="com.smashstep.datn.promotion.entity.PhieuGiamGia" access="FIELD">
+        <attributes>
+            <transient name="hinhThucPhieu" />
+        </attributes>
+    </entity>
+</entity-mappings>
