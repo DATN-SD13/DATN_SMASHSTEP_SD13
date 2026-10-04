@@ -4,6 +4,8 @@ import com.smashstep.datn.common.response.ApiResponse;
 import com.smashstep.datn.common.response.PageResponse;
 import com.smashstep.datn.promotion.response.PhieuGiamGiaResponse;
 import com.smashstep.datn.promotion.service.PhieuGiamGiaService;
+import com.smashstep.datn.promotion.response.PhieuGiamGiaRequest;
+import org.springframework.web.bind.annotation.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -58,5 +60,46 @@ public class PhieuGiamGiaController {
                 );
 
         return ApiResponse.ok(data);
+    }
+
+    @GetMapping("/{id}")
+    public ApiResponse<PhieuGiamGiaResponse> getById(
+            @PathVariable Long id
+    ) {
+
+        return ApiResponse.ok(
+                phieuGiamGiaService.getById(id)
+        );
+    }
+
+    @PostMapping
+    public ApiResponse<PhieuGiamGiaResponse> create(
+            @RequestBody PhieuGiamGiaRequest request
+    ) {
+
+        return ApiResponse.ok(
+                phieuGiamGiaService.create(request)
+        );
+    }
+
+    @PutMapping("/{id}")
+    public ApiResponse<PhieuGiamGiaResponse> update(
+            @PathVariable Long id,
+            @RequestBody PhieuGiamGiaRequest request
+    ) {
+
+        return ApiResponse.ok(
+                phieuGiamGiaService.update(id, request)
+        );
+    }
+// xoa mem
+    @DeleteMapping("/{id}")
+    public ApiResponse<Void> deactivate(
+            @PathVariable Long id
+    ) {
+
+        phieuGiamGiaService.deactivate(id);
+
+        return ApiResponse.ok(null);
     }
 }

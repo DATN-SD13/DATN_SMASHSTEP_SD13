@@ -1,10 +1,13 @@
 <script setup>
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import api from '../../../../utils/api'
-import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
+const route = useRoute()
 const router = useRouter()
+
+const id = route.params.id
 
 // =========================
 // FORM
@@ -21,6 +24,7 @@ const form = ref({
   quantity: '',
   start: '',
   end: '',
+  status: 1,
   description: ''
 })
 
@@ -29,6 +33,8 @@ const form = ref({
 // =========================
 
 const loading = ref(false)
+const saving = ref(false)
+
 const errorMessage = ref('')
 const successMessage = ref('')
 
@@ -41,6 +47,80 @@ const isPercent = computed(() => {
 })
 
 // =========================
+// LOAD DETAIL
+// =========================
+
+async function loadDetail() {
+
+  try {
+
+    loading.value = true
+    errorMessage.value = ''
+
+    const response = await api.get(
+      `/phieu-giam-gia/${id}`
+    )
+
+    const data = response.data.data
+
+    form.value = {
+      code: data.code || '',
+      name: data.name || '',
+
+      type:
+        data.form === 2
+          ? 'Cá nhân'
+          : 'Công khai',
+
+      discountType:
+        data.discountType === 2
+          ? 'Tiền mặt (VNĐ)'
+          : 'Phần trăm (%)',
+
+      value:
+        data.discountValue ?? '',
+
+      min:
+        data.minOrderValue ?? '',
+
+      max:
+        data.maxDiscount ?? '',
+
+      quantity:
+        data.quantity ?? '',
+
+      start:
+        data.startDate || '',
+
+      end:
+        data.endDate || '',
+
+      status:
+        data.status ?? 1,
+
+      description:
+        data.description || ''
+    }
+
+  } catch (error) {
+
+    console.error(
+      'Lỗi tải chi tiết phiếu giảm giá:',
+      error
+    )
+
+    errorMessage.value =
+      error?.response?.data?.message ||
+      'Không thể tải thông tin phiếu giảm giá.'
+
+  } finally {
+
+    loading.value = false
+
+  }
+}
+
+// =========================
 // VALIDATE
 // =========================
 
@@ -49,17 +129,23 @@ function validateForm() {
   errorMessage.value = ''
 
   if (!form.value.code.trim()) {
-    errorMessage.value = 'Vui lòng nhập mã phiếu.'
+    errorMessage.value =
+      'Vui lòng nhập mã phiếu.'
     return false
   }
 
   if (!form.value.name.trim()) {
-    errorMessage.value = 'Vui lòng nhập tên phiếu.'
+    errorMessage.value =
+      'Vui lòng nhập tên phiếu.'
     return false
   }
 
-  if (form.value.value === '' || Number(form.value.value) < 0) {
-    errorMessage.value = 'Giá trị giảm không hợp lệ.'
+  if (
+    form.value.value === '' ||
+    Number(form.value.value) < 0
+  ) {
+    errorMessage.value =
+      'Giá trị giảm không hợp lệ.'
     return false
   }
 
@@ -91,11 +177,11 @@ function validateForm() {
   }
 
   if (
-    !form.value.quantity ||
+    form.value.quantity === '' ||
     Number(form.value.quantity) < 0
   ) {
     errorMessage.value =
-      'Vui lòng nhập số lượng phiếu.'
+      'Số lượng không hợp lệ.'
     return false
   }
 
@@ -121,17 +207,17 @@ function validateForm() {
 }
 
 // =========================
-// SAVE
+// UPDATE
 // =========================
 
-async function save() {
+async function updateVoucher() {
 
   if (!validateForm()) {
     return
   }
 
   const confirmed = window.confirm(
-    'Bạn có chắc chắn muốn tạo phiếu giảm giá này không?'
+    'Bạn có chắc chắn muốn cập nhật phiếu giảm giá này không?'
   )
 
   if (!confirmed) {
@@ -140,24 +226,23 @@ async function save() {
 
   try {
 
-    loading.value = true
+    saving.value = true
     errorMessage.value = ''
     successMessage.value = ''
 
     const request = {
-      code: form.value.code.trim(),
 
-      name: form.value.name.trim(),
+      code:
+        form.value.code.trim(),
 
-      // 1 = Công khai
-      // 2 = Cá nhân
+      name:
+        form.value.name.trim(),
+
       form:
         form.value.type === 'Công khai'
           ? 1
           : 2,
 
-      // 1 = Phần trăm
-      // 2 = Tiền mặt
       discountType:
         form.value.discountType === 'Phần trăm (%)'
           ? 1
@@ -185,21 +270,21 @@ async function save() {
       quantity:
         Number(form.value.quantity),
 
-      status: 1,
+      status:
+        Number(form.value.status),
 
       description:
         form.value.description.trim()
     }
 
-    await api.post(
-      '/phieu-giam-gia',
+    await api.put(
+      `/phieu-giam-gia/${id}`,
       request
     )
 
     successMessage.value =
-      'Tạo phiếu giảm giá thành công.'
+      'Cập nhật phiếu giảm giá thành công.'
 
-    // Chờ một chút để người dùng thấy thông báo
     setTimeout(() => {
       router.push('/giam-gia')
     }, 700)
@@ -207,17 +292,17 @@ async function save() {
   } catch (error) {
 
     console.error(
-      'Lỗi tạo phiếu giảm giá:',
+      'Lỗi cập nhật phiếu giảm giá:',
       error
     )
 
     errorMessage.value =
       error?.response?.data?.message ||
-      'Không thể tạo phiếu giảm giá.'
+      'Không thể cập nhật phiếu giảm giá.'
 
   } finally {
 
-    loading.value = false
+    saving.value = false
 
   }
 }
@@ -229,6 +314,14 @@ async function save() {
 function cancel() {
   router.back()
 }
+
+// =========================
+// INIT
+// =========================
+
+onMounted(() => {
+  loadDetail()
+})
 </script>
 
 <template>
@@ -236,43 +329,60 @@ function cancel() {
 
     <main class="ss-page">
 
-      <!-- ================= BACK ================= -->
+      <!-- Loading -->
 
-      <div>
-        <button
-          class="ss-back"
-          aria-label="Quay lại"
-          @click="cancel"
-        >
-          <i class="bi bi-arrow-left"></i>
-        </button>
-      </div>
+      <section
+        v-if="loading"
+        class="ss-card loading-card"
+      >
+        <div class="spinner-border"></div>
+
+        <span>
+          Đang tải thông tin phiếu giảm giá...
+        </span>
+      </section>
 
 
-      <!-- ================= FORM ================= -->
+      <!-- FORM -->
 
-      <section class="ss-card ss-form">
+      <section
+        v-else
+        class="ss-card ss-form"
+      >
+
+        <!-- Back -->
+
+        <div>
+          <button
+            class="ss-back"
+            aria-label="Quay lại"
+            @click="cancel"
+          >
+            <i class="bi bi-arrow-left"></i>
+          </button>
+        </div>
+
 
         <!-- Header -->
 
         <div class="ss-head">
 
           <div class="ss-head-icon">
-            <i class="bi bi-ticket-perforated"></i>
+            <i class="bi bi-pencil-square"></i>
           </div>
 
           <div>
-            <h2>Thông tin phiếu</h2>
+            <h2>Chỉnh sửa phiếu</h2>
 
             <p>
-              Nhập thông tin để tạo phiếu giảm giá mới.
+              Cập nhật thông tin phiếu giảm giá.
             </p>
           </div>
 
         </div>
 
 
-        <!-- ================= MESSAGE ================= -->
+        <!-- Error -->
 
         <div
           v-if="errorMessage"
@@ -286,6 +396,8 @@ function cancel() {
         </div>
 
 
+        <!-- Success -->
+
         <div
           v-if="successMessage"
           class="form-message success"
@@ -298,7 +410,7 @@ function cancel() {
         </div>
 
 
-        <!-- ================= FIELDS ================= -->
+        <!-- Form -->
 
         <div class="form-grid">
 
@@ -315,8 +427,7 @@ function cancel() {
               class="ss-input"
               v-model="form.code"
               maxlength="50"
-              placeholder="Ví dụ: PGG006"
-              :disabled="loading"
+              :disabled="saving"
             />
 
           </div>
@@ -335,8 +446,7 @@ function cancel() {
               class="ss-input"
               v-model="form.name"
               maxlength="255"
-              placeholder="Ví dụ: Giảm giá tháng 10"
-              :disabled="loading"
+              :disabled="saving"
             />
 
           </div>
@@ -357,7 +467,7 @@ function cancel() {
                   type="radio"
                   value="Công khai"
                   v-model="form.type"
-                  :disabled="loading"
+                  :disabled="saving"
                 />
 
                 Công khai
@@ -368,7 +478,7 @@ function cancel() {
                   type="radio"
                   value="Cá nhân"
                   v-model="form.type"
-                  :disabled="loading"
+                  :disabled="saving"
                 />
 
                 Cá nhân
@@ -394,7 +504,7 @@ function cancel() {
                   type="radio"
                   value="Phần trăm (%)"
                   v-model="form.discountType"
-                  :disabled="loading"
+                  :disabled="saving"
                 />
 
                 Phần trăm (%)
@@ -405,7 +515,7 @@ function cancel() {
                   type="radio"
                   value="Tiền mặt (VNĐ)"
                   v-model="form.discountType"
-                  :disabled="loading"
+                  :disabled="saving"
                 />
 
                 Tiền mặt (VNĐ)
@@ -416,17 +526,14 @@ function cancel() {
           </div>
 
 
-          <!-- Giá trị giảm -->
+          <!-- Giá trị -->
 
           <div class="ss-field">
 
             <label class="ss-label">
-
               Giá trị giảm
               ({{ isPercent ? '%' : 'VNĐ' }})
-
               <span class="req">*</span>
-
             </label>
 
             <input
@@ -435,18 +542,17 @@ function cancel() {
               min="0"
               :max="isPercent ? 100 : undefined"
               v-model="form.value"
-              :disabled="loading"
-              placeholder="Nhập giá trị giảm"
+              :disabled="saving"
             />
 
           </div>
 
 
-          <!-- Đơn tối thiểu -->
+          <!-- Tối thiểu -->
 
           <div class="ss-field">
 
-            <label class="ss-label muted">
+            <label class="ss-label">
               Giá trị đơn tối thiểu (VNĐ)
             </label>
 
@@ -455,18 +561,17 @@ function cancel() {
               type="number"
               min="0"
               v-model="form.min"
-              :disabled="loading"
-              placeholder="Ví dụ: 500000"
+              :disabled="saving"
             />
 
           </div>
 
 
-          <!-- Giảm tối đa -->
+          <!-- Tối đa -->
 
           <div class="ss-field">
 
-            <label class="ss-label muted">
+            <label class="ss-label">
               Giảm tối đa (VNĐ)
             </label>
 
@@ -475,22 +580,8 @@ function cancel() {
               type="number"
               min="0"
               v-model="form.max"
-              :disabled="loading || !isPercent"
-              :placeholder="
-                isPercent
-                  ? 'Ví dụ: 100000'
-                  : 'Không áp dụng'
-              "
+              :disabled="saving || !isPercent"
             />
-
-            <span
-              v-if="isPercent"
-              class="ss-hint warn"
-            >
-              <i class="bi bi-exclamation-triangle"></i>
-
-              Chỉ áp dụng khi loại giảm là phần trăm.
-            </span>
 
           </div>
 
@@ -500,19 +591,16 @@ function cancel() {
           <div class="ss-field">
 
             <label class="ss-label">
-
               Số lượng
               <span class="req">*</span>
-
             </label>
 
             <input
               class="ss-input"
               type="number"
-              min="1"
+              min="0"
               v-model="form.quantity"
-              :disabled="loading"
-              placeholder="Nhập số lượng"
+              :disabled="saving"
             />
 
           </div>
@@ -523,17 +611,15 @@ function cancel() {
           <div class="ss-field">
 
             <label class="ss-label">
-
               Ngày bắt đầu
               <span class="req">*</span>
-
             </label>
 
             <input
               class="ss-input"
               type="date"
               v-model="form.start"
-              :disabled="loading"
+              :disabled="saving"
             />
 
           </div>
@@ -544,18 +630,41 @@ function cancel() {
           <div class="ss-field">
 
             <label class="ss-label">
-
               Ngày kết thúc
               <span class="req">*</span>
-
             </label>
 
             <input
               class="ss-input"
               type="date"
               v-model="form.end"
-              :disabled="loading"
+              :disabled="saving"
             />
+
+          </div>
+
+
+          <!-- Trạng thái -->
+
+          <div class="ss-field">
+
+            <label class="ss-label">
+              Trạng thái
+            </label>
+
+            <select
+              class="ss-select"
+              v-model="form.status"
+              :disabled="saving"
+            >
+              <option :value="1">
+                Hoạt động
+              </option>
+
+              <option :value="0">
+                Ngừng hoạt động
+              </option>
+            </select>
 
           </div>
 
@@ -573,8 +682,7 @@ function cancel() {
               v-model="form.description"
               maxlength="1000"
               rows="4"
-              placeholder="Nhập mô tả phiếu giảm giá..."
-              :disabled="loading"
+              :disabled="saving"
             ></textarea>
 
           </div>
@@ -582,18 +690,18 @@ function cancel() {
         </div>
 
 
-        <!-- ================= ACTION ================= -->
+        <!-- Actions -->
 
         <div class="ss-actions left">
 
           <button
             class="ss-btn primary"
-            :disabled="loading"
-            @click="save"
+            :disabled="saving"
+            @click="updateVoucher"
           >
 
             <span
-              v-if="loading"
+              v-if="saving"
               class="spinner-border spinner-border-sm"
             ></span>
 
@@ -603,9 +711,9 @@ function cancel() {
             ></i>
 
             {{
-              loading
-                ? 'Đang tạo...'
-                : 'Tạo phiếu giảm giá'
+              saving
+                ? 'Đang lưu...'
+                : 'Lưu thay đổi'
             }}
 
           </button>
@@ -613,7 +721,7 @@ function cancel() {
 
           <button
             class="ss-btn"
-            :disabled="loading"
+            :disabled="saving"
             @click="cancel"
           >
             Hủy
@@ -641,18 +749,17 @@ function cancel() {
   grid-column: 1 / -1;
 }
 
-.ss-label.muted {
-  font-weight: 500;
-  color: var(--ss-muted);
-}
-
-.ss-hint i {
-  margin-right: 3px;
-}
-
 .ss-textarea {
   resize: vertical;
   min-height: 100px;
+}
+
+.loading-card {
+  min-height: 300px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
 }
 
 .form-message {
@@ -662,7 +769,6 @@ function cancel() {
   padding: 12px 14px;
   border-radius: 8px;
   margin-bottom: 18px;
-  font-size: 14px;
 }
 
 .form-message.error {
@@ -675,15 +781,6 @@ function cancel() {
   color: #067647;
   background: #ecfdf3;
   border: 1px solid #abefc6;
-}
-
-.form-message i {
-  font-size: 17px;
-}
-
-.ss-btn:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
 }
 
 @media (max-width: 760px) {

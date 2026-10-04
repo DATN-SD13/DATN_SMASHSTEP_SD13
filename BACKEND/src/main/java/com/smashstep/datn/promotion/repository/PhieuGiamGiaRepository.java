@@ -8,5 +8,11 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface PhieuGiamGiaRepository extends JpaRepository<PhieuGiamGia, Long>,
         JpaSpecificationExecutor<PhieuGiamGia> {
+    boolean existsByMaPhieuGiamGia(String maPhieuGiamGia);
+
+    boolean existsByMaPhieuGiamGiaAndIdNot(
+            String maPhieuGiamGia,
+            Long id
+    );
 
 }

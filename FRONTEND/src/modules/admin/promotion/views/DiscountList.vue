@@ -170,6 +170,35 @@ function statusClass(status) {
   return status === 1 ? 'success' : 'danger'
 }
 
+// update 
+function editVoucher(id) {
+  router.push(`/giam-gia/sua/${id}`)
+}
+
+async function deactivateVoucher(voucher) {
+  const confirmed = window.confirm(
+    `Bạn có chắc chắn muốn ngừng hoạt động phiếu "${voucher.code}" không?`
+  )
+
+  if (!confirmed) {
+    return
+  }
+
+  try {
+    await api.delete(`/phieu-giam-gia/${voucher.id}`)
+
+    alert('Ngừng hoạt động phiếu giảm giá thành công!')
+
+    await loadData()
+  } catch (error) {
+    console.error(error)
+
+    alert(
+      error.response?.data?.message ||
+      'Ngừng hoạt động phiếu giảm giá thất bại!'
+    )
+  }
+}
 // =========================
 // INIT
 // =========================
@@ -494,10 +523,19 @@ onMounted(() => {
                     <button
                       class="ss-icon-btn"
                       title="Sửa"
+                      @click="editVoucher(x.id)"
                     >
                       <i class="bi bi-pencil"></i>
                     </button>
 
+                    <button
+                      v-if="x.status === 1"   
+                      class="ss-icon-btn"
+                      title="Ngừng hoạt động"
+                      @click="deactivateVoucher(x)"
+                    >
+                      <i class="bi bi-power"></i>
+                    </button>
                   </div>
 
                 </td>
