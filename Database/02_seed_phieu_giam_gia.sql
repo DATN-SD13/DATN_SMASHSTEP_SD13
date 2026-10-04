@@ -20,6 +20,23 @@ INSERT INTO phieu_giam_gia (
 )
 VALUES
 (
+    'PGG006',
+    N'Giảm 10% cho đơn từ 200K',
+    1,                  -- Công khai
+    1,                  -- Phần trăm
+    10.00,              -- 10%
+    500000.00,
+    100000.00,
+    '2026-10-01 00:00:00',
+    '2026-12-31 23:59:59',
+    100,
+    0,
+    1,                  -- Hoạt động
+    GETDATE(),
+    GETDATE(),
+    N'Giảm 10% tối đa 100.000đ cho đơn hàng từ 200.000đ'
+),
+(
     'PGG001',
     N'Giảm 10% cho đơn từ 500K',
     1,                  -- Công khai
