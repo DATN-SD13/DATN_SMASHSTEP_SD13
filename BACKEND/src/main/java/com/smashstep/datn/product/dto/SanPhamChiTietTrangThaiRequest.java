@@ -1,0 +1,16 @@
+package com.smashstep.datn.product.dto;
+
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotNull;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class SanPhamChiTietTrangThaiRequest {
+    @NotNull @Min(0) @Max(1)
+    private Integer trangThai;
+}
