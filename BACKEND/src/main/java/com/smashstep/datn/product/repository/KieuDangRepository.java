@@ -5,5 +5,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public interface KieuDangRepository extends JpaRepository<KieuDang, Long> {
+public interface KieuDangRepository extends JpaRepository<KieuDang, Long>, org.springframework.data.jpa.repository.JpaSpecificationExecutor<KieuDang> {
 }

@@ -1,30 +1,29 @@
 package com.smashstep.datn.common.response;
 
 import lombok.AllArgsConstructor;
-import lombok.Getter;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 import org.springframework.data.domain.Page;
 
 import java.util.List;
 
-/**
- * Dữ liệu phân trang trả trong ApiResponse.data cho các API danh sách.
- * Lưu ý: page tính từ 1 (khớp với FE), còn Spring Data tính từ 0.
- *
- * Cách dùng trong controller:
- *   Page<HoaDonDto> p = repo.findAll(PageRequest.of(page - 1, size)).map(this::toDto);
- *   return ApiResponse.ok(PageResponse.from(p));
- */
-@Getter
+/** Pagination exposes Spring's zero-based number and the common API's one-based page. */
+@Data
+@NoArgsConstructor
 @AllArgsConstructor
 public class PageResponse<T> {
+    private List<T> content;
+    private int number;
+    private int size;
+    private long totalElements;
+    private int totalPages;
 
-    private final List<T> content;
-    private final int page;
-    private final int size;
-    private final long totalElements;
-    private final int totalPages;
+    public int getPage() {
+        return number + 1;
+    }
 
-    public static <T> PageResponse<T> from(Page<T> p) {
-        return new PageResponse<>(p.getContent(), p.getNumber() + 1, p.getSize(), p.getTotalElements(), p.getTotalPages());
+    public static <T> PageResponse<T> from(Page<T> page) {
+        return new PageResponse<>(page.getContent(), page.getNumber(), page.getSize(),
+                page.getTotalElements(), page.getTotalPages());
     }
 }
