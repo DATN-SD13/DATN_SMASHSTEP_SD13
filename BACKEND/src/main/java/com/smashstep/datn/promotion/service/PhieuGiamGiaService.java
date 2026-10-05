@@ -5,6 +5,7 @@ import com.smashstep.datn.promotion.response.PhieuGiamGiaResponse;
 import com.smashstep.datn.promotion.entity.PhieuGiamGia;
 import com.smashstep.datn.promotion.repository.PhieuGiamGiaRepository;
 import com.smashstep.datn.promotion.specification.PhieuGiamGiaSpecification;
+import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -361,6 +362,24 @@ public class PhieuGiamGiaService {
         p.setNgayCapNhat(LocalDateTime.now());
 
         phieuGiamGiaRepository.save(p);
+    }
+    public void activate(Long id) {
+        PhieuGiamGia phieu = phieuGiamGiaRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy phiếu giảm giá"));
+
+        phieu.setTrangThai(1);
+        phieu.setNgayCapNhat(LocalDateTime.now());
+
+        phieuGiamGiaRepository.save(phieu);
+    }
+
+    @Transactional
+    public void delete(Long id) {
+        PhieuGiamGia phieu = phieuGiamGiaRepository.findById(id)
+                .orElseThrow(() ->
+                        new RuntimeException("Không tìm thấy phiếu giảm giá"));
+
+        phieuGiamGiaRepository.delete(phieu);
     }
 // validate
     private void validateRequest(

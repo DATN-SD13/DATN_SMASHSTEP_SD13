@@ -16,6 +16,8 @@ import AddEmployee from '../modules/admin/employee/views/AddEmployee.vue'
 import POSSales from '../modules/admin/sales/views/POSSales.vue'
 import ComingSoon from '../layouts/ComingSoon.vue'
 import EditDiscount from '../modules/admin/promotion/views/EditDiscount.vue'
+import DetailDiscount from '../modules/admin/promotion/views/DetailDiscount.vue'
+
 
 // meta.title  : tên trang hiện tại (hiển thị đậm ở topbar)
 // meta.parent : { label, to } trang cha (hiển thị mờ trước dấu "/")
@@ -31,6 +33,7 @@ const router = createRouter({
     { path: '/giam-gia', component: DiscountList, meta: { title: 'Phiếu giảm giá', parent: promo } },
     { path: '/giam-gia/them', component: AddDiscount, meta: { title: 'Thêm phiếu giảm giá', parent: { label: 'Phiếu giảm giá', to: '/giam-gia' } } },
     { path: '/giam-gia/sua/:id',component: EditDiscount},
+    {path: '/giam-gia/chi-tiet/:id',component: DetailDiscount},
     { path: '/dot-giam-gia', component: CampaignList, meta: { title: 'Đợt giảm giá', parent: promo } },
     { path: '/dot-giam-gia/them', component: AddCampaign, meta: { title: 'Thêm đợt giảm giá', parent: { label: 'Đợt giảm giá', to: '/dot-giam-gia' } } },
     { path: '/ban-hang', component: POSSales, meta: { title: 'Bán hàng tại quầy' } },

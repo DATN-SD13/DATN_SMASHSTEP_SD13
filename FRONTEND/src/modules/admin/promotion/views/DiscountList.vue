@@ -174,15 +174,13 @@ function statusClass(status) {
 function editVoucher(id) {
   router.push(`/giam-gia/sua/${id}`)
 }
-
+// ngung hoat dong
 async function deactivateVoucher(voucher) {
   const confirmed = window.confirm(
     `Bạn có chắc chắn muốn ngừng hoạt động phiếu "${voucher.code}" không?`
   )
 
-  if (!confirmed) {
-    return
-  }
+  if (!confirmed) return
 
   try {
     await api.delete(`/phieu-giam-gia/${voucher.id}`)
@@ -198,6 +196,56 @@ async function deactivateVoucher(voucher) {
       'Ngừng hoạt động phiếu giảm giá thất bại!'
     )
   }
+}
+// bat lai 
+async function activateVoucher(voucher) {
+  const confirmed = window.confirm(
+    `Bạn có chắc chắn muốn bật lại phiếu "${voucher.code}" không?`
+  )
+
+  if (!confirmed) return
+
+  try {
+    await api.put(`/phieu-giam-gia/${voucher.id}/kich-hoat`)
+
+    alert('Bật hoạt động phiếu giảm giá thành công!')
+
+    await loadData()
+  } catch (error) {
+    console.error(error)
+
+    alert(
+      error.response?.data?.message ||
+      'Bật hoạt động phiếu giảm giá thất bại!'
+    )
+  }
+}
+// xoa 
+async function deleteVoucher(voucher) {
+  const confirmed = window.confirm(
+    `Bạn có chắc chắn muốn XÓA phiếu "${voucher.code}" không?\n\nThao tác này không thể hoàn tác.`
+  )
+
+  if (!confirmed) return
+
+  try {
+    await api.delete(`/phieu-giam-gia/${voucher.id}/xoa`)
+
+    alert('Xóa phiếu giảm giá thành công!')
+
+    await loadData()
+  } catch (error) {
+    console.error(error)
+
+    alert(
+      error.response?.data?.message ||
+      'Xóa phiếu giảm giá thất bại!'
+    )
+  }
+}
+// xem chi tiet
+function viewVoucher(id) {
+  router.push(`/giam-gia/chi-tiet/${id}`)
 }
 // =========================
 // INIT
@@ -516,6 +564,7 @@ onMounted(() => {
                     <button
                       class="ss-icon-btn"
                       title="Xem chi tiết"
+                      @click="viewVoucher(x.id)"
                     >
                       <i class="bi bi-eye"></i>
                     </button>
@@ -528,14 +577,37 @@ onMounted(() => {
                       <i class="bi bi-pencil"></i>
                     </button>
 
+                    <div class="d-flex gap-1">
+
+                    <!-- Ngừng / Bật hoạt động -->
                     <button
-                      v-if="x.status === 1"   
+                      v-if="x.status === 1"
                       class="ss-icon-btn"
                       title="Ngừng hoạt động"
                       @click="deactivateVoucher(x)"
                     >
                       <i class="bi bi-power"></i>
                     </button>
+
+                    <button
+                      v-else
+                      class="ss-icon-btn"
+                      title="Bật hoạt động"
+                      @click="activateVoucher(x)"
+                    >
+                      <i class="bi bi-power"></i>
+                    </button>
+
+                    <!-- Xóa -->
+                    <button
+                      class="ss-icon-btn"
+                      title="Xóa"
+                      @click="deleteVoucher(x)"
+                    >
+                      <i class="bi bi-trash"></i>
+                    </button>
+
+                  </div>
                   </div>
 
                 </td>

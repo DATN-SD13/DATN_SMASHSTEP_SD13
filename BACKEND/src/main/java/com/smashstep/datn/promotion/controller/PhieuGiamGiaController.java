@@ -102,4 +102,19 @@ public class PhieuGiamGiaController {
 
         return ApiResponse.ok(null);
     }
+
+    @PutMapping("/{id}/kich-hoat")
+    public ApiResponse<Void> activate(@PathVariable Long id) {
+
+        phieuGiamGiaService.activate(id);
+
+        return ApiResponse.ok(null);
+    }
+    @DeleteMapping("/{id}/xoa")
+    public ApiResponse<Void> delete(@PathVariable Long id) {
+
+        phieuGiamGiaService.delete(id);
+
+        return ApiResponse.ok(null);
+    }
 }
