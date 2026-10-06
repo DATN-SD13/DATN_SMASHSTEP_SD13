@@ -24,41 +24,31 @@ public class PhieuGiamGiaController {
 
     @GetMapping
     public ApiResponse<PageResponse<PhieuGiamGiaResponse>> getAll(
+            @RequestParam(required = false) String ma,
+            @RequestParam(required = false) Integer hinhThuc,
             @RequestParam(required = false)
-            String ma,
-
-            @RequestParam(required = false)
-            @DateTimeFormat(
-                    iso = DateTimeFormat.ISO.DATE
-            )
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
             LocalDate tuNgay,
-
             @RequestParam(required = false)
-            @DateTimeFormat(
-                    iso = DateTimeFormat.ISO.DATE
-            )
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
             LocalDate denNgay,
-
-            @RequestParam(required = false)
-            Integer trangThai,
-
-            @RequestParam(defaultValue = "1")
-            int page,
-
-            @RequestParam(defaultValue = "5")
-            int size
+            @RequestParam(required = false) Integer loaiGiam,
+            @RequestParam(required = false) Integer trangThai,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "5") int size
     ) {
 
         PageResponse<PhieuGiamGiaResponse> data =
                 phieuGiamGiaService.getAll(
                         ma,
+                        hinhThuc,
                         tuNgay,
                         denNgay,
+                        loaiGiam,
                         trangThai,
                         page,
                         size
                 );
-
         return ApiResponse.ok(data);
     }
 
@@ -117,4 +107,5 @@ public class PhieuGiamGiaController {
 
         return ApiResponse.ok(null);
     }
+
 }

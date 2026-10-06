@@ -29,12 +29,13 @@ public class PhieuGiamGiaService {
 
     public PageResponse<PhieuGiamGiaResponse> getAll(
             String ma,
+            Integer hinhThuc,
             LocalDate tuNgay,
             LocalDate denNgay,
+            Integer loaiGiam,
             Integer trangThai,
             int page,
-            int size
-    ) {
+            int size) {
 
         if (page < 1) {
             page = 1;
@@ -44,21 +45,23 @@ public class PhieuGiamGiaService {
             size = 5;
         }
 
-        Pageable pageable = PageRequest.of(
-                page - 1,
-                size,
-                Sort.by(
-                        Sort.Direction.DESC,
-                        "ngayTao"
-                )
-        );
-
         Specification<PhieuGiamGia> specification =
-                Specification.allOf(
-                        PhieuGiamGiaSpecification.ma(ma),
-                        PhieuGiamGiaSpecification.tuNgay(tuNgay),
-                        PhieuGiamGiaSpecification.denNgay(denNgay),
-                        PhieuGiamGiaSpecification.trangThai(trangThai)
+                Specification
+                        .where(PhieuGiamGiaSpecification.ma(ma))
+                        .and(PhieuGiamGiaSpecification.hinhThuc(hinhThuc))
+                        .and(PhieuGiamGiaSpecification.tuNgay(tuNgay))
+                        .and(PhieuGiamGiaSpecification.denNgay(denNgay))
+                        .and(PhieuGiamGiaSpecification.loaiGiam(loaiGiam))
+                        .and(PhieuGiamGiaSpecification.trangThai(trangThai));
+
+        Pageable pageable =
+                PageRequest.of(
+                        page - 1,
+                        size,
+                        Sort.by(
+                                Sort.Direction.DESC,
+                                "ngayTao"
+                        )
                 );
 
         Page<PhieuGiamGia> result =

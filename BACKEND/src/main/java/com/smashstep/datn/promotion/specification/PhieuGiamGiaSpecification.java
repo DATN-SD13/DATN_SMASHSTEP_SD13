@@ -62,4 +62,33 @@ public class PhieuGiamGiaSpecification {
             );
         };
     }
+
+    public static Specification<PhieuGiamGia> hinhThuc(
+            Integer hinhThuc) {
+
+        return (root, query, cb) -> {
+
+            if (hinhThuc == null) {
+                return null;
+            }
+
+            return cb.equal(
+                    root.get("hinhThucPhieu"),
+                    hinhThuc
+            );
+        };
+    }
+
+    public static Specification<PhieuGiamGia> loaiGiam(Integer loaiGiam) {
+        return (root, query, cb) -> {
+            if (loaiGiam == null) {
+                return null;
+            }
+
+            return cb.equal(
+                    root.get("loaiGiamGia"),
+                    loaiGiam
+            );
+        };
+    }
 }

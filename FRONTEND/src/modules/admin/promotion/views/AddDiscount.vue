@@ -1,132 +1,80 @@
 <script setup>
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
-import api from '../../../../utils/api'
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 
-const router = useRouter()
+import DiscountForm from '../components/DiscountForm.vue'
+import { createDiscount } from '../services/discountService'
 
-// =========================
-// FORM
-// =========================
+const router = useRouter()
 
 const form = ref({
   code: '',
   name: '',
-  type: 'Công khai',
-  discountType: 'Phần trăm (%)',
-  value: '',
-  min: '',
-  max: '',
+  form: 1,
+  discountType: 1,
+  discountValue: 0,
+  minOrderValue: 0,
+  maxDiscount: 0,
   quantity: '',
-  start: '',
-  end: '',
-  description: ''
+  startDate: '',
+  endDate: ''
 })
 
-// =========================
-// STATE
-// =========================
-
-const loading = ref(false)
-const errorMessage = ref('')
-const successMessage = ref('')
-
-// =========================
-// COMPUTED
-// =========================
-
-const isPercent = computed(() => {
-  return form.value.discountType === 'Phần trăm (%)'
-})
-
-// =========================
-// VALIDATE
-// =========================
-
-function validateForm() {
-
-  errorMessage.value = ''
+function validate() {
 
   if (!form.value.code.trim()) {
-    errorMessage.value = 'Vui lòng nhập mã phiếu.'
-    return false
+    return 'Vui lòng nhập mã phiếu!'
   }
 
   if (!form.value.name.trim()) {
-    errorMessage.value = 'Vui lòng nhập tên phiếu.'
-    return false
-  }
-
-  if (form.value.value === '' || Number(form.value.value) < 0) {
-    errorMessage.value = 'Giá trị giảm không hợp lệ.'
-    return false
+    return 'Vui lòng nhập tên phiếu!'
   }
 
   if (
-    isPercent.value &&
-    Number(form.value.value) > 100
+    form.value.discountValue == null ||
+    form.value.discountValue < 0
   ) {
-    errorMessage.value =
-      'Giá trị giảm phần trăm không được lớn hơn 100%.'
-    return false
+    return 'Giá trị giảm không hợp lệ!'
   }
 
   if (
-    form.value.min !== '' &&
-    Number(form.value.min) < 0
+    form.value.discountType === 1 &&
+    form.value.discountValue > 100
   ) {
-    errorMessage.value =
-      'Giá trị đơn tối thiểu không hợp lệ.'
-    return false
-  }
-
-  if (
-    form.value.max !== '' &&
-    Number(form.value.max) < 0
-  ) {
-    errorMessage.value =
-      'Giảm tối đa không hợp lệ.'
-    return false
+    return 'Phần trăm giảm không được vượt quá 100%!'
   }
 
   if (
     !form.value.quantity ||
-    Number(form.value.quantity) < 0
+    form.value.quantity < 1
   ) {
-    errorMessage.value =
-      'Vui lòng nhập số lượng phiếu.'
-    return false
+    return 'Số lượng phải lớn hơn 0!'
   }
 
-  if (!form.value.start) {
-    errorMessage.value =
-      'Vui lòng chọn ngày bắt đầu.'
-    return false
+  if (
+    !form.value.startDate ||
+    !form.value.endDate
+  ) {
+    return 'Vui lòng nhập đầy đủ ngày bắt đầu và ngày kết thúc!'
   }
 
-  if (!form.value.end) {
-    errorMessage.value =
-      'Vui lòng chọn ngày kết thúc.'
-    return false
+  if (
+    form.value.endDate <
+    form.value.startDate
+  ) {
+    return 'Ngày kết thúc phải sau ngày bắt đầu!'
   }
 
-  if (form.value.end < form.value.start) {
-    errorMessage.value =
-      'Ngày kết thúc phải lớn hơn hoặc bằng ngày bắt đầu.'
-    return false
-  }
-
-  return true
+  return null
 }
-
-// =========================
-// SAVE
-// =========================
 
 async function save() {
 
-  if (!validateForm()) {
+  const message = validate()
+
+  if (message) {
+    alert(message)
     return
   }
 
@@ -134,568 +82,58 @@ async function save() {
     'Bạn có chắc chắn muốn tạo phiếu giảm giá này không?'
   )
 
-  if (!confirmed) {
-    return
-  }
+  if (!confirmed) return
 
   try {
 
-    loading.value = true
-    errorMessage.value = ''
-    successMessage.value = ''
+    await createDiscount({
+      ...form.value
+    })
 
-    const request = {
-      code: form.value.code.trim(),
-
-      name: form.value.name.trim(),
-
-      // 1 = Công khai
-      // 2 = Cá nhân
-      form:
-        form.value.type === 'Công khai'
-          ? 1
-          : 2,
-
-      // 1 = Phần trăm
-      // 2 = Tiền mặt
-      discountType:
-        form.value.discountType === 'Phần trăm (%)'
-          ? 1
-          : 2,
-
-      discountValue:
-        Number(form.value.value),
-
-      minOrderValue:
-        form.value.min === ''
-          ? null
-          : Number(form.value.min),
-
-      maxDiscount:
-        form.value.max === ''
-          ? null
-          : Number(form.value.max),
-
-      startDate:
-        form.value.start,
-
-      endDate:
-        form.value.end,
-
-      quantity:
-        Number(form.value.quantity),
-
-      status: 1,
-
-      description:
-        form.value.description.trim()
-    }
-
-    await api.post(
-      '/phieu-giam-gia',
-      request
+    alert(
+      'Tạo phiếu giảm giá thành công!'
     )
 
-    successMessage.value =
-      'Tạo phiếu giảm giá thành công.'
-
-    // Chờ một chút để người dùng thấy thông báo
-    setTimeout(() => {
-      router.push('/giam-gia')
-    }, 700)
+    router.push('/giam-gia')
 
   } catch (error) {
 
-    console.error(
-      'Lỗi tạo phiếu giảm giá:',
-      error
+    console.error(error)
+
+    alert(
+      error.response?.data?.message ||
+      'Tạo phiếu giảm giá thất bại!'
     )
-
-    errorMessage.value =
-      error?.response?.data?.message ||
-      'Không thể tạo phiếu giảm giá.'
-
-  } finally {
-
-    loading.value = false
-
   }
-}
-
-// =========================
-// BACK
-// =========================
-
-function cancel() {
-  router.back()
 }
 </script>
 
 <template>
+
   <AdminLayout>
 
     <main class="ss-page">
 
-      <!-- ================= BACK ================= -->
-
       <div>
+
         <button
           class="ss-back"
           aria-label="Quay lại"
-          @click="cancel"
+          @click="router.back()"
         >
           <i class="bi bi-arrow-left"></i>
         </button>
+
       </div>
 
-
-      <!-- ================= FORM ================= -->
-
-      <section class="ss-card ss-form">
-
-        <!-- Header -->
-
-        <div class="ss-head">
-
-          <div class="ss-head-icon">
-            <i class="bi bi-ticket-perforated"></i>
-          </div>
-
-          <div>
-            <h2>Thông tin phiếu</h2>
-
-            <p>
-              Nhập thông tin để tạo phiếu giảm giá mới.
-            </p>
-          </div>
-
-        </div>
-
-
-        <!-- ================= MESSAGE ================= -->
-
-        <div
-          v-if="errorMessage"
-          class="form-message error"
-        >
-          <i class="bi bi-exclamation-circle"></i>
-
-          <span>
-            {{ errorMessage }}
-          </span>
-        </div>
-
-
-        <div
-          v-if="successMessage"
-          class="form-message success"
-        >
-          <i class="bi bi-check-circle"></i>
-
-          <span>
-            {{ successMessage }}
-          </span>
-        </div>
-
-
-        <!-- ================= FIELDS ================= -->
-
-        <div class="form-grid">
-
-          <!-- Mã -->
-
-          <div class="ss-field">
-
-            <label class="ss-label">
-              Mã phiếu
-              <span class="req">*</span>
-            </label>
-
-            <input
-              class="ss-input"
-              v-model="form.code"
-              maxlength="50"
-              placeholder="Ví dụ: PGG006"
-              :disabled="loading"
-            />
-
-          </div>
-
-
-          <!-- Tên -->
-
-          <div class="ss-field">
-
-            <label class="ss-label">
-              Tên phiếu
-              <span class="req">*</span>
-            </label>
-
-            <input
-              class="ss-input"
-              v-model="form.name"
-              maxlength="255"
-              placeholder="Ví dụ: Giảm giá tháng 10"
-              :disabled="loading"
-            />
-
-          </div>
-
-
-          <!-- Hình thức -->
-
-          <div class="ss-field">
-
-            <span class="ss-label">
-              Hình thức phiếu
-            </span>
-
-            <div class="ss-radios">
-
-              <label>
-                <input
-                  type="radio"
-                  value="Công khai"
-                  v-model="form.type"
-                  :disabled="loading"
-                />
-
-                Công khai
-              </label>
-
-              <label>
-                <input
-                  type="radio"
-                  value="Cá nhân"
-                  v-model="form.type"
-                  :disabled="loading"
-                />
-
-                Cá nhân
-              </label>
-
-            </div>
-
-          </div>
-
-
-          <!-- Loại giảm -->
-
-          <div class="ss-field">
-
-            <span class="ss-label">
-              Loại giảm
-            </span>
-
-            <div class="ss-radios">
-
-              <label>
-                <input
-                  type="radio"
-                  value="Phần trăm (%)"
-                  v-model="form.discountType"
-                  :disabled="loading"
-                />
-
-                Phần trăm (%)
-              </label>
-
-              <label>
-                <input
-                  type="radio"
-                  value="Tiền mặt (VNĐ)"
-                  v-model="form.discountType"
-                  :disabled="loading"
-                />
-
-                Tiền mặt (VNĐ)
-              </label>
-
-            </div>
-
-          </div>
-
-
-          <!-- Giá trị giảm -->
-
-          <div class="ss-field">
-
-            <label class="ss-label">
-
-              Giá trị giảm
-              ({{ isPercent ? '%' : 'VNĐ' }})
-
-              <span class="req">*</span>
-
-            </label>
-
-            <input
-              class="ss-input"
-              type="number"
-              min="0"
-              :max="isPercent ? 100 : undefined"
-              v-model="form.value"
-              :disabled="loading"
-              placeholder="Nhập giá trị giảm"
-            />
-
-          </div>
-
-
-          <!-- Đơn tối thiểu -->
-
-          <div class="ss-field">
-
-            <label class="ss-label muted">
-              Giá trị đơn tối thiểu (VNĐ)
-            </label>
-
-            <input
-              class="ss-input"
-              type="number"
-              min="0"
-              v-model="form.min"
-              :disabled="loading"
-              placeholder="Ví dụ: 500000"
-            />
-
-          </div>
-
-
-          <!-- Giảm tối đa -->
-
-          <div class="ss-field">
-
-            <label class="ss-label muted">
-              Giảm tối đa (VNĐ)
-            </label>
-
-            <input
-              class="ss-input"
-              type="number"
-              min="0"
-              v-model="form.max"
-              :disabled="loading || !isPercent"
-              :placeholder="
-                isPercent
-                  ? 'Ví dụ: 100000'
-                  : 'Không áp dụng'
-              "
-            />
-
-            <span
-              v-if="isPercent"
-              class="ss-hint warn"
-            >
-              <i class="bi bi-exclamation-triangle"></i>
-
-              Chỉ áp dụng khi loại giảm là phần trăm.
-            </span>
-
-          </div>
-
-
-          <!-- Số lượng -->
-
-          <div class="ss-field">
-
-            <label class="ss-label">
-
-              Số lượng
-              <span class="req">*</span>
-
-            </label>
-
-            <input
-              class="ss-input"
-              type="number"
-              min="1"
-              v-model="form.quantity"
-              :disabled="loading"
-              placeholder="Nhập số lượng"
-            />
-
-          </div>
-
-
-          <!-- Ngày bắt đầu -->
-
-          <div class="ss-field">
-
-            <label class="ss-label">
-
-              Ngày bắt đầu
-              <span class="req">*</span>
-
-            </label>
-
-            <input
-              class="ss-input"
-              type="date"
-              v-model="form.start"
-              :disabled="loading"
-            />
-
-          </div>
-
-
-          <!-- Ngày kết thúc -->
-
-          <div class="ss-field">
-
-            <label class="ss-label">
-
-              Ngày kết thúc
-              <span class="req">*</span>
-
-            </label>
-
-            <input
-              class="ss-input"
-              type="date"
-              v-model="form.end"
-              :disabled="loading"
-            />
-
-          </div>
-
-
-          <!-- Mô tả -->
-
-          <div class="ss-field full">
-
-            <label class="ss-label">
-              Mô tả
-            </label>
-
-            <textarea
-              class="ss-input ss-textarea"
-              v-model="form.description"
-              maxlength="1000"
-              rows="4"
-              placeholder="Nhập mô tả phiếu giảm giá..."
-              :disabled="loading"
-            ></textarea>
-
-          </div>
-
-        </div>
-
-
-        <!-- ================= ACTION ================= -->
-
-        <div class="ss-actions left">
-
-          <button
-            class="ss-btn primary"
-            :disabled="loading"
-            @click="save"
-          >
-
-            <span
-              v-if="loading"
-              class="spinner-border spinner-border-sm"
-            ></span>
-
-            <i
-              v-else
-              class="bi bi-check2"
-            ></i>
-
-            {{
-              loading
-                ? 'Đang tạo...'
-                : 'Tạo phiếu giảm giá'
-            }}
-
-          </button>
-
-
-          <button
-            class="ss-btn"
-            :disabled="loading"
-            @click="cancel"
-          >
-            Hủy
-          </button>
-
-        </div>
-
-      </section>
+      <DiscountForm
+        :form="form"
+        @submit="save"
+        @cancel="router.back()"
+      />
 
     </main>
 
   </AdminLayout>
+
 </template>
-
-
-<style scoped>
-
-.form-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px 24px;
-}
-
-.ss-field.full {
-  grid-column: 1 / -1;
-}
-
-.ss-label.muted {
-  font-weight: 500;
-  color: var(--ss-muted);
-}
-
-.ss-hint i {
-  margin-right: 3px;
-}
-
-.ss-textarea {
-  resize: vertical;
-  min-height: 100px;
-}
-
-.form-message {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 12px 14px;
-  border-radius: 8px;
-  margin-bottom: 18px;
-  font-size: 14px;
-}
-
-.form-message.error {
-  color: #b42318;
-  background: #fef3f2;
-  border: 1px solid #fecdca;
-}
-
-.form-message.success {
-  color: #067647;
-  background: #ecfdf3;
-  border: 1px solid #abefc6;
-}
-
-.form-message i {
-  font-size: 17px;
-}
-
-.ss-btn:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
-}
-
-@media (max-width: 760px) {
-
-  .form-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .ss-field.full {
-    grid-column: auto;
-  }
-
-}
-
-</style>

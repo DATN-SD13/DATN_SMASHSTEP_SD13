@@ -1,8 +1,11 @@
 <script setup>
-import { ref, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
-import api from '../../../../utils/api'
+import { onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+
+import {
+  getDiscountById
+} from '../services/discountService'
 
 const route = useRoute()
 const router = useRouter()
@@ -10,14 +13,48 @@ const router = useRouter()
 const voucher = ref(null)
 const loading = ref(true)
 
-async function loadDetail() {
-  try {
-    const response = await api.get(
-      `/phieu-giam-gia/${route.params.id}`
-    )
+function formatMoney(value) {
 
-    voucher.value = response.data.data
+  if (value == null) {
+    return '-'
+  }
+
+  return `${Number(
+    value
+  ).toLocaleString('vi-VN')}đ`
+}
+
+function formatDate(value) {
+
+  if (!value) {
+    return '-'
+  }
+
+  const date =
+    String(value).substring(0, 10)
+
+  const [y, m, d] =
+    date.split('-')
+
+  return y && m && d
+    ? `${d}/${m}/${y}`
+    : date
+}
+
+async function loadDetail() {
+
+  try {
+
+    const response =
+      await getDiscountById(
+        route.params.id
+      )
+
+    voucher.value =
+      response.data.data
+
   } catch (error) {
+
     console.error(error)
 
     alert(
@@ -26,169 +63,261 @@ async function loadDetail() {
     )
 
     router.push('/giam-gia')
+
   } finally {
+
     loading.value = false
   }
-}
-
-function formatMoney(value) {
-  if (value == null) return '-'
-
-  return Number(value).toLocaleString('vi-VN') + ' ₫'
-}
-
-function formatDate(value) {
-  if (!value) return '-'
-
-  return value.replace('T', ' ')
 }
 
 onMounted(loadDetail)
 </script>
 
 <template>
-  <AdminLayout>
-    <div class="ss-page">
 
-      <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-          <h3 class="fw-bold mb-1">Chi tiết phiếu giảm giá</h3>
-          <p class="text-muted mb-0">
-            Thông tin chi tiết của phiếu giảm giá
-          </p>
-        </div>
+  <AdminLayout>
+
+    <main class="ss-page">
+
+      <div class="detail-top">
 
         <button
-          class="btn btn-secondary"
-          @click="router.push('/giam-gia')"
+          class="ss-back"
+          aria-label="Quay lại"
+          @click="router.back()"
         >
-          <i class="bi bi-arrow-left me-1"></i>
-          Quay lại
+          <i class="bi bi-arrow-left"></i>
         </button>
+
+        <div>
+
+          <h2 class="detail-title">
+            Chi tiết phiếu giảm giá
+          </h2>
+
+          <p class="detail-subtitle">
+            Xem thông tin phiếu giảm giá
+          </p>
+
+        </div>
+
       </div>
 
-      <div v-if="loading" class="text-center py-5">
+      <div
+        v-if="loading"
+        class="ss-card ss-empty"
+      >
+        <i class="bi bi-arrow-repeat"></i>
         Đang tải dữ liệu...
       </div>
 
-      <div v-else-if="voucher" class="card border-0 shadow-sm">
-        <div class="card-body">
+      <section
+        v-else-if="voucher"
+        class="ss-card ss-form"
+      >
 
-          <div class="row g-4">
+        <div class="ss-head">
 
-            <div class="col-md-6">
-              <label>Mã phiếu giảm giá</label>
-              <div class="detail-value">
-                {{ voucher.code }}
-              </div>
-            </div>
+          <div class="ss-head-icon">
+            <i class="bi bi-ticket-perforated"></i>
+          </div>
 
-            <div class="col-md-6">
-              <label>Tên phiếu giảm giá</label>
-              <div class="detail-value">
-                {{ voucher.name }}
-              </div>
-            </div>
+          <div>
 
-            <div class="col-md-6">
-              <label>Hình thức phiếu</label>
-              <div class="detail-value">
-                {{ voucher.formLabel }}
-              </div>
-            </div>
+            <h2>
+              Thông tin phiếu
+            </h2>
 
-            <div class="col-md-6">
-              <label>Loại giảm giá</label>
-              <div class="detail-value">
-                {{ voucher.discountTypeLabel }}
-              </div>
-            </div>
-
-            <div class="col-md-6">
-              <label>Giá trị giảm</label>
-              <div class="detail-value">
-                {{ voucher.discountValue }}
-                <span v-if="voucher.discountType === 1">%</span>
-                <span v-else>₫</span>
-              </div>
-            </div>
-
-            <div class="col-md-6">
-              <label>Giá trị đơn tối thiểu</label>
-              <div class="detail-value">
-                {{ formatMoney(voucher.minOrderValue) }}
-              </div>
-            </div>
-
-            <div class="col-md-6">
-              <label>Giảm tối đa</label>
-              <div class="detail-value">
-                {{ formatMoney(voucher.maxDiscount) }}
-              </div>
-            </div>
-
-            <div class="col-md-6">
-              <label>Số lượng</label>
-              <div class="detail-value">
-                {{ voucher.quantity }}
-              </div>
-            </div>
-
-            <div class="col-md-6">
-              <label>Đã sử dụng</label>
-              <div class="detail-value">
-                {{ voucher.usedQuantity }}
-              </div>
-            </div>
-
-            <div class="col-md-6">
-              <label>Ngày bắt đầu</label>
-              <div class="detail-value">
-                {{ formatDate(voucher.startDate) }}
-              </div>
-            </div>
-
-            <div class="col-md-6">
-              <label>Ngày kết thúc</label>
-              <div class="detail-value">
-                {{ formatDate(voucher.endDate) }}
-              </div>
-            </div>
-
-            <div class="col-md-6">
-              <label>Trạng thái</label>
-              <div class="detail-value">
-                {{ voucher.statusLabel }}
-              </div>
-            </div>
-
-            <div class="col-12">
-              <label>Mô tả</label>
-              <div class="detail-value">
-                {{ voucher.description || 'Không có mô tả' }}
-              </div>
-            </div>
+            <p>
+              Thông tin chi tiết của phiếu giảm giá.
+            </p>
 
           </div>
 
         </div>
-      </div>
 
-    </div>
+        <div class="detail-grid">
+
+          <div class="detail-item">
+            <span>Mã phiếu</span>
+            <strong>{{ voucher.code }}</strong>
+          </div>
+
+          <div class="detail-item">
+            <span>Tên phiếu</span>
+            <strong>{{ voucher.name }}</strong>
+          </div>
+
+          <div class="detail-item">
+            <span>Hình thức</span>
+            <strong>{{ voucher.formLabel }}</strong>
+          </div>
+
+          <div class="detail-item">
+            <span>Loại giảm</span>
+            <strong>
+              {{ voucher.discountTypeLabel }}
+            </strong>
+          </div>
+
+          <div class="detail-item">
+            <span>Giá trị giảm</span>
+
+            <strong>
+              {{
+                voucher.discountType === 1
+                  ? `${voucher.discountValue}%`
+                  : formatMoney(voucher.discountValue)
+              }}
+            </strong>
+          </div>
+
+          <div class="detail-item">
+            <span>Đơn tối thiểu</span>
+            <strong>
+              {{ formatMoney(voucher.minOrderValue) }}
+            </strong>
+          </div>
+
+          <div class="detail-item">
+            <span>Giảm tối đa</span>
+            <strong>
+              {{ formatMoney(voucher.maxDiscount) }}
+            </strong>
+          </div>
+
+          <div class="detail-item">
+            <span>Số lượng</span>
+            <strong>
+              {{ voucher.quantity }}
+            </strong>
+          </div>
+
+          <div class="detail-item">
+            <span>Đã sử dụng</span>
+            <strong>
+              {{ voucher.usedQuantity }}
+            </strong>
+          </div>
+
+          <div class="detail-item">
+            <span>Ngày bắt đầu</span>
+            <strong>
+              {{ formatDate(voucher.startDate) }}
+            </strong>
+          </div>
+
+          <div class="detail-item">
+            <span>Ngày kết thúc</span>
+            <strong>
+              {{ formatDate(voucher.endDate) }}
+            </strong>
+          </div>
+
+          <div class="detail-item">
+            <span>Trạng thái</span>
+            <strong>
+              {{ voucher.statusLabel }}
+            </strong>
+          </div>
+
+          <div class="detail-item full">
+            <span>Mô tả</span>
+
+            <strong>
+              {{ voucher.description || 'Không có mô tả' }}
+            </strong>
+          </div>
+
+        </div>
+
+        <div class="ss-actions left">
+
+          <button
+            class="ss-btn"
+            @click="router.back()"
+          >
+            <i class="bi bi-arrow-left"></i>
+            Quay lại
+          </button>
+
+          <button
+            class="ss-btn primary"
+            @click="router.push(`/giam-gia/sua/${voucher.id}`)"
+          >
+            <i class="bi bi-pencil"></i>
+            Sửa phiếu
+          </button>
+
+        </div>
+
+      </section>
+
+    </main>
+
   </AdminLayout>
+
 </template>
 
 <style scoped>
-.detail-value {
-  margin-top: 6px;
-  padding: 10px 12px;
-  background: #f8f9fa;
-  border-radius: 6px;
-  font-weight: 500;
+
+.detail-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
 }
 
-label {
-  font-weight: 600;
-  color: #555;
+.detail-title {
+  margin: 0;
+  font-size: 18px;
 }
+
+.detail-subtitle {
+  margin: 3px 0 0;
+  color: var(--ss-muted);
+  font-size: 13px;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 24px;
+}
+
+.detail-item {
+  padding: 12px 14px;
+  border: 1px solid var(--ss-border, #e8edf2);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.detail-item span {
+  display: block;
+  color: var(--ss-muted);
+  font-size: 12px;
+  margin-bottom: 5px;
+}
+
+.detail-item strong {
+  display: block;
+  font-size: 14px;
+}
+
+.detail-item.full {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 760px) {
+
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-item.full {
+    grid-column: auto;
+  }
+
+}
+
 </style>

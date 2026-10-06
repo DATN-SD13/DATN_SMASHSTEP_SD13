@@ -1,114 +1,191 @@
 <script setup>
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
-import SsPager from '../../../../components/SsPager.vue'
-import api from '../../../../utils/api'
-import { ref, onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+
+import DiscountFilter from '../components/DiscountFilter.vue'
+import DiscountTable from '../components/DiscountTable.vue'
+
+import {
+  getDiscounts,
+  deactivateDiscount,
+  activateDiscount,
+  deleteDiscount
+} from '../services/discountService'
 
 const router = useRouter()
 
-// =========================
-// Loc
-// =========================
-
-const keyword = ref('')
-
-const form = ref({
+const filters = ref({
+  keyword: '',
+  type: 'all',
   start: '',
   end: '',
+  discount: 'all',
   status: 'all'
 })
 
-
 const rows = ref([])
-const loading = ref(false)
-const errorMessage = ref('')
 
-// =========================
-// phan trang
-// =========================
-
-const page = ref(1)
 const pageSize = ref(5)
+const page = ref(1)
+
 const totalElements = ref(0)
 const totalPages = ref(1)
 
-// =========================
-// du lieu
-// =========================
+const loading = ref(false)
+
+function typeToValue(type) {
+  if (type === 'Công khai') return 1
+  if (type === 'Cá nhân') return 2
+
+  return undefined
+}
+
+function discountToValue(type) {
+  if (type === 'Phần trăm (%)') return 1
+  if (type === 'Tiền mặt (VNĐ)') return 2
+
+  return undefined
+}
+
+function statusToValue(status) {
+  if (status === 'Đang hoạt động') return 1
+  if (status === 'Ngừng hoạt động') return 0
+
+  return undefined
+}
+
+function formatDate(value) {
+  if (!value) return '-'
+
+  const date = String(value).substring(0, 10)
+  const [y, m, d] = date.split('-')
+
+  return y && m && d
+    ? `${d}/${m}/${y}`
+    : date
+}
+
+function formatDiscount(item) {
+  if (item.discountType === 1) {
+    return `${item.discountValue ?? 0}%`
+  }
+
+  return `${Number(
+    item.discountValue ?? 0
+  ).toLocaleString('vi-VN')}đ`
+}
+
+function mapRow(item) {
+  return {
+    ...item,
+
+    type: item.formLabel,
+
+    value: formatDiscount(item),
+
+    start: formatDate(item.startDate),
+
+    end: formatDate(item.endDate),
+
+    statusLabel: item.statusLabel
+  }
+}
 
 async function loadData() {
-  try {
-    loading.value = true
-    errorMessage.value = ''
+  loading.value = true
 
-    const params = {
+  try {
+    const response = await getDiscounts({
+      ma: filters.value.keyword.trim() || undefined,
+
+      hinhThuc:
+        filters.value.type === 'all'
+          ? undefined
+          : Number(filters.value.type),
+
+      tuNgay:
+        filters.value.start || undefined,
+
+      denNgay:
+        filters.value.end || undefined,
+
+      loaiGiam:
+        filters.value.discount === 'all'
+          ? undefined
+          : Number(filters.value.discount),
+
+      trangThai:
+        filters.value.status === 'all'
+          ? undefined
+          : Number(filters.value.status),
+
       page: page.value,
       size: pageSize.value
-    }
-
-    // Mã phiếu
-    if (keyword.value.trim()) {
-      params.ma = keyword.value.trim()
-    }
-
-    // Từ ngày
-    if (form.value.start) {
-      params.tuNgay = form.value.start
-    }
-
-    // Đến ngày
-    if (form.value.end) {
-      params.denNgay = form.value.end
-    }
-
-    // Trạng thái
-    if (form.value.status !== 'all') {
-      params.trangThai = Number(form.value.status)
-    }
-
-    const response = await api.get('/phieu-giam-gia', {
-      params
     })
-
     const data = response.data.data
 
-    rows.value = data.content || []
+    let content = data?.content || []
 
-    page.value = data.page
-    pageSize.value = data.size
-    totalElements.value = data.totalElements
-    totalPages.value = data.totalPages || 1
+    // =========================
+    // loc theo hinh thuc
+    // =========================
+    if (filters.value.type !== 'all') {
+      content = content.filter(item =>
+        item.form === Number(filters.value.type)
+      )
+    }
+
+    // =========================
+    // loc theo loai
+    // =========================
+    if (filters.value.discount !== 'all') {
+      content = content.filter(item =>
+        item.discountType === Number(
+          filters.value.discount
+        )
+      )
+    }
+
+    rows.value = content.map(mapRow)
+
+    totalElements.value =
+      data?.totalElements ?? 0
+
+    totalPages.value =
+      Math.max(1, data?.totalPages ?? 1)
 
   } catch (error) {
-    console.error('Lỗi tải phiếu giảm giá:', error)
 
-    rows.value = []
-    errorMessage.value = 'Không thể tải danh sách phiếu giảm giá.'
+    console.error(error)
+
+    alert(
+      error.response?.data?.message ||
+      'Không thể tải danh sách phiếu giảm giá!'
+    )
+
   } finally {
     loading.value = false
   }
 }
 
-// =========================
-// tim kiem
-// =========================
+function search(value) {
+  filters.value = {
+    ...value
+  }
 
-function search() {
   page.value = 1
+
   loadData()
 }
 
-// =========================
-// reset
-// =========================
-
 function reset() {
-  keyword.value = ''
-
-  form.value = {
+  filters.value = {
+    keyword: '',
+    type: 'all',
     start: '',
     end: '',
+    discount: 'all',
     status: 'all'
   }
 
@@ -117,111 +194,59 @@ function reset() {
   loadData()
 }
 
-// =========================
-// phan trang
-// =========================
-
-function changePage(newPage) {
-  page.value = newPage
-  loadData()
+function viewVoucher(id) {
+  router.push(`/giam-gia/chi-tiet/${id}`)
 }
 
-function changeSize(newSize) {
-  pageSize.value = newSize
-  page.value = 1
-  loadData()
-}
-
-// =========================
-// FORMAT
-// =========================
-
-function formatMoney(value) {
-  if (value === null || value === undefined) {
-    return '0 ₫'
-  }
-
-  return Number(value).toLocaleString('vi-VN') + ' ₫'
-}
-
-function formatDate(value) {
-  if (!value) {
-    return ''
-  }
-
-  const parts = value.split('-')
-
-  if (parts.length === 3) {
-    return `${parts[2]}/${parts[1]}/${parts[0]}`
-  }
-
-  return value
-}
-
-function formatDiscount(item) {
-  if (item.discountType === 1) {
-    return `${item.discountValue}%`
-  }
-
-  return formatMoney(item.discountValue)
-}
-
-function statusClass(status) {
-  return status === 1 ? 'success' : 'danger'
-}
-
-// update 
 function editVoucher(id) {
   router.push(`/giam-gia/sua/${id}`)
 }
-// ngung hoat dong
-async function deactivateVoucher(voucher) {
+
+async function toggleVoucher(voucher) {
+
+  const active = voucher.status === 1
+
+  const action = active
+    ? 'ngừng hoạt động'
+    : 'bật hoạt động'
+
   const confirmed = window.confirm(
-    `Bạn có chắc chắn muốn ngừng hoạt động phiếu "${voucher.code}" không?`
+    `Bạn có chắc chắn muốn ${action} phiếu "${voucher.code}" không?`
   )
 
   if (!confirmed) return
 
   try {
-    await api.delete(`/phieu-giam-gia/${voucher.id}`)
 
-    alert('Ngừng hoạt động phiếu giảm giá thành công!')
+    if (active) {
+      await deactivateDiscount(voucher.id)
+    } else {
+      await activateDiscount(voucher.id)
+    }
+
+    alert(
+      active
+        ? 'Ngừng hoạt động phiếu giảm giá thành công!'
+        : 'Bật hoạt động phiếu giảm giá thành công!'
+    )
 
     await loadData()
+
   } catch (error) {
+
     console.error(error)
 
     alert(
       error.response?.data?.message ||
-      'Ngừng hoạt động phiếu giảm giá thất bại!'
+      `${active
+        ? 'Ngừng hoạt động'
+        : 'Bật hoạt động'} thất bại!`
     )
   }
 }
-// bat lai 
-async function activateVoucher(voucher) {
-  const confirmed = window.confirm(
-    `Bạn có chắc chắn muốn bật lại phiếu "${voucher.code}" không?`
-  )
 
-  if (!confirmed) return
+async function removeVoucher(voucher) {
 
-  try {
-    await api.put(`/phieu-giam-gia/${voucher.id}/kich-hoat`)
-
-    alert('Bật hoạt động phiếu giảm giá thành công!')
-
-    await loadData()
-  } catch (error) {
-    console.error(error)
-
-    alert(
-      error.response?.data?.message ||
-      'Bật hoạt động phiếu giảm giá thất bại!'
-    )
-  }
-}
-// xoa 
-async function deleteVoucher(voucher) {
   const confirmed = window.confirm(
     `Bạn có chắc chắn muốn XÓA phiếu "${voucher.code}" không?\n\nThao tác này không thể hoàn tác.`
   )
@@ -229,12 +254,15 @@ async function deleteVoucher(voucher) {
   if (!confirmed) return
 
   try {
-    await api.delete(`/phieu-giam-gia/${voucher.id}/xoa`)
+
+    await deleteDiscount(voucher.id)
 
     alert('Xóa phiếu giảm giá thành công!')
 
     await loadData()
+
   } catch (error) {
+
     console.error(error)
 
     alert(
@@ -243,133 +271,39 @@ async function deleteVoucher(voucher) {
     )
   }
 }
-// xem chi tiet
-function viewVoucher(id) {
-  router.push(`/giam-gia/chi-tiet/${id}`)
-}
-// =========================
-// INIT
-// =========================
 
-onMounted(() => {
+function changePage(nextPage) {
+
+  if (
+    nextPage < 1 ||
+    nextPage > totalPages.value
+  ) {
+    return
+  }
+
+  page.value = nextPage
+
   loadData()
-})
+}
+
+onMounted(loadData)
 </script>
 
 <template>
+
   <AdminLayout>
+
     <main class="ss-page">
 
-      <!-- ================= FILTER ================= -->
-      <section class="ss-card">
+      <!-- BỘ LỌC -->
+      <DiscountFilter
+        v-model="filters"
+        @search="search"
+        @reset="reset"
+        @create="router.push('/giam-gia/them')"
+      />
 
-        <div class="ss-head">
-          <div class="ss-head-icon">
-            <i class="bi bi-funnel"></i>
-          </div>
-
-          <div>
-            <h2>Bộ lọc</h2>
-            <p>Tra cứu nhanh dữ liệu.</p>
-          </div>
-        </div>
-
-        <div class="filter-row">
-
-          <!-- Mã -->
-          <div class="ss-field">
-            <span class="ss-label">Mã phiếu</span>
-
-            <div class="ss-search">
-              <i class="bi bi-search"></i>
-
-              <input
-                class="ss-input"
-                v-model="keyword"
-                placeholder="Nhập mã phiếu..."
-                @keyup.enter="search"
-              />
-            </div>
-          </div>
-
-          <!-- Từ ngày -->
-          <div class="ss-field">
-            <span class="ss-label">Từ ngày</span>
-
-            <input
-              class="ss-input"
-              type="date"
-              v-model="form.start"
-            />
-          </div>
-
-          <!-- Đến ngày -->
-          <div class="ss-field">
-            <span class="ss-label">Đến ngày</span>
-
-            <input
-              class="ss-input"
-              type="date"
-              v-model="form.end"
-            />
-          </div>
-
-          <!-- Trạng thái -->
-          <div class="ss-field">
-            <span class="ss-label">Trạng thái</span>
-
-            <select
-              class="ss-select"
-              v-model="form.status"
-            >
-              <option value="all">
-                Tất cả trạng thái
-              </option>
-
-              <option value="1">
-                Hoạt động
-              </option>
-
-              <option value="0">
-                Ngừng hoạt động
-              </option>
-            </select>
-          </div>
-
-        </div>
-
-        <div class="ss-actions">
-
-          <button
-            class="ss-btn"
-            @click="reset"
-          >
-            <i class="bi bi-arrow-clockwise"></i>
-            Đặt lại bộ lọc
-          </button>
-
-          <button
-            class="ss-btn primary"
-            @click="search"
-          >
-            <i class="bi bi-search"></i>
-            Tìm kiếm
-          </button>
-
-          <button
-            class="ss-btn primary"
-            @click="router.push('/giam-gia/them')"
-          >
-            <i class="bi bi-plus-lg"></i>
-            Tạo phiếu mới
-          </button>
-
-        </div>
-
-      </section>
-
-
-      <!-- ================= LIST ================= -->
+      <!-- DANH SÁCH -->
       <section class="ss-card">
 
         <div class="ss-head">
@@ -381,309 +315,125 @@ onMounted(() => {
           <span class="ss-spacer"></span>
 
           <span class="ss-count">
-            {{ totalElements }} bản ghi
+            {{ totalElements }}
+            bản ghi hiển thị.
           </span>
 
         </div>
 
-
-        <!-- Error -->
         <div
-          v-if="errorMessage"
-          class="alert alert-danger mx-3"
+          v-if="loading"
+          class="ss-empty"
         >
-          {{ errorMessage }}
+          <i class="bi bi-arrow-repeat"></i>
+          Đang tải dữ liệu...
         </div>
 
-
-        <div class="ss-table-wrap">
+        <div
+          v-else
+          class="ss-table-wrap"
+        >
 
           <table class="ss-table">
 
             <thead>
+
               <tr>
 
                 <th class="w-stt c">
                   STT
                 </th>
 
-                <th>
-                  Mã
-                </th>
+                <th>Mã</th>
 
-                <th>
-                  Tên phiếu
-                </th>
+                <th>Tên phiếu</th>
 
-                <th>
-                  Hình thức
-                </th>
+                <th>Hình thức</th>
 
-                <th>
-                  Giá trị giảm
-                </th>
+                <th>Giá trị giảm</th>
 
-                <th>
-                  Ngày bắt đầu
-                </th>
+                <th>Ngày bắt đầu</th>
 
-                <th>
-                  Ngày kết thúc
-                </th>
+                <th>Ngày kết thúc</th>
 
-                <th>
-                  Số lượng
-                </th>
+                <th>Trạng thái</th>
 
-                <th>
-                  Đã dùng
-                </th>
-
-                <th>
-                  Trạng thái
-                </th>
-
-                <th>
-                  Hành động
-                </th>
+                <th>Hành động</th>
 
               </tr>
+
             </thead>
 
-
-            <tbody>
-
-              <!-- Loading -->
-              <tr v-if="loading">
-
-                <td
-                  colspan="11"
-                  class="ss-empty"
-                >
-                  <div class="spinner-border"></div>
-
-                  <span>
-                    Đang tải dữ liệu...
-                  </span>
-                </td>
-
-              </tr>
-
-
-              <!-- Empty -->
-              <tr v-else-if="!rows.length">
-
-                <td
-                  colspan="11"
-                  class="ss-empty"
-                >
-                  <i class="bi bi-inbox"></i>
-
-                  Không có phiếu giảm giá phù hợp.
-                </td>
-
-              </tr>
-
-
-              <!-- Data -->
-              <tr
-                v-for="(x, i) in rows"
-                :key="x.id"
-              >
-
-                <td class="c">
-                  {{ (page - 1) * pageSize + i + 1 }}
-                </td>
-
-
-                <td>
-                  <span class="ss-code">
-                    {{ x.code }}
-                  </span>
-                </td>
-
-
-                <td>
-                  {{ x.name }}
-                </td>
-
-
-                <td>
-
-                  <span
-                    class="ss-pill"
-                    :class="{ warn: x.form === 2 }"
-                  >
-                    {{ x.formLabel }}
-                  </span>
-
-                </td>
-
-
-                <td>
-                  {{ formatDiscount(x) }}
-                </td>
-
-
-                <td class="nowrap">
-                  {{ formatDate(x.startDate) }}
-                </td>
-
-
-                <td class="nowrap">
-                  {{ formatDate(x.endDate) }}
-                </td>
-
-
-                <td class="c">
-                  {{ x.quantity }}
-                </td>
-
-
-                <td class="c">
-                  {{ x.usedQuantity }}
-                </td>
-
-
-                <td>
-
-                  <span
-                    class="ss-pill dot"
-                    :class="statusClass(x.status)"
-                  >
-                    {{ x.statusLabel }}
-                  </span>
-
-                </td>
-
-
-                <td>
-
-                  <div class="ss-row-actions">
-
-                    <button
-                      class="ss-icon-btn"
-                      title="Xem chi tiết"
-                      @click="viewVoucher(x.id)"
-                    >
-                      <i class="bi bi-eye"></i>
-                    </button>
-
-                    <button
-                      class="ss-icon-btn"
-                      title="Sửa"
-                      @click="editVoucher(x.id)"
-                    >
-                      <i class="bi bi-pencil"></i>
-                    </button>
-
-                    <div class="d-flex gap-1">
-
-                    <!-- Ngừng / Bật hoạt động -->
-                    <button
-                      v-if="x.status === 1"
-                      class="ss-icon-btn"
-                      title="Ngừng hoạt động"
-                      @click="deactivateVoucher(x)"
-                    >
-                      <i class="bi bi-power"></i>
-                    </button>
-
-                    <button
-                      v-else
-                      class="ss-icon-btn"
-                      title="Bật hoạt động"
-                      @click="activateVoucher(x)"
-                    >
-                      <i class="bi bi-power"></i>
-                    </button>
-
-                    <!-- Xóa -->
-                    <button
-                      class="ss-icon-btn"
-                      title="Xóa"
-                      @click="deleteVoucher(x)"
-                    >
-                      <i class="bi bi-trash"></i>
-                    </button>
-
-                  </div>
-                  </div>
-
-                </td>
-
-              </tr>
-
-            </tbody>
+            <DiscountTable
+              :rows="rows"
+              :page="page"
+              :page-size="pageSize"
+              @view="viewVoucher"
+              @edit="editVoucher"
+              @toggle="toggleVoucher"
+              @delete="removeVoucher"
+            />
 
           </table>
 
         </div>
 
+        <!-- PHÂN TRANG -->
+        <div class="ss-foot">
 
-        <!-- ================= PAGER ================= -->
+          <select
+            class="ss-select"
+            v-model.number="pageSize"
+            @change="page = 1; loadData()"
+          >
 
-        <SsPager
-          :page="page"
-          :size="pageSize"
-          :pages="totalPages"
-          @update:page="changePage"
-          @update:size="changeSize"
-        />
+            <option :value="5">
+              5
+            </option>
+
+            <option :value="10">
+              10
+            </option>
+
+            <option :value="20">
+              20
+            </option>
+
+          </select>
+
+          <div class="ss-pages">
+
+            <button
+              :disabled="page === 1"
+              @click="changePage(page - 1)"
+            >
+              <i class="bi bi-chevron-left"></i>
+            </button>
+
+            <button
+              v-for="n in totalPages"
+              :key="n"
+              :class="{ active: n === page }"
+              @click="changePage(n)"
+            >
+              {{ n }}
+            </button>
+
+            <button
+              :disabled="page === totalPages"
+              @click="changePage(page + 1)"
+            >
+              <i class="bi bi-chevron-right"></i>
+            </button>
+
+          </div>
+
+        </div>
 
       </section>
 
     </main>
+
   </AdminLayout>
+
 </template>
-
-
-<style scoped>
-
-.filter-row {
-  display: grid;
-  grid-template-columns:
-    repeat(4, minmax(0, 1fr));
-
-  gap: 10px;
-}
-
-@media (max-width: 1100px) {
-
-  .filter-row {
-    grid-template-columns:
-      repeat(2, minmax(0, 1fr));
-  }
-
-}
-
-@media (max-width: 640px) {
-
-  .filter-row {
-    grid-template-columns: 1fr;
-  }
-
-  .ss-actions > * {
-    flex: 1;
-  }
-
-}
-
-.ss-empty {
-  height: 180px;
-  text-align: center;
-  vertical-align: middle;
-  color: var(--ss-muted);
-}
-
-.ss-empty i {
-  font-size: 28px;
-  display: block;
-  margin-bottom: 8px;
-}
-
-.ss-empty .spinner-border {
-  margin-right: 8px;
-}
-
-</style>
