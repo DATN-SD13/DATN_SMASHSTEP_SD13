@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue'
 
 const props = defineProps({
+  formSupported: { type: Boolean, default: true },
   modelValue: {
     type: Object,
     default: () => ({
@@ -70,7 +71,7 @@ function reset() {
 
       <!-- MÃ PHIẾU -->
       <div class="ss-field">
-        <span class="ss-label">Mã phiếu</span>
+        <span class="ss-label">Mã hoặc tên phiếu</span>
 
         <div class="ss-search">
           <i class="bi bi-search"></i>
@@ -78,7 +79,7 @@ function reset() {
           <input
             v-model="local.keyword"
             class="ss-input"
-            placeholder="Nhập mã phiếu..."
+            placeholder="Nhập mã hoặc tên phiếu..."
             @keyup.enter="search"
           />
         </div>
@@ -90,6 +91,7 @@ function reset() {
 
         <select
           v-model="local.type"
+          :disabled="!formSupported"
           class="ss-select"
         >
           <option value="all">
@@ -104,6 +106,7 @@ function reset() {
             Cá nhân
           </option>
         </select>
+        <small v-if="!formSupported" class="ss-hint warn">Hình thức phiếu chưa khả dụng.</small>
       </div>
 
       <!-- TỪ NGÀY -->

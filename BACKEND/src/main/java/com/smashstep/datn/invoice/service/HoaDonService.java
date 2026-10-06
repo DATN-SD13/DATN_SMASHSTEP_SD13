@@ -57,12 +57,13 @@ public class HoaDonService {
         }
         int pageNumber = Math.max(page, 1);
         int pageSize = Math.min(Math.max(size, 1), 100);
+        if ((long) (pageNumber - 1) * (pageSize) > Integer.MAX_VALUE) throw AppException.badRequest("Trang yêu cầu vượt giới hạn phân trang");
         Integer status = getTrangThai(trangThai);
         Integer type = getLoaiDon(loaiDon);
         Pageable pageable = PageRequest.of(
                 pageNumber - 1,
                 pageSize,
-                Sort.by(Sort.Direction.DESC, "ngayTao")
+                Sort.by(Sort.Direction.DESC, "ngayTao", "id")
         );
         Specification<HoaDon> specification = taoBoLoc(ma, tuNgay, denNgay, status, type);
         Page<HoaDon> result = hoaDonRepository.findAll(specification, pageable);
@@ -94,14 +95,18 @@ public class HoaDonService {
 
     @Transactional
     public HoaDonDetailDto capNhatTrangThai(String ma, CapNhatTrangThaiHoaDonDto request) {
-        if (request.getTrangThai() == null) {
+        if (request == null || request.getTrangThai() == null) {
             throw AppException.badRequest("Trạng thái không được để trống");
         }
         TrangThaiHoaDon trangThai = TrangThaiHoaDon.tuMa(request.getTrangThai());
         if (trangThai == null) {
             throw AppException.badRequest("Trạng thái hóa đơn không hợp lệ");
         }
-        HoaDon hoaDon = timHoaDon(ma);
+        if (ma == null || ma.isBlank()) {
+            throw AppException.badRequest("Mã hóa đơn không được để trống");
+        }
+        HoaDon hoaDon = hoaDonRepository.findByMaHoaDonForUpdate(ma.trim())
+                .orElseThrow(() -> AppException.notFound("Không tìm thấy hóa đơn: " + ma));
         Integer trangThaiHienTai = hoaDon.getTrangThai();
 
         if (request.getTrangThai() == TrangThaiHoaDon.DA_HUY.getMa()) {
@@ -114,8 +119,9 @@ public class HoaDonService {
             if (trangThaiHienTai != null && trangThaiHienTai == TrangThaiHoaDon.HOAN_TIEN.getMa()) {
                 throw AppException.badRequest("Đơn hàng đã hoàn tiền, không thể hủy.");
             }
-            if (trangThaiHienTai == null || trangThaiHienTai < TrangThaiHoaDon.CHO_XAC_NHAN.getMa()
-                    || trangThaiHienTai > TrangThaiHoaDon.DA_GIAO_HANG.getMa()) {
+            if (trangThaiHienTai == null || (trangThaiHienTai != TrangThaiHoaDon.HOA_DON_CHO.getMa()
+                    && (trangThaiHienTai < TrangThaiHoaDon.CHO_XAC_NHAN.getMa()
+                    || trangThaiHienTai > TrangThaiHoaDon.DA_GIAO_HANG.getMa()))) {
                 throw AppException.badRequest("Đơn hàng hiện tại không thể hủy.");
             }
         } else {
@@ -141,6 +147,9 @@ public class HoaDonService {
         if (idNhanVienThaoTac != null) {
             NhanVien nhanVien = nhanVienRepository.findById(idNhanVienThaoTac)
                     .orElseThrow(() -> AppException.notFound("Không tìm thấy nhân viên"));
+            if (!Integer.valueOf(1).equals(nhanVien.getTrangThai())) {
+                throw AppException.badRequest("Nhân viên thao tác phải đang hoạt động");
+            }
             hoaDon.setIdNhanVien(nhanVien);
         }
         hoaDon.setTrangThai(request.getTrangThai());
@@ -183,15 +192,8 @@ public class HoaDonService {
         if (trangThai == null || trangThai.isBlank()) {
             return null;
         }
-        try {
-            Integer value = Integer.valueOf(trangThai);
-            if (TrangThaiHoaDon.tuMa(value) == null) {
-                throw AppException.badRequest("Trạng thái hóa đơn không hợp lệ");
-            }
-            return value;
-        } catch (NumberFormatException e) {
-            throw AppException.badRequest("Trạng thái hóa đơn không hợp lệ");
-        }
+        TrangThaiHoaDon value = TrangThaiHoaDon.phanTich(trangThai);
+        return value == null ? null : value.getMa();
     }
 
 
@@ -200,10 +202,7 @@ public class HoaDonService {
             return null;
         }
         LoaiHoaDon loai = LoaiHoaDon.phanTich(loaiDon);
-        if (loai == null) {
-            throw AppException.badRequest("Loại hóa đơn không hợp lệ");
-        }
-        return loai.getMa();
+        return loai == null ? null : loai.getMa();
     }
 
     private Specification<HoaDon> taoBoLoc(

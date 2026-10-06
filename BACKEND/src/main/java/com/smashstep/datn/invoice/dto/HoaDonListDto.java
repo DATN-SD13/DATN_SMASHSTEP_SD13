@@ -51,7 +51,7 @@ public class HoaDonListDto {
                 .soDienThoai(firstNotBlank(h.getSoDienThoaiNguoiNhan(), kh != null ? kh.getSoDienThoai() : null, ""))
                 .ngayTao(h.getNgayTao() != null ? h.getNgayTao().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss")) : null)
                 .tongTien(nz(h.getTongTien()))
-                .tienGiamGia(nz(h.getTienGiamGia()))
+                .tienGiamGia(HoaDonAmounts.discount(h))
                 .phiVanChuyen(nz(h.getPhiVanChuyen()))
                 .thanhTien(nz(h.getThanhTien()))
                 .loaiHoaDon(loai != null ? loai.getKhoa() : null)

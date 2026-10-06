@@ -4,6 +4,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 @Getter
 @Setter
@@ -39,4 +40,5 @@ public class PhieuGiamGiaResponse {
     private String description;
 // vo han phieu
     private Boolean unlimited;
+    private List<Long> customerIds;
 }

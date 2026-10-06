@@ -1,10 +1,13 @@
 <script setup>
+import { avatarUrl } from '../../../../utils/avatar'
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import SsPager from '../../../../components/SsPager.vue'
 import { initials } from '../../../../utils/paging'
+import { confirmAction, showSuccess, showError } from '../../../../utils/feedback'
 
 import {
   onMounted,
+  onBeforeUnmount,
   ref,
   watch
 } from 'vue'
@@ -46,15 +49,18 @@ const error = ref('')
 const selected = ref(null)
 
 const modal = ref('')
+const updatingStatus = ref('')
+const openingModal = ref(false)
 
 let searchTimer
+let loadVersion = 0
 
 const errorMessage = (e) =>
   e?.response?.data?.message
   || 'Không thể tải dữ liệu khách hàng.'
 
 async function loadCustomers() {
-
+  const version = ++loadVersion
   loading.value = true
   error.value = ''
 
@@ -79,6 +85,8 @@ async function loadCustomers() {
       await customerService
         .getCustomers(params)
 
+    if (version !== loadVersion) return
+
     rows.value =
       data?.content || []
 
@@ -100,13 +108,17 @@ async function loadCustomers() {
 
   } catch (e) {
 
+    if (version !== loadVersion) return
+
     error.value =
       errorMessage(e)
 
     rows.value = []
+    pages.value = 1
+    totalElements.value = 0
 
   } finally {
-    loading.value = false
+    if (version === loadVersion) loading.value = false
   }
 }
 
@@ -114,7 +126,8 @@ async function openModal(
   type,
   customer
 ) {
-
+  if (openingModal.value) return
+  openingModal.value = true
   try {
 
     selected.value =
@@ -128,16 +141,18 @@ async function openModal(
 
   } catch (e) {
 
-    alert(
+    showError(
       errorMessage(e)
     )
+  } finally {
+    openingModal.value = false
   }
 }
 
 async function toggleStatus(
   customer
 ) {
-
+  if (updatingStatus.value) return
   const next =
     customer.active
       ? 0
@@ -148,30 +163,19 @@ async function toggleStatus(
       ? 'khóa'
       : 'mở khóa'
 
-  if (
-    !confirm(
-      `Bạn có chắc muốn ${text} khách hàng ${customer.name}?`
-    )
-  ) {
-    return
-  }
-
-  try {
-
-    await customerService
-      .updateStatus(
-        customer.code,
-        next
-      )
-
-    await loadCustomers()
-
-  } catch (e) {
-
-    alert(
-      errorMessage(e)
-    )
-  }
+  confirmAction(`Bạn có chắc muốn ${text} khách hàng ${customer.name || customer.code}?`, async () => {
+    if (updatingStatus.value) return
+    try {
+      updatingStatus.value = customer.code
+      await customerService.updateStatus(customer.code, next)
+      showSuccess(next === 1 ? 'Đã mở khóa khách hàng.' : 'Đã khóa khách hàng.')
+      await loadCustomers()
+    } catch (e) {
+      showError(errorMessage(e))
+    } finally {
+      updatingStatus.value = ''
+    }
+  })
 }
 
 function reset() {
@@ -200,16 +204,15 @@ async function saved() {
 }
 
 async function addressChanged() {
-
+  const code = selected.value?.code
   await loadCustomers()
 
-  if (selected.value) {
-
-    selected.value =
-      await customerService
-        .getCustomer(
-          selected.value.code
-        )
+  if (!code || selected.value?.code !== code) return
+  try {
+    const customer = await customerService.getCustomer(code)
+    if (selected.value?.code === code) selected.value = customer
+  } catch (e) {
+    error.value = errorMessage(e)
   }
 }
 
@@ -219,6 +222,8 @@ async function addressChanged() {
 watch(
   q,
   () => {
+
+    ++loadVersion
 
     clearTimeout(
       searchTimer
@@ -259,6 +264,11 @@ watch(
 onMounted(
   loadCustomers
 )
+
+onBeforeUnmount(() => {
+  clearTimeout(searchTimer)
+  ++loadVersion
+})
 </script>
 
 <template>
@@ -438,7 +448,7 @@ onMounted(
               <tr
                 v-for="(c, i) in rows"
                 v-else
-                :key="c.code"
+                :key="c.id ?? c.code"
               >
 
                 <td class="c">
@@ -454,7 +464,7 @@ onMounted(
 
                   <img
                     v-if="c.image"
-                    :src="c.image"
+                    :src="avatarUrl(c.image)"
                     class="customer-avatar-img"
                   />
 
@@ -473,15 +483,15 @@ onMounted(
                 </td>
 
                 <td class="ss-strong nowrap">
-                  {{ c.code }}
+                  {{ c.code || '—' }}
                 </td>
 
                 <td class="ss-strong">
-                  {{ c.name }}
+                  {{ c.name || '—' }}
                 </td>
 
                 <td>
-                  {{ c.email }}
+                  {{ c.email || '—' }}
                 </td>
 
                 <td style="min-width:240px">
@@ -505,7 +515,7 @@ onMounted(
                         : 'danger'
                     "
                   >
-                    {{ c.statusLabel }}
+                    {{ c.statusLabel || '—' }}
                   </span>
 
                 </td>
@@ -517,6 +527,7 @@ onMounted(
                     <button
                       class="ss-icon-btn"
                       title="Xem chi tiết"
+                      :disabled="openingModal"
                       @click="
                         openModal(
                           'detail',
@@ -530,6 +541,7 @@ onMounted(
                     <button
                       class="ss-icon-btn"
                       title="Sửa"
+                      :disabled="openingModal"
                       @click="
                         openModal(
                           'edit',
@@ -543,6 +555,7 @@ onMounted(
                     <button
                       class="ss-icon-btn"
                       title="Địa chỉ"
+                      :disabled="openingModal"
                       @click="
                         openModal(
                           'address',
@@ -555,6 +568,7 @@ onMounted(
 
                     <button
                       class="ss-icon-btn danger"
+                      :disabled="!!updatingStatus"
                       :title="
                         c.active
                           ? 'Khóa tài khoản'

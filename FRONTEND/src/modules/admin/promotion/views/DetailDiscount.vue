@@ -1,4 +1,5 @@
 <script setup>
+import { showError } from '../../../../utils/feedback'
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -57,7 +58,7 @@ async function loadDetail() {
 
     console.error(error)
 
-    alert(
+    showError(
       error.response?.data?.message ||
       'Không thể tải chi tiết phiếu giảm giá!'
     )
@@ -140,12 +141,12 @@ onMounted(loadDetail)
 
           <div class="detail-item">
             <span>Mã phiếu</span>
-            <strong>{{ voucher.code }}</strong>
+            <strong>{{ voucher.code || '—' }}</strong>
           </div>
 
           <div class="detail-item">
             <span>Tên phiếu</span>
-            <strong>{{ voucher.name }}</strong>
+            <strong>{{ voucher.name || '—' }}</strong>
           </div>
 
           <div class="detail-item">
@@ -166,7 +167,7 @@ onMounted(loadDetail)
             <strong>
               {{
                 voucher.discountType === 1
-                  ? `${voucher.discountValue}%`
+                  ? (voucher.discountValue == null ? '—' : `${voucher.discountValue}%`)
                   : formatMoney(voucher.discountValue)
               }}
             </strong>
@@ -189,14 +190,14 @@ onMounted(loadDetail)
           <div class="detail-item">
             <span>Số lượng</span>
             <strong>
-              {{ voucher.unlimited ? 'Không giới hạn' : voucher.quantity }}
+              {{ voucher.unlimited ? 'Không giới hạn' : (voucher.quantity ?? '—') }}
             </strong>
           </div>
 
           <div class="detail-item">
             <span>Đã sử dụng</span>
             <strong>
-              {{ voucher.usedQuantity }}
+              {{ voucher.usedQuantity ?? 0 }}
             </strong>
           </div>
 

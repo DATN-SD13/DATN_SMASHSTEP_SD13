@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
@@ -50,9 +51,10 @@ public class NhanVienService {
 
         validateTrangThaiNullable(trangThai);
 
+        if ((long) (page - 1) * (Math.min(size, 100)) > Integer.MAX_VALUE) throw AppException.badRequest("Trang yêu cầu vượt giới hạn phân trang");
         Pageable pageable = PageRequest.of(
                 page - 1,
-                size,
+                Math.min(size, 100),
                 Sort.by(Sort.Direction.DESC, "id")
         );
 
@@ -380,11 +382,16 @@ public class NhanVienService {
     // GENERATE CODE
     // =========================================================
     private String generateEmployeeCode(Long id) {
-
-        return String.format(
-                "NV%04d",
-                id
-        );
+        long candidate = id;
+        String code = String.format(Locale.ROOT, "NV%04d", candidate);
+        while (nhanVienRepository.existsByMaNhanVien(code)
+                || nhanVienRepository.existsByTenDangNhap(code)) {
+            if (candidate == Long.MAX_VALUE) {
+                throw AppException.conflict("Không thể sinh mã nhân viên mới");
+            }
+            code = String.format(Locale.ROOT, "NV%04d", ++candidate);
+        }
+        return code;
     }
 
     // =========================================================
@@ -553,7 +560,7 @@ public class NhanVienService {
          * Không lưu base64 vào hinh_anh NVARCHAR(1000).
          */
         if (result.startsWith("data:image/")) {
-            return null;
+            throw AppException.badRequest("Hãy tải ảnh đại diện lên trước khi lưu nhân viên");
         }
 
         if (result.length() > 1000) {

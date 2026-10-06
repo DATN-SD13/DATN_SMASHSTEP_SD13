@@ -1,15 +1,25 @@
 <script setup>
-import { reactive, watch } from 'vue'
+import { nextTick, onUnmounted, reactive, watch } from 'vue'
 
 const emit = defineEmits(['search', 'reset'])
 const filters = reactive({ code: '', from: '', to: '', type: 'all' })
 
-watch(filters, () => emit('search', { ...filters }), { deep: true })
+let searchTimer = null
+let resetting = false
+watch(filters, () => {
+  if (resetting) return
+  window.clearTimeout(searchTimer)
+  searchTimer = window.setTimeout(() => emit('search', { ...filters }), 250)
+}, { deep: true })
 
 function reset() {
+  window.clearTimeout(searchTimer)
+  resetting = true
   Object.assign(filters, { code: '', from: '', to: '', type: 'all' })
   emit('reset')
+  nextTick(() => { resetting = false })
 }
+onUnmounted(() => window.clearTimeout(searchTimer))
 </script>
 
 <template>
@@ -35,6 +45,7 @@ function reset() {
             <option value="all">Tất cả</option>
             <option value="online">Trực tuyến</option>
             <option value="store">Tại quầy</option>
+            <option value="delivery">Giao hàng</option>
           </select>
       </label>
       <button class="reset-btn btn btn-outline-primary col-12 col-md-6 col-lg-3" type="button" @click="reset"><i class="bi bi-arrow-counterclockwise"></i> Đặt lại bộ lọc</button>

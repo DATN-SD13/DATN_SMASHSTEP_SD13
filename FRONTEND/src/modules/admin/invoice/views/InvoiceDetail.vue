@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import { invoiceService } from '../services/invoiceService'
@@ -29,6 +29,7 @@ const confirmSubmitting = ref(false)
 const showCancelModal = ref(false)
 const toast = ref({ visible: false, type: 'success', title: '', message: '' })
 let toastTimer = null
+let invoiceLoadVersion = 0
 
 const steps = [
   { key: 'waiting', label: 'Chờ xác nhận', icon: 'bi-hourglass-split', value: 0 },
@@ -46,7 +47,7 @@ const statusOptions = steps.map(step => ({
 }))
 
 const progress = computed(() => {
-  const code = Number(invoice.value?.statusCode)
+  const code = invoice.value?.statusCode
   return steps.some(step => step.value === code) ? code : -1
 })
 
@@ -61,31 +62,17 @@ const nextStatus = computed(() => {
 const canUpdateStatus = computed(() => Boolean(nextStatus.value))
 
 const canCancelOrder = computed(() => {
-  const code = Number(invoice.value?.statusCode)
-  return Number.isInteger(code) && code >= 0 && code <= 4
+  const code = invoice.value?.statusCode
+  return Number.isInteger(code) && ((code >= 0 && code <= 4) || code === 8)
 })
 
 const canPrintInvoice = computed(() => {
-  const status = Number(invoice.value?.statusCode)
+  const status = invoice.value?.statusCode
   return status === 0 || status === 1 || status === 5
 })
 
 const paymentHistory = computed(() => {
-  const items = Array.isArray(invoice.value?.paymentHistory) ? invoice.value.paymentHistory : []
-  if (items.length) return items
-
-  // Nếu DB chưa có bản ghi lịch sử thanh toán, vẫn hiển thị giao dịch/thông tin thanh toán hiện tại.
-  if (!invoice.value) return []
-  return [{
-    id: 'current-payment',
-    method: invoice.value.payment || 'Chưa cập nhật',
-    status: invoice.value.paymentStatus || 'Chưa cập nhật',
-    statusCode: invoice.value.paymentStatusCode,
-    time: invoice.value.paymentDate,
-    amount: invoice.value.total,
-    transactionCode: null,
-    description: 'Thông tin thanh toán hiện tại của hóa đơn'
-  }]
+  return Array.isArray(invoice.value?.paymentHistory) ? invoice.value.paymentHistory : []
 })
 
 const hasShippingInfo = computed(() => {
@@ -165,7 +152,7 @@ function formatHistoryDate(value) {
 }
 
 function mapInvoice(data) {
-  const statusCode = Number(data?.maTrangThai)
+  const statusCode = data?.maTrangThai == null ? null : Number(data.maTrangThai)
   const status = statusOptions.find(item => item.value === statusCode)
 
   return {
@@ -204,15 +191,16 @@ function mapInvoice(data) {
       id: item?.id,
       method: item?.phuongThucThanhToan || data?.phuongThucThanhToan || 'Chưa cập nhật',
       status: item?.trangThaiThanhToan || item?.trangThai || 'Chưa cập nhật',
-      statusCode: item?.maTrangThaiThanhToan ?? null,
+      statusCode: item?.maTrangThai == null ? null : Number(item.maTrangThai),
       time: item?.thoiGian || null,
       amount: Number(item?.soTien ?? 0),
       transactionCode: item?.maGiaoDich || null,
       description: item?.moTa || null
     })),
     address: data?.diaChiGiaoHang || data?.diaChi || 'Chưa cập nhật',
-    shippingCarrier: data?.donViVanChuyen || '—',
+    shippingCarrier: data?.donViVanChuyen || '',
     note: data?.ghiChu || '—',
+    history: Array.isArray(data?.lichSuHoaDon) ? data.lichSuHoaDon : [],
     items: (data?.chiTietHoaDon || []).map(item => ({
       id: item?.id,
       productDetailId: item?.idSanPhamChiTiet,
@@ -235,11 +223,11 @@ function mapInvoice(data) {
   }
 }
 
-async function loadProductImages() {
-  if (!invoice.value?.items?.length) return
+async function loadProductImages(target = invoice.value) {
+  if (!target?.items?.length) return
 
   const results = await Promise.all(
-    invoice.value.items.map(async item => {
+    target.items.map(async item => {
       if (!item.productDetailId) return { id: item.id, url: '' }
       try {
         const response = await api.get(`/product-details/${item.productDetailId}`)
@@ -251,23 +239,29 @@ async function loadProductImages() {
   )
 
   const imageMap = new Map(results.map(item => [item.id, item.url]))
-  invoice.value.items = invoice.value.items.map(item => ({
+  if (invoice.value !== target) return
+  target.items = target.items.map(item => ({
     ...item,
     image: imageMap.get(item.id) || ''
   }))
 }
 
 async function loadInvoice() {
+  const version = ++invoiceLoadVersion
+  const code = route.params.code
   loading.value = true
+  invoice.value = null
   loadError.value = ''
   try {
-    const response = await invoiceService.getById(route.params.code)
+    const response = await invoiceService.getById(code)
+    if (version !== invoiceLoadVersion) return
     if (!response?.success || !response?.data) {
       throw new Error(response?.message || 'Không thể tải chi tiết hóa đơn')
     }
     invoice.value = mapInvoice(response.data)
     await loadProductImages()
   } catch (error) {
+    if (version !== invoiceLoadVersion) return
     invoice.value = null
     loadError.value =
       error?.response?.data?.message ||
@@ -280,12 +274,12 @@ async function loadInvoice() {
       loadError.value
     )
   } finally {
-    loading.value = false
+    if (version === invoiceLoadVersion) loading.value = false
   }
 }
 
 function openEditOrderModal() {
-  if (!invoice.value) return
+  if (!invoice.value || updatingStatus.value || confirmSubmitting.value) return
   editOrderTab.value = 'order'
   selectedStatus.value = Number.isInteger(Number(invoice.value.statusCode))
     ? Number(invoice.value.statusCode)
@@ -302,7 +296,7 @@ function closeEditOrderModal() {
 
 const editableStatusOptions = computed(() => {
   if (!invoice.value) return []
-  const currentCode = Number(invoice.value.statusCode)
+  const currentCode = invoice.value.statusCode
   const options = []
   const current = statusOptions.find(item => item.value === currentCode)
   if (current) options.push(current)
@@ -318,7 +312,7 @@ const editableStatusOptions = computed(() => {
 })
 
 function openCancelModal() {
-  if (!canCancelOrder.value || confirmSubmitting.value) return
+  if (!canCancelOrder.value || confirmSubmitting.value || updatingStatus.value) return
   showCancelModal.value = true
 }
 
@@ -328,7 +322,7 @@ function closeCancelModal() {
 }
 
 async function cancelOrder() {
-  if (!canCancelOrder.value || confirmSubmitting.value) return
+  if (!canCancelOrder.value || confirmSubmitting.value || updatingStatus.value) return
 
   confirmSubmitting.value = true
   try {
@@ -371,6 +365,7 @@ function showLocalToast(type, title, message) {
 }
 
 async function saveStatus() {
+  if (updatingStatus.value || confirmSubmitting.value || !invoice.value) return
   const newCode = Number(selectedStatus.value)
   const currentCode = Number(invoice.value?.statusCode)
 
@@ -424,11 +419,14 @@ async function saveStatus() {
 }
 
 async function openHistoryModal() {
+  if (loadingHistory.value || !invoice.value) return
+  const code = invoice.value.code
   showHistoryModal.value = true
   loadingHistory.value = true
 
   try {
-    const response = await invoiceService.getHistory(invoice.value.code)
+    const response = await invoiceService.getHistory(code)
+    if (invoice.value?.code !== code) return
     if (!response?.success) {
       throw new Error(response?.message || 'Không thể tải lịch sử hóa đơn')
     }
@@ -436,6 +434,7 @@ async function openHistoryModal() {
     // BE đã trả theo ngayTao DESC; giữ nguyên thứ tự để item mới nhất ở trên.
     historyItems.value = Array.isArray(response.data) ? response.data : []
   } catch (error) {
+    if (invoice.value?.code !== code) return
     historyItems.value = []
     showLocalToast(
       'error',
@@ -472,8 +471,25 @@ function clearPrintMode() {
 
 window.addEventListener('afterprint', clearPrintMode)
 
+function stepDate(status) {
+  const entry = invoice.value?.history?.find(item => Number(item?.maTrangThai) === status)
+  return entry?.ngayTao || (status === 0 ? invoice.value?.date : '—')
+}
 
 onMounted(loadInvoice)
+watch(() => route.params.code, () => {
+  showEditOrderModal.value = false
+  showCancelModal.value = false
+  showHistoryModal.value = false
+  resetProductFilters()
+  loadInvoice()
+})
+onUnmounted(() => {
+  invoiceLoadVersion += 1
+  if (toastTimer) window.clearTimeout(toastTimer)
+  window.removeEventListener('afterprint', clearPrintMode)
+  clearPrintMode()
+})
 </script>
 
 <template>
@@ -525,7 +541,7 @@ onMounted(loadInvoice)
                   <i :class="['bi', step.icon]"></i>
                 </div>
                 <div class="step-label">{{ step.label }}</div>
-                <small v-if="index <= progress">{{ invoice.date }}</small>
+                <small v-if="index <= progress">{{ stepDate(step.value) }}</small>
               </div>
             </div>
 
@@ -542,6 +558,7 @@ onMounted(loadInvoice)
                 v-if="canCancelOrder"
                 class="cancel-order-button btn btn-danger"
                 type="button"
+                :disabled="confirmSubmitting || updatingStatus"
                 @click="openCancelModal"
               >
                 <i class="bi bi-x-circle"></i>
@@ -551,6 +568,7 @@ onMounted(loadInvoice)
               <button
                 class="soft-button btn btn-outline-primary btn-sm"
                 type="button"
+                :disabled="loadingHistory"
                 @click="openHistoryModal"
               >
                 <i class="bi bi-clock-history"></i>
@@ -645,6 +663,7 @@ onMounted(loadInvoice)
               <button
                 class="payment-action-button edit-order-button btn btn-primary"
                 type="button"
+                :disabled="updatingStatus || confirmSubmitting"
                 @click="openEditOrderModal"
               >
                 <i class="bi bi-pencil-square"></i> Chỉnh sửa đơn hàng

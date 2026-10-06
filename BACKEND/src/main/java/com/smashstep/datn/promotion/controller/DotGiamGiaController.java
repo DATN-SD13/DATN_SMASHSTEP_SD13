@@ -22,6 +22,12 @@ public class DotGiamGiaController {
 
     private final DotGiamGiaService dotGiamGiaService;
 
+    @GetMapping("/capabilities")
+    public ResponseEntity<Map<String, Object>> getCapabilities() {
+        return ResponseEntity.ok(Map.of("success", true, "data",
+                Map.of("descriptionSupported", dotGiamGiaService.supportsDescription())));
+    }
+
     /**
      * Danh sách + tìm kiếm + lọc + phân trang
      *

@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import InvoiceFilter from '../components/InvoiceFilter.vue'
 import InvoiceTable from '../components/InvoiceTable.vue'
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
@@ -19,7 +19,8 @@ const activeStatus = ref('all')
 const exporting = ref(false)
 const exportToast = ref({ visible: false, type: 'success', message: '' })
 let exportToastTimer = null
-const stats = ref({ all: 0, waiting: 0, confirmed: 0, ready: 0, shipping: 0, delivered: 0, done: 0, cancel: 0, refund: 0 })
+let loadVersion = 0
+const stats = ref({ all: 0, waiting: 0, confirmed: 0, ready: 0, shipping: 0, delivered: 0, done: 0, cancel: 0, refund: 0, pending: 0 })
 
 const statusCodes = {
   waiting: 0,
@@ -29,7 +30,8 @@ const statusCodes = {
   delivered: 4,
   done: 5,
   cancel: 6,
-  refund: 7
+  refund: 7,
+  pending: 8
 }
 
 function normalizeType(value) {
@@ -37,6 +39,7 @@ function normalizeType(value) {
   const v = String(value).toLowerCase()
   if (v === 'online' || v.includes('trực tuyến')) return 'online'
   if (v === 'store' || v.includes('tại quầy')) return 'store'
+  if (v === 'delivery' || v.includes('giao hàng')) return 'delivery'
   return v
 }
 
@@ -72,50 +75,59 @@ function buildParams(page = currentPage.value, status = activeStatus.value, size
   if (query.value.from) params.tuNgay = query.value.from
   if (query.value.to) params.denNgay = query.value.to
   if (status !== 'all') params.trangThai = statusCodes[status]
-  if (query.value.type !== 'all') params.loaiDon = query.value.type === 'online' ? 1 : 0
+  if (query.value.type !== 'all') params.loaiDon = { store: 0, online: 1, delivery: 2 }[query.value.type]
   return params
 }
 
-async function fetchPage(page = 1) {
-  const response = await invoiceService.getAll(buildParams(page))
+async function fetchPage(params) {
+  const response = await invoiceService.getAll(params)
   if (!response?.success || !response?.data) {
     throw new Error(response?.message || 'Không thể tải danh sách hóa đơn')
   }
-  const data = response.data
-  invoices.value = (data.content || []).map(mapInvoice)
-  currentPage.value = Number(data.page || page)
-  totalPages.value = Math.max(1, Number(data.totalPages || 1))
-  totalElements.value = Number(data.totalElements || 0)
+  return response.data
 }
 
-async function fetchStats() {
-  const base = buildParams(1, 'all')
-  const keys = Object.keys(statusCodes)
-  const results = await Promise.all(keys.map(async key => {
-    const response = await invoiceService.getAll({ ...base, trangThai: statusCodes[key], page: 1, size: 1 })
-    if (!response?.success || !response?.data) return [key, 0]
-    return [key, Number(response.data.totalElements || 0)]
-  }))
-  const next = { all: 0, waiting: 0, confirmed: 0, ready: 0, shipping: 0, delivered: 0, done: 0, cancel: 0, refund: 0 }
-  results.forEach(([key, value]) => { next[key] = value })
-  const allResponse = await invoiceService.getAll({ ...base, page: 1, size: 1 })
-  next.all = Number(allResponse?.data?.totalElements || 0)
-  stats.value = next
+async function fetchStats(base) {
+  const { page, size, ...params } = base
+  const response = await invoiceService.getSummary(params)
+  if (!response?.success || !response?.data) throw new Error(response?.message || 'Không thể tải thống kê hóa đơn.')
+  const next = { all: 0, waiting: 0, confirmed: 0, ready: 0, shipping: 0, delivered: 0, done: 0, cancel: 0, refund: 0, pending: 0 }
+  for (const item of response.data.theoTrangThai || []) {
+    if (Object.hasOwn(next, item.khoa)) next[item.khoa] = Number(item.soLuong || 0)
+  }
+  next.all = Number(response.data.tongHoaDon || 0)
+  return next
 }
 
 async function loadInvoices(page = 1, refreshStats = false) {
+  const version = ++loadVersion
+  const params = buildParams(page)
+  const statsParams = buildParams(1, 'all')
   loading.value = true
   loadError.value = ''
   try {
-    await fetchPage(page)
-    if (refreshStats) await fetchStats()
+    const data = await fetchPage(params)
+    if (version !== loadVersion) return
+    invoices.value = (Array.isArray(data.content) ? data.content : []).map(mapInvoice)
+    currentPage.value = Number(data.page || page)
+    totalPages.value = Math.max(1, Number(data.totalPages || 1))
+    totalElements.value = Number(data.totalElements || 0)
+    if (refreshStats) {
+      try {
+        const next = await fetchStats(statsParams)
+        if (version === loadVersion) stats.value = next
+      } catch (error) {
+        if (version === loadVersion) showExportToast('error', error?.response?.data?.message || 'Không thể tải số lượng theo trạng thái.')
+      }
+    }
   } catch (error) {
+    if (version !== loadVersion) return
     invoices.value = []
     totalPages.value = 1
     totalElements.value = 0
     loadError.value = error?.response?.data?.message || error?.message || 'Không thể tải danh sách hóa đơn.'
   } finally {
-    loading.value = false
+    if (version === loadVersion) loading.value = false
   }
 }
 
@@ -135,7 +147,7 @@ async function reset() {
 async function changeStatus(status) {
   activeStatus.value = status
   currentPage.value = 1
-  await loadInvoices(1, false)
+  await loadInvoices(1, true)
 }
 
 async function changePage(page) {
@@ -190,14 +202,15 @@ function downloadExcelFile(rows) {
 }
 
 function typeNameForExport(type) {
-  return type === 'online' ? 'Trực tuyến' : type === 'store' ? 'Tại quầy' : 'Chưa xác định'
+  return type === 'online' ? 'Trực tuyến' : type === 'store' ? 'Tại quầy' : type === 'delivery' ? 'Giao hàng' : 'Chưa xác định'
 }
 
 async function exportExcel() {
   if (exporting.value) return
   exporting.value = true
   try {
-    const first = await invoiceService.getAll(buildParams(1, activeStatus.value, 100))
+    const params = buildParams(1, activeStatus.value, 100)
+    const first = await invoiceService.getAll(params)
     if (!first?.success || !first?.data) throw new Error(first?.message || 'Không thể lấy dữ liệu để xuất Excel')
 
     const data = first.data
@@ -205,7 +218,7 @@ async function exportExcel() {
     const totalPagesForExport = Math.max(1, Number(data.totalPages || 1))
 
     for (let page = 2; page <= totalPagesForExport; page += 1) {
-      const response = await invoiceService.getAll(buildParams(page, activeStatus.value, 100))
+      const response = await invoiceService.getAll({ ...params, page })
       if (!response?.success || !response?.data) throw new Error(response?.message || 'Không thể lấy đủ dữ liệu để xuất Excel')
       all.push(...(response.data.content || []).map(mapInvoice))
     }
@@ -220,6 +233,10 @@ async function exportExcel() {
 }
 
 onMounted(() => loadInvoices(1, true))
+onUnmounted(() => {
+  loadVersion += 1
+  if (exportToastTimer) window.clearTimeout(exportToastTimer)
+})
 </script>
 <template>
   <AdminLayout>

@@ -9,6 +9,10 @@ const apiProxy = {
   '/uploads/products': {
     target: 'http://localhost:8080',
     changeOrigin: true
+  },
+  '/uploads/avatars': {
+    target: 'http://localhost:8080',
+    changeOrigin: true
   }
 }
 

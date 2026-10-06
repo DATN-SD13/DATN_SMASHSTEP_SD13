@@ -3,6 +3,7 @@ import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import { computed, reactive, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../../../../utils/api'
+import { showSuccess, showError } from '../../../../utils/feedback'
 
 const router = useRouter()
 
@@ -22,11 +23,16 @@ const form = ref({
 // =====================================================
 const products = ref([])
 const loadingProducts = ref(false)
+const saving = ref(false)
+const descriptionSupported = ref(false)
 
 // Lấy sản phẩm + biến thể từ backend
 async function loadProducts() {
   try {
     loadingProducts.value = true
+
+    const capabilities = await api.get('/dot-giam-gia/capabilities')
+    descriptionSupported.value = capabilities.data?.data?.descriptionSupported === true
 
     const response = await api.get(
       '/dot-giam-gia/san-pham-chi-tiet'
@@ -106,7 +112,7 @@ async function loadProducts() {
 
     products.value = []
 
-    alert(
+    showError(
       error.response?.data?.message ||
       'Không thể tải danh sách sản phẩm'
     )
@@ -348,11 +354,12 @@ const money = (n) =>
 // Test sản phẩm trước.
 // =====================================================
 async function save() {
+  if (saving.value || loadingProducts.value) return
   // Kiểm tra dữ liệu
   
 
   if (!form.value.name.trim()) {
-    alert('Vui lòng nhập tên đợt giảm giá')
+    showError('Vui lòng nhập tên đợt giảm giá')
     return
   }
 
@@ -363,27 +370,27 @@ async function save() {
     discountValue <= 0 ||
     discountValue > 100
   ) {
-    alert('Giá trị giảm phải lớn hơn 0 và không vượt quá 100%')
+    showError('Giá trị giảm phải lớn hơn 0 và không vượt quá 100%')
     return
   }
 
   if (!form.value.start) {
-    alert('Vui lòng chọn ngày bắt đầu')
+    showError('Vui lòng chọn ngày bắt đầu')
     return
   }
 
   if (!form.value.end) {
-    alert('Vui lòng chọn ngày kết thúc')
+    showError('Vui lòng chọn ngày kết thúc')
     return
   }
 
   if (form.value.end < form.value.start) {
-    alert('Ngày kết thúc phải lớn hơn hoặc bằng ngày bắt đầu')
+    showError('Ngày kết thúc phải lớn hơn hoặc bằng ngày bắt đầu')
     return
   }
 
   if (selected.value.length === 0) {
-    alert('Vui lòng chọn ít nhất một biến thể sản phẩm')
+    showError('Vui lòng chọn ít nhất một biến thể sản phẩm')
     return
   }
 
@@ -392,17 +399,18 @@ async function save() {
   discountValue: discountValue,
   startDate: form.value.start,
   endDate: form.value.end,
-  description: form.value.desc.trim(),
+  description: descriptionSupported.value ? form.value.desc.trim() : null,
   productDetailIds: selected.value
 }
 
   try {
+    saving.value = true
     await api.post(
       '/dot-giam-gia',
       data
     )
 
-    alert('Tạo đợt giảm giá thành công!')
+    showSuccess('Tạo đợt giảm giá thành công!')
 
     router.push('/dot-giam-gia')
 
@@ -412,10 +420,12 @@ async function save() {
       error
     )
 
-    alert(
+    showError(
       error.response?.data?.message ||
       'Không thể tạo đợt giảm giá'
     )
+  } finally {
+    saving.value = false
   }
 }
 
@@ -520,7 +530,7 @@ onMounted(() => {
 
           </div>
 
-          <div class="ss-field">
+          <div v-if="descriptionSupported" class="ss-field">
 
             <label class="ss-label">
               Mô tả
@@ -537,6 +547,7 @@ onMounted(() => {
           <button
             class="ss-btn primary block"
             @click="save"
+            :disabled="saving || loadingProducts"
           >
             <i class="bi bi-check2"></i>
             Tạo đợt giảm giá

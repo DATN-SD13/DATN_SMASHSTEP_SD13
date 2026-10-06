@@ -1,8 +1,10 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { initials } from '../utils/paging'
+import { avatarUrl, avatarTypes, avatarMaxSize } from '../utils/avatar'
+import { showError } from '../utils/feedback'
 
-const props = defineProps({ name: String, email: String, fallback: { type: String, default: 'KH' }, image: String, hint: { type: Boolean, default: true } })
+const props = defineProps({ name: String, email: String, fallback: { type: String, default: 'KH' }, image: String, disabled: Boolean, hint: { type: Boolean, default: true } })
 const emit = defineEmits(['update:image'])
 const input = ref(null)
 const text = computed(() => initials(props.name) || props.fallback)
@@ -10,18 +12,25 @@ const text = computed(() => initials(props.name) || props.fallback)
 function pick(e) {
   const f = e.target.files?.[0]
   if (!f) return
+  if (props.disabled) return
+  if (!avatarTypes.split(',').includes(f.type) || !f.size || f.size > avatarMaxSize) {
+    showError('Chỉ chọn ảnh JPG, PNG hoặc WEBP không quá 5 MB.')
+    e.target.value = ''
+    return
+  }
   const r = new FileReader()
   r.onload = () => emit('update:image', r.result)
+  r.onerror = () => showError('Không thể đọc tệp ảnh đã chọn.')
   r.readAsDataURL(f)
 }
 </script>
 
 <template>
   <section class="ss-card">
-    <button type="button" class="big" title="Chọn ảnh đại diện" @click="input.click()">
-      <img v-if="image" :src="image" alt="" /><span v-else>{{ text }}</span>
+    <button type="button" class="big" :disabled="disabled" title="Chọn ảnh đại diện" @click="input.click()">
+      <img v-if="avatarUrl(image)" :src="avatarUrl(image)" alt="Ảnh đại diện" /><span v-else>{{ text }}</span>
     </button>
-    <input ref="input" type="file" accept="image/*" hidden @change="pick" />
+    <input ref="input" type="file" :accept="avatarTypes" :disabled="disabled" hidden @change="pick" />
     <div class="who">
       <strong>{{ name || 'Chưa nhập tên' }}</strong>
       <small>{{ email || 'Chưa cập nhật email' }}</small>

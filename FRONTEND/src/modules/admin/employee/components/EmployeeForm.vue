@@ -1,6 +1,8 @@
 <script setup>
 import AvatarCard from '../../../../components/AvatarCard.vue'
+import { persistAvatar } from '../../../../utils/avatar'
 import employeeService from '../services/employeeService'
+import { confirmAction, showSuccess, showError } from '../../../../utils/feedback'
 
 import {
   computed,
@@ -35,6 +37,7 @@ const edit = computed(
 
 const roles = ref([])
 const saving = ref(false)
+const changingStatus = ref(false)
 
 const active = ref(
   props.employee?.active ?? true
@@ -232,20 +235,12 @@ function buildPayload() {
     street:
       f.value.street?.trim() || null,
 
-    /*
-     * Backend hiện không lưu base64.
-     * Nếu là URL/path cũ thì vẫn gửi.
-     */
-    image:
-      f.value.image?.startsWith(
-        'data:image/'
-      )
-        ? null
-        : f.value.image || null
+    image: f.value.image || null
   }
 }
 
 async function submit() {
+  if (saving.value || changingStatus.value) return
   err.value = ''
   msg.value = ''
 
@@ -260,6 +255,7 @@ async function submit() {
   saving.value = true
 
   try {
+    f.value.image = await persistAvatar(f.value.image) || ''
     const payload =
       buildPayload()
 
@@ -271,6 +267,7 @@ async function submit() {
 
       msg.value =
         'Đã lưu thay đổi thành công.'
+      showSuccess(msg.value)
 
       setTimeout(() => {
         router.push('/nhan-vien')
@@ -280,7 +277,7 @@ async function submit() {
         payload
       )
 
-      window.alert(
+      showSuccess(
         'Thêm nhân viên thành công.'
       )
 
@@ -291,13 +288,14 @@ async function submit() {
 
     err.value =
       getErrorMessage(error)
+    showError(err.value)
   } finally {
     saving.value = false
   }
 }
 
 async function toggleStatus() {
-  if (!edit.value) {
+  if (!edit.value || saving.value || changingStatus.value) {
     return
   }
 
@@ -309,48 +307,33 @@ async function toggleStatus() {
       ? 'khóa tài khoản'
       : 'mở khóa tài khoản'
 
-  if (
-    !window.confirm(
-      `Bạn có chắc muốn ${action}?`
-    )
-  ) {
-    return
-  }
-
-  err.value = ''
-  msg.value = ''
-
-  try {
-    const data =
-      await employeeService.updateStatus(
-        props.employee.code,
-        nextStatus
-      )
-
-    active.value =
-      data?.active ??
-      nextStatus === 1
-
-    msg.value =
-      nextStatus === 1
-        ? 'Đã mở khóa tài khoản.'
-        : 'Đã khóa tài khoản.'
-  } catch (error) {
-    console.error(error)
-
-    err.value =
-      getErrorMessage(error)
-  }
+  confirmAction(`Bạn có chắc muốn ${action}?`, async () => {
+    if (saving.value || changingStatus.value) return
+    err.value = ''
+    msg.value = ''
+    changingStatus.value = true
+    try {
+      const data = await employeeService.updateStatus(props.employee.code, nextStatus)
+      active.value = data?.active ?? nextStatus === 1
+      msg.value = nextStatus === 1 ? 'Đã mở khóa tài khoản.' : 'Đã khóa tài khoản.'
+      showSuccess(msg.value)
+    } catch (error) {
+      err.value = getErrorMessage(error)
+      showError(err.value)
+    } finally {
+      changingStatus.value = false
+    }
+  })
 }
 
 function scanCccd() {
-  window.alert(
+  showError(
     'Chức năng quét mã CCCD chưa được tích hợp.'
   )
 }
 
 function changePassword() {
-  window.alert(
+  showError(
     'Chức năng đổi mật khẩu chưa được tích hợp.'
   )
 }
@@ -367,6 +350,7 @@ onMounted(() => {
 
       <AvatarCard
         v-model:image="f.image"
+        :disabled="saving || changingStatus"
         :name="f.name"
         :email="f.email"
         fallback="NV"
@@ -425,6 +409,7 @@ onMounted(() => {
                 : ''
             "
             @click="toggleStatus"
+            :disabled="saving || changingStatus"
           >
             {{
               active
@@ -682,7 +667,7 @@ onMounted(() => {
           <button
             class="ss-btn primary"
             type="button"
-            :disabled="saving"
+            :disabled="saving || changingStatus"
             @click="submit"
           >
             {{
@@ -697,7 +682,7 @@ onMounted(() => {
           <button
             class="ss-btn"
             type="button"
-            :disabled="saving"
+            :disabled="saving || changingStatus"
             @click="
               router.push('/nhan-vien')
             "

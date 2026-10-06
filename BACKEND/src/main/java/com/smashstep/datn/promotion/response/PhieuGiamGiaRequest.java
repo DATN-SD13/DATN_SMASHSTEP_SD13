@@ -2,40 +2,44 @@ package com.smashstep.datn.promotion.response;
 
 import lombok.Getter;
 import lombok.Setter;
+import jakarta.validation.constraints.*;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 @Getter
 @Setter
 public class PhieuGiamGiaRequest {
 
-    private String code;
+    @Size(max = 50) private String code;
 
-    private String name;
+    @NotBlank @Size(max = 255) private String name;
 
     // 1 = Công khai
     // 2 = Cá nhân
-    private Integer form;
+    @NotNull @Min(1) @Max(2) private Integer form;
 
     // 1 = Phần trăm
     // 2 = Tiền mặt
-    private Integer discountType;
+    @NotNull @Min(1) @Max(2) private Integer discountType;
 
+    @NotNull @DecimalMin(value = "0", inclusive = false) @Digits(integer = 16, fraction = 2)
     private BigDecimal discountValue;
 
-    private BigDecimal minOrderValue;
+    @DecimalMin("0") @Digits(integer = 16, fraction = 2) private BigDecimal minOrderValue;
 
-    private BigDecimal maxDiscount;
+    @DecimalMin("0") @Digits(integer = 16, fraction = 2) private BigDecimal maxDiscount;
 
-    private String startDate;
+    @NotBlank @Pattern(regexp = "\\d{4}-\\d{2}-\\d{2}") private String startDate;
 
-    private String endDate;
+    @NotBlank @Pattern(regexp = "\\d{4}-\\d{2}-\\d{2}") private String endDate;
 
     private Integer quantity;
 
     private Integer status;
 
-    private String description;
+    @Size(max = 1000) private String description;
 
     private Boolean unlimited;
+    @Size(max = 1000) private List<@NotNull @Positive Long> customerIds;
 }

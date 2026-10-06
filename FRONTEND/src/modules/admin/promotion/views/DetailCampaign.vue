@@ -1,4 +1,5 @@
 <script setup>
+import { showError } from '../../../../utils/feedback'
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -70,7 +71,7 @@ async function loadDetail() {
   } catch (error) {
     console.error(error)
 
-    alert(
+    showError(
       error.response?.data?.message ||
       'Không thể tải chi tiết đợt giảm giá!'
     )

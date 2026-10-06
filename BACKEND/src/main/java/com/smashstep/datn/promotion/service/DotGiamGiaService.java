@@ -11,6 +11,7 @@ import com.smashstep.datn.promotion.response.DotGiamGiaResponse;
 import com.smashstep.datn.promotion.specification.DotGiamGiaSpecification;
 import com.smashstep.datn.promotion.response.SanPhamChiTietGiamGiaResponse;
 import com.smashstep.datn.common.exception.AppException;
+import com.smashstep.datn.common.config.DatabaseCapabilities;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 
@@ -23,9 +24,13 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.math.BigInteger;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class DotGiamGiaService {
 
     private final DotGiamGiaRepository dotGiamGiaRepository;
@@ -33,6 +38,20 @@ public class DotGiamGiaService {
     private final ChiTietDotGiamGiaRepository chiTietDotGiamGiaRepository;
 
     private final SanPhamChiTietRepository sanPhamChiTietRepository;
+    private final DatabaseCapabilities database;
+
+    @PersistenceContext
+    private EntityManager entityManager;
+
+    public boolean supportsDescription() {
+        return database.hasColumn("dot_giam_gia", "mo_ta");
+    }
+
+    private void validateDescription(DotGiamGiaRequest request) {
+        if (request.getDescription() != null && !request.getDescription().isBlank() && !supportsDescription()) {
+            throw AppException.badRequest("Mô tả đợt giảm giá chưa được hỗ trợ");
+        }
+    }
 
 
     // =====================================================
@@ -48,12 +67,14 @@ public class DotGiamGiaService {
             int size
     ) {
 
+        if (tuNgay != null && denNgay != null && denNgay.isBefore(tuNgay)) throw AppException.badRequest("Khoảng ngày không hợp lệ");
         // FE sử dụng page bắt đầu từ 1
         int pageIndex = Math.max(page - 1, 0);
 
+        if ((long) (pageIndex) * (Math.min(Math.max(size, 1), 100)) > Integer.MAX_VALUE) throw AppException.badRequest("Trang yêu cầu vượt giới hạn phân trang");
         Pageable pageable = PageRequest.of(
                 pageIndex,
-                size,
+                Math.min(Math.max(size, 1), 100),
                 Sort.by(Sort.Direction.DESC, "id")
         );
 
@@ -102,38 +123,24 @@ public class DotGiamGiaService {
     // TẠO ĐỢT GIẢM GIÁ
     // =====================================================
     private String generateCode() {
-
-        DotGiamGia latest =
-                dotGiamGiaRepository
-                        .findTopByOrderByIdDesc()
-                        .orElse(null);
-
-        if (latest == null
-                || latest.getMaDotGiamGia() == null) {
-            return "DGG001";
+        BigInteger max = BigInteger.ZERO;
+        for (String code : dotGiamGiaRepository.findAllCodes()) {
+            if (code != null && code.matches("DGG[0-9]+")) {
+                max = max.max(new BigInteger(code.substring(3)));
+            }
         }
-
-        String latestCode =
-                latest.getMaDotGiamGia();
-
-        try {
-            int number = Integer.parseInt(
-                    latestCode.replace("DGG", "")
-            );
-
-            return String.format(
-                    "DGG%03d",
-                    number + 1
-            );
-
-        } catch (NumberFormatException e) {
-            return "DGG001";
+        String next = max.add(BigInteger.ONE).toString();
+        if (next.length() > 47) {
+            throw AppException.badRequest("Mã đợt giảm giá đã vượt giới hạn lưu trữ");
         }
+        return "DGG" + "0".repeat(Math.max(0, 3 - next.length())) + next;
     }
     @Transactional
     public DotGiamGiaResponse create(
             DotGiamGiaRequest request
     ) {
+        validateCampaignRequest(request);
+        validateDescription(request);
 
         // -----------------------------
 // 1. Tự động sinh mã
@@ -300,61 +307,18 @@ public class DotGiamGiaService {
             String keyword
     ) {
 
-        return sanPhamChiTietRepository
-                .findAll()
-                .stream()
-
-                // Chỉ lấy biến thể đang hoạt động
-                .filter(spct ->
-                        spct.getTrangThai() != null
-                                && spct.getTrangThai() == 1
-                )
-
-                // Tìm kiếm
-                .filter(spct -> {
-
-                    if (keyword == null
-                            || keyword.trim().isEmpty()) {
-                        return true;
-                    }
-
-                    String search =
-                            keyword.trim().toLowerCase();
-
-                    String productCode =
-                            spct.getIdSanPham() == null
-                                    ? ""
-                                    : spct.getIdSanPham()
-                                    .getMaSanPham()
-                                    .toLowerCase();
-
-                    String productName =
-                            spct.getIdSanPham() == null
-                                    ? ""
-                                    : spct.getIdSanPham()
-                                    .getTenSanPham()
-                                    .toLowerCase();
-
-                    String detailCode =
-                            spct.getMaChiTietSanPham() == null
-                                    ? ""
-                                    : spct.getMaChiTietSanPham()
-                                    .toLowerCase();
-
-                    String sku =
-                            spct.getSku() == null
-                                    ? ""
-                                    : spct.getSku()
-                                    .toLowerCase();
-
-                    return productCode.contains(search)
-                            || productName.contains(search)
-                            || detailCode.contains(search)
-                            || sku.contains(search);
-                })
-
-                .map(this::toProductDetailResponse)
-                .toList();
+        String search = "%" + (keyword == null ? "" : keyword.trim().toLowerCase(java.util.Locale.ROOT)) + "%";
+        org.springframework.data.jpa.domain.Specification<SanPhamChiTiet> eligible = (root, query, cb) -> {
+            var product = root.join("idSanPham");
+            return cb.and(cb.equal(root.get("trangThai"), 1), cb.isTrue(root.get("kichHoat")),
+                    cb.equal(product.get("trangThai"), 1), cb.or(
+                    cb.like(cb.lower(product.get("maSanPham")), search),
+                    cb.like(cb.lower(product.get("tenSanPham")), search),
+                    cb.like(cb.lower(root.get("maChiTietSanPham")), search), cb.like(cb.lower(root.get("sku")), search)));
+        };
+        var result = sanPhamChiTietRepository.findAll(eligible, PageRequest.of(0, 1000, Sort.by("id")));
+        if (result.hasNext()) throw AppException.badRequest("Có hơn 1000 biến thể phù hợp. Hãy thu hẹp từ khóa tìm kiếm");
+        return result.getContent().stream().map(this::toProductDetailResponse).toList();
     }
 
 
@@ -431,6 +395,7 @@ public class DotGiamGiaService {
             String ma,
             DotGiamGiaRequest request
     ) {
+        validateDescription(request);
 
         // 1. Tìm đợt giảm giá cần sửa
         DotGiamGia entity = dotGiamGiaRepository
@@ -598,6 +563,33 @@ public class DotGiamGiaService {
         return toResponse(saved);
     }
 
+    private void validateCampaignRequest(DotGiamGiaRequest request) {
+        if (request == null || request.getName() == null || request.getName().isBlank() || request.getName().trim().length() > 255
+                || request.getDiscountValue() == null || request.getDiscountValue().signum() <= 0
+                || request.getDiscountValue().compareTo(new java.math.BigDecimal("100")) > 0
+                || request.getDiscountValue().scale() > 2
+                || request.getStartDate() == null || request.getEndDate() == null
+                || request.getEndDate().isBefore(request.getStartDate())
+                || (request.getDescription() != null && request.getDescription().length() > 1000)) {
+            throw AppException.badRequest("Thông tin đợt giảm giá không hợp lệ");
+        }
+        validateVariants(request.getProductDetailIds());
+    }
+
+    private void validateVariants(List<Long> ids) {
+        if (ids == null || ids.isEmpty() || ids.size() > 1000 || ids.stream().anyMatch(id -> id == null || id <= 0))
+            throw AppException.badRequest("Vui lòng chọn biến thể hợp lệ");
+        if (ids.stream().distinct().count() != ids.size()) throw AppException.badRequest("Danh sách biến thể bị trùng");
+        for (Long id : ids) {
+            var variant = sanPhamChiTietRepository.findById(id).orElseThrow(() -> AppException.notFound("Không tìm thấy biến thể ID: " + id));
+            if (!Integer.valueOf(1).equals(variant.getTrangThai()) || !Boolean.TRUE.equals(variant.getKichHoat())
+                    || variant.getIdSanPham() == null || !Integer.valueOf(1).equals(variant.getIdSanPham().getTrangThai())) {
+                throw AppException.badRequest("Biến thể và sản phẩm phải đang hoạt động để áp dụng đợt giảm giá");
+            }
+            // Zero stock is allowed so a campaign can be prepared before replenishment.
+        }
+    }
+
     private void validateProductPromotionConflict(
             List<Long> productDetailIds,
             LocalDate startDate,
@@ -609,6 +601,7 @@ public class DotGiamGiaService {
             return;
         }
 
+        validateVariants(productDetailIds);
         for (Long productDetailId :
                 productDetailIds.stream().distinct().toList()) {
 
@@ -621,11 +614,15 @@ public class DotGiamGiaService {
                 DotGiamGia otherPromotion =
                         chiTiet.getIdDotGiamGia();
 
+                if (otherPromotion == null || otherPromotion.getNgayBatDau() == null
+                        || otherPromotion.getNgayKetThuc() == null) {
+                    continue;
+                }
+
                 // Khi UPDATE:
                 // bỏ qua chính đợt giảm giá đang sửa
                 if (currentPromotionId != null
-                        && otherPromotion.getId()
-                        .equals(currentPromotionId)) {
+                        && currentPromotionId.equals(otherPromotion.getId())) {
                     continue;
                 }
 
@@ -747,6 +744,10 @@ public class DotGiamGiaService {
         // ==========================================
         if (status == 1) {
 
+            if (entity.getNgayBatDau() == null || entity.getNgayKetThuc() == null) {
+                throw AppException.badRequest("Đợt giảm giá chưa có thời gian hợp lệ để kích hoạt");
+            }
+
             List<Long> productDetailIds =
                     chiTietList.stream()
                             .map(chiTiet ->
@@ -767,6 +768,7 @@ public class DotGiamGiaService {
                             .getNgayKetThuc()
                             .toLocalDate();
 
+            validateVariants(productDetailIds);
             // Kiểm tra xem các biến thể có đang nằm
             // trong đợt giảm giá khác bị trùng ngày không
             validateProductPromotionConflict(
@@ -805,9 +807,12 @@ public class DotGiamGiaService {
 
     private String getTimeStatus(DotGiamGia entity) {
 
-        if (entity.getTrangThai() == null
-                || entity.getTrangThai() == 0) {
+        if (!Integer.valueOf(1).equals(entity.getTrangThai())) {
             return "NGUNG_HOAT_DONG";
+        }
+
+        if (entity.getNgayBatDau() == null || entity.getNgayKetThuc() == null) {
+            return "KHONG_XAC_DINH";
         }
 
         LocalDate today = LocalDate.now();

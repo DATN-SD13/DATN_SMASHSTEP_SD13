@@ -4,6 +4,9 @@ import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -19,6 +22,7 @@ public class DotGiamGiaRequest {
     private String code;
 
     @NotBlank(message = "Tên đợt giảm giá không được để trống")
+    @Size(max = 255, message = "Tên đợt giảm giá tối đa 255 ký tự")
     private String name;
 
     @NotNull(message = "Giá trị giảm không được để trống")
@@ -38,7 +42,8 @@ public class DotGiamGiaRequest {
     @NotNull(message = "Ngày kết thúc không được để trống")
     private LocalDate endDate;
 
-    private String description;
+    @Size(max = 1000) private String description;
 
-    private List<Long> productDetailIds;
+    @NotEmpty(message = "Vui lòng chọn ít nhất một biến thể sản phẩm")
+    @Size(max = 1000) private List<@NotNull @Positive Long> productDetailIds;
 }

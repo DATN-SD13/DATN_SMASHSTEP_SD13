@@ -14,10 +14,9 @@ public class PhieuGiamGiaSpecification {
                 return null;
             }
 
-            return cb.equal(
-                    cb.lower(root.get("maPhieuGiamGia")),
-                    ma.trim().toLowerCase()
-            );
+            String keyword = "%" + ma.trim().toLowerCase() + "%";
+            return cb.or(cb.like(cb.lower(root.get("maPhieuGiamGia")), keyword),
+                    cb.like(cb.lower(root.get("tenPhieuGiamGia")), keyword));
         };
     }
 
@@ -72,10 +71,7 @@ public class PhieuGiamGiaSpecification {
                 return null;
             }
 
-            return cb.equal(
-                    root.get("hinhThucPhieu"),
-                    hinhThuc
-            );
+            return cb.equal(root.get("hinhThucPhieu"), hinhThuc);
         };
     }
 
@@ -90,5 +86,10 @@ public class PhieuGiamGiaSpecification {
                     loaiGiam
             );
         };
+    }
+
+    public static Specification<PhieuGiamGia> notDeleted() {
+        return (root, query, cb) -> cb.or(cb.isNull(root.get("trangThai")),
+                cb.notEqual(root.get("trangThai"), -1));
     }
 }

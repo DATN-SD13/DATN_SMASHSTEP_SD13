@@ -1,10 +1,12 @@
 <script setup>
+import { avatarUrl } from '../../../../utils/avatar'
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import SsPager from '../../../../components/SsPager.vue'
 import { initials } from '../../../../utils/paging'
 import employeeService from '../services/employeeService'
+import { confirmAction, showSuccess, showError } from '../../../../utils/feedback'
 
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
@@ -14,6 +16,7 @@ const roles = ref([])
 
 const loading = ref(false)
 const error = ref('')
+const updatingStatus = ref('')
 
 const f = ref({
   q: '',
@@ -27,6 +30,7 @@ const pages = ref(1)
 const totalElements = ref(0)
 
 let searchTimer = null
+let loadVersion = 0
 
 function getErrorMessage(err) {
   return (
@@ -46,6 +50,7 @@ async function loadRoles() {
 }
 
 async function loadEmployees() {
+  const version = ++loadVersion
   loading.value = true
   error.value = ''
 
@@ -71,6 +76,8 @@ async function loadEmployees() {
 
     const data = await employeeService.getEmployees(params)
 
+    if (version !== loadVersion) return
+
     rows.value = data?.content ?? []
     pages.value = Math.max(data?.totalPages ?? 0, 1)
     totalElements.value = data?.totalElements ?? 0
@@ -79,37 +86,38 @@ async function loadEmployees() {
       page.value = pages.value
     }
   } catch (err) {
+    if (version !== loadVersion) return
     console.error(err)
     rows.value = []
     pages.value = 1
     totalElements.value = 0
     error.value = getErrorMessage(err)
   } finally {
-    loading.value = false
+    if (version === loadVersion) loading.value = false
   }
 }
 
 async function toggleStatus(employee) {
+  if (updatingStatus.value) return
   const nextStatus = employee.active ? 0 : 1
 
   const action = employee.active
     ? 'khóa tài khoản'
     : 'mở khóa tài khoản'
 
-  if (!window.confirm(`Bạn có chắc muốn ${action} ${employee.name}?`)) {
-    return
-  }
-
-  try {
-    await employeeService.updateStatus(
-      employee.code,
-      nextStatus
-    )
-
-    await loadEmployees()
-  } catch (err) {
-    window.alert(getErrorMessage(err))
-  }
+  confirmAction(`Bạn có chắc muốn ${action} ${employee.name || employee.code}?`, async () => {
+    if (updatingStatus.value) return
+    try {
+      updatingStatus.value = employee.code
+      await employeeService.updateStatus(employee.code, nextStatus)
+      showSuccess(nextStatus === 1 ? 'Đã mở khóa nhân viên.' : 'Đã khóa nhân viên.')
+      await loadEmployees()
+    } catch (err) {
+      showError(getErrorMessage(err))
+    } finally {
+      updatingStatus.value = ''
+    }
+  })
 }
 
 function reset() {
@@ -126,6 +134,7 @@ function reset() {
 watch(
   () => f.value.q,
   () => {
+    ++loadVersion
     clearTimeout(searchTimer)
 
     searchTimer = setTimeout(() => {
@@ -168,6 +177,11 @@ onMounted(async () => {
     loadRoles(),
     loadEmployees()
   ])
+})
+
+onBeforeUnmount(() => {
+  clearTimeout(searchTimer)
+  ++loadVersion
 })
 </script>
 
@@ -328,7 +342,7 @@ onMounted(async () => {
                 <td>
                   <img
                     v-if="e.image"
-                    :src="e.image"
+                    :src="avatarUrl(e.image)"
                     :alt="e.name"
                     class="employee-avatar"
                   />
@@ -348,24 +362,24 @@ onMounted(async () => {
 
                 <td>
                   <span class="ss-code">
-                    {{ e.code }}
+                    {{ e.code || '—' }}
                   </span>
                 </td>
 
                 <td class="ss-strong">
-                  {{ e.name }}
+                  {{ e.name || '—' }}
                 </td>
 
                 <td>
-                  {{ e.email }}
+                  {{ e.email || '—' }}
                 </td>
 
                 <td>
-                  {{ e.genderLabel }}
+                  {{ e.genderLabel || '—' }}
                 </td>
 
                 <td class="nowrap">
-                  {{ e.phone }}
+                  {{ e.phone || '—' }}
                 </td>
 
                 <td style="min-width:220px">
@@ -373,7 +387,7 @@ onMounted(async () => {
                 </td>
 
                 <td class="nowrap">
-                  {{ e.role }}
+                  {{ e.role || '—' }}
                 </td>
 
                 <td>
@@ -406,6 +420,7 @@ onMounted(async () => {
 
                     <button
                       class="ss-icon-btn danger"
+                      :disabled="!!updatingStatus"
                       :title="
                         e.active
                           ? 'Khóa tài khoản'

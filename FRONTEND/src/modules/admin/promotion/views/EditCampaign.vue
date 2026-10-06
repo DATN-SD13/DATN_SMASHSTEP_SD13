@@ -3,6 +3,7 @@ import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import { computed, reactive, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '../../../../utils/api'
+import { confirmAction, showSuccess, showError } from '../../../../utils/feedback'
 
 const route = useRoute()
 const router = useRouter()
@@ -14,6 +15,7 @@ const router = useRouter()
 const loading = ref(true)
 const loadingProducts = ref(false)
 const saving = ref(false)
+const descriptionSupported = ref(false)
 
 // =====================================
 // FORM
@@ -41,6 +43,9 @@ const products = ref([])
 async function loadProducts() {
   try {
     loadingProducts.value = true
+
+    const capabilities = await api.get('/dot-giam-gia/capabilities')
+    descriptionSupported.value = capabilities.data?.data?.descriptionSupported === true
 
     const response = await api.get(
       '/dot-giam-gia/san-pham-chi-tiet'
@@ -110,7 +115,7 @@ async function loadProducts() {
 
     products.value = []
 
-    alert(
+    showError(
       error.response?.data?.message ||
       'Không thể tải danh sách sản phẩm'
     )
@@ -418,7 +423,7 @@ async function loadEditData() {
       response.data?.data
 
     if (!data) {
-      alert(
+      showError(
         'Không tìm thấy đợt giảm giá'
       )
 
@@ -466,7 +471,7 @@ async function loadEditData() {
       error
     )
 
-    alert(
+    showError(
       error.response?.data?.message ||
       'Không thể tải đợt giảm giá'
     )
@@ -533,76 +538,38 @@ function validate() {
 // =====================================
 
 async function save() {
+  if (saving.value || loading.value || loadingProducts.value) return
 
   const message = validate()
 
   if (message) {
-    alert(message)
+    showError(message)
     return
   }
 
-  const confirmed =
-    window.confirm(
-      'Bạn có chắc chắn muốn lưu thay đổi đợt giảm giá này không?'
-    )
-
-  if (!confirmed) {
-    return
-  }
-
-  const data = {
-    code:
-      form.value.code.trim(),
-
-    name:
-      form.value.name.trim(),
-
-    discountValue:
-      Number(form.value.value),
-
-    startDate:
-      form.value.start,
-
-    endDate:
-      form.value.end,
-
-    description:
-      form.value.desc.trim(),
-
-    productDetailIds:
-      selected.value
-  }
-
-  try {
-    saving.value = true
-
-    await api.put(
-      `/dot-giam-gia/${route.params.code}`,
-      data
-    )
-
-    alert(
-      'Cập nhật đợt giảm giá thành công!'
-    )
-
-    router.push(
-      `/dot-giam-gia/chi-tiet/${form.value.code}`
-    )
-
-  } catch (error) {
-    console.error(
-      'Lỗi cập nhật đợt giảm giá:',
-      error
-    )
-
-    alert(
-      error.response?.data?.message ||
-      'Không thể cập nhật đợt giảm giá'
-    )
-
-  } finally {
-    saving.value = false
-  }
+  confirmAction('Bạn có chắc chắn muốn lưu thay đổi đợt giảm giá này không?', async () => {
+    if (saving.value || loading.value || loadingProducts.value) return
+    const data = {
+      code: form.value.code.trim(),
+      name: form.value.name.trim(),
+      discountValue: Number(form.value.value),
+      startDate: form.value.start,
+      endDate: form.value.end,
+      description: descriptionSupported.value ? form.value.desc.trim() : null,
+      productDetailIds: selected.value
+    }
+    try {
+      saving.value = true
+      await api.put(`/dot-giam-gia/${route.params.code}`, data)
+      showSuccess('Cập nhật đợt giảm giá thành công!')
+      router.push(`/dot-giam-gia/chi-tiet/${form.value.code}`)
+    } catch (error) {
+      console.error('Lỗi cập nhật đợt giảm giá:', error)
+      showError(error.response?.data?.message || 'Không thể cập nhật đợt giảm giá')
+    } finally {
+      saving.value = false
+    }
+  })
 }
 
 // =====================================
@@ -753,7 +720,7 @@ onMounted(() => {
 
             <!-- MÔ TẢ -->
 
-            <div class="ss-field">
+            <div v-if="descriptionSupported" class="ss-field">
 
               <label class="ss-label">
                 Mô tả

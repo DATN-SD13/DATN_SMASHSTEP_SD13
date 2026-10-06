@@ -16,5 +16,9 @@ export const invoiceService = {
   async updateStatus(ma, payload) {
     const response = await api.put(`/hoa-don/${encodeURIComponent(ma)}/trang-thai`, payload)
     return response.data
+  },
+  async getSummary(params = {}) {
+    const response = await api.get('/thong-ke', { params })
+    return response.data
   }
 }

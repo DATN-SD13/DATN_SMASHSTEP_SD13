@@ -12,6 +12,7 @@ import {
 
 import customerService
   from '../services/customerService'
+import { confirmAction, showSuccess, showError } from '../../../../utils/feedback'
 
 const props = defineProps({
   customer: {
@@ -29,6 +30,7 @@ const addresses = ref([])
 const loading = ref(false)
 const saving = ref(false)
 const err = ref('')
+const msg = ref('')
 const editingId = ref(null)
 
 const emptyForm = () => ({
@@ -73,13 +75,18 @@ async function load() {
 }
 
 function resetForm() {
+  if (saving.value) return
   editingId.value = null
   f.value = emptyForm()
   err.value = ''
+  msg.value = ''
 }
 
 function edit(a) {
+  if (saving.value || loading.value) return
   editingId.value = a.id
+  err.value = ''
+  msg.value = ''
 
   f.value = {
     receiverName:
@@ -109,6 +116,7 @@ function edit(a) {
 }
 
 async function save() {
+  if (saving.value || loading.value) return
   const v = f.value
 
   if (
@@ -135,6 +143,7 @@ async function save() {
 
   saving.value = true
   err.value = ''
+  msg.value = ''
 
   try {
     const payload = {
@@ -176,9 +185,12 @@ async function save() {
       )
     }
 
-    resetForm()
+    editingId.value = null
+    f.value = emptyForm()
 
     await load()
+    msg.value = 'Đã lưu địa chỉ thành công.'
+    showSuccess(msg.value)
 
     emit('changed')
   } catch (e) {
@@ -189,10 +201,13 @@ async function save() {
 }
 
 async function makeDefault(a) {
-  if (a.isDefault) {
+  if (a.isDefault || saving.value || loading.value) {
     return
   }
 
+  saving.value = true
+  err.value = ''
+  msg.value = ''
   try {
     await customerService.setDefaultAddress(
       props.customer.code,
@@ -200,40 +215,41 @@ async function makeDefault(a) {
     )
 
     await load()
+    msg.value = 'Đã đặt địa chỉ mặc định.'
+    showSuccess(msg.value)
 
     emit('changed')
   } catch (e) {
     err.value = errorMessage(e)
+  } finally {
+    saving.value = false
   }
 }
 
 async function stop(a) {
-  if (
-    !confirm(
-      'Ngừng sử dụng địa chỉ này?'
-    )
-  ) {
-    return
-  }
-
-  try {
-    await customerService.stopAddress(
-      props.customer.code,
-      a.id
-    )
-
-    if (
-      editingId.value === a.id
-    ) {
-      resetForm()
+  if (saving.value || loading.value) return
+  confirmAction('Ngừng sử dụng địa chỉ này?', async () => {
+    if (saving.value || loading.value) return
+    saving.value = true
+    err.value = ''
+    msg.value = ''
+    try {
+      await customerService.stopAddress(props.customer.code, a.id)
+      if (editingId.value === a.id) {
+        editingId.value = null
+        f.value = emptyForm()
+      }
+      await load()
+      msg.value = 'Đã ngừng sử dụng địa chỉ.'
+      showSuccess(msg.value)
+      emit('changed')
+    } catch (e) {
+      err.value = errorMessage(e)
+      showError(err.value)
+    } finally {
+      saving.value = false
     }
-
-    await load()
-
-    emit('changed')
-  } catch (e) {
-    err.value = errorMessage(e)
-  }
+  })
 }
 
 onMounted(load)
@@ -318,6 +334,7 @@ onMounted(load)
             <button
               class="ss-icon-btn"
               title="Sửa"
+              :disabled="saving || loading"
               @click="edit(a)"
             >
               <i class="bi bi-pencil"></i>
@@ -326,7 +343,7 @@ onMounted(load)
             <button
               class="ss-icon-btn"
               title="Đặt mặc định"
-              :disabled="a.isDefault"
+              :disabled="a.isDefault || saving || loading"
               @click="makeDefault(a)"
             >
               <i class="bi bi-star"></i>
@@ -335,6 +352,7 @@ onMounted(load)
             <button
               class="ss-icon-btn danger"
               title="Ngừng sử dụng"
+              :disabled="saving || loading"
               @click="stop(a)"
             >
               <i class="bi bi-trash"></i>
@@ -540,11 +558,13 @@ onMounted(load)
           {{ err }}
         </p>
 
+        <p v-if="msg" class="ss-hint" role="status">{{ msg }}</p>
+
         <div class="ss-actions left">
 
           <button
             class="ss-btn primary"
-            :disabled="saving"
+            :disabled="saving || loading"
             @click="save"
           >
             {{
@@ -561,6 +581,7 @@ onMounted(load)
           <button
             v-if="editingId"
             class="ss-btn"
+            :disabled="saving || loading"
             @click="resetForm"
           >
             Hủy sửa

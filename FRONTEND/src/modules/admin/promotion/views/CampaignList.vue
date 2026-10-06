@@ -1,216 +1,123 @@
 <script setup>
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
-import { computed, onMounted, ref, watch } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../../../../utils/api'
+import { confirmAction, showSuccess, showError } from '../../../../utils/feedback'
 
 const router = useRouter()
-
-// ==========================
-// BỘ LỌC
-// ==========================
 const keyword = ref('')
 const status = ref('all')
 const start = ref('')
 const end = ref('')
-
-// ==========================
-// DỮ LIỆU ĐỢT GIẢM GIÁ
-// ==========================
 const rows = ref([])
 const loading = ref(false)
+const errorMessage = ref('')
+const pageSize = ref(5)
+const page = ref(1)
+const totalElements = ref(0)
+const totalPages = ref(1)
+const saving = ref(false)
+let requestId = 0
+let searchTimer
 
-// Chuyển yyyy-MM-dd -> dd/MM/yyyy
-function formatDate(date) {
-  if (!date) return ''
-
-  const [year, month, day] = date.split('-')
-  return `${day}/${month}/${year}`
+function formatDate(value) {
+  if (!value) return '—'
+  const [year, month, day] = String(value).substring(0, 10).split('-')
+  return year && month && day ? `${day}/${month}/${year}` : '—'
 }
 
-// ==========================
-// LẤY DỮ LIỆU TỪ BACKEND
-// ==========================
 async function loadCampaigns() {
+  const currentRequest = ++requestId
+  loading.value = true
+  errorMessage.value = ''
   try {
-    loading.value = true
-
     const response = await api.get('/dot-giam-gia', {
       params: {
-        page: 1,
-        size: 100
+        ma: keyword.value.trim() || undefined,
+        trangThai: status.value === 'all' ? undefined : Number(status.value),
+        tuNgay: start.value || undefined,
+        denNgay: end.value || undefined,
+        page: page.value,
+        size: pageSize.value
       }
     })
-
-    const content = response.data?.data?.content || []
-
-    rows.value = content.map(item => ({
+    if (currentRequest !== requestId) return
+    const data = response.data?.data
+    totalElements.value = data?.totalElements ?? 0
+    totalPages.value = Math.max(1, data?.totalPages ?? 1)
+    if (page.value > totalPages.value) {
+      page.value = totalPages.value
+      return
+    }
+    rows.value = (data?.content || []).map(item => ({
       id: item.id,
-      code: item.code,
-      name: item.name,
-      value: `${item.discountValue}%`,
+      code: item.code || '—',
+      name: item.name || '—',
+      value: item.discountValue == null ? '—' : `${item.discountValue}%`,
       start: formatDate(item.startDate),
       end: formatDate(item.endDate),
-      status: item.statusLabel,
+      status: item.statusLabel || '—',
       statusValue: item.status,
       timeStatus: item.timeStatus
     }))
-
   } catch (error) {
-    console.error(
-      'Lỗi lấy danh sách đợt giảm giá:',
-      error
-    )
-
+    if (currentRequest !== requestId) return
     rows.value = []
+    totalElements.value = 0
+    totalPages.value = 1
+    errorMessage.value = error.response?.data?.message || 'Không thể tải danh sách đợt giảm giá.'
   } finally {
-    loading.value = false
+    if (currentRequest === requestId) loading.value = false
   }
 }
 
-// ==========================
-// LỌC DỮ LIỆU
-// Tạm thời giữ cách lọc của giao diện gốc
-// ==========================
-const iso = (d) => {
-  if (!d) return ''
-  return d.split('/').reverse().join('-')
-}
-
-const filtered = computed(() => {
-  return rows.value.filter(x => {
-    const q = keyword.value
-      .trim()
-      .toLowerCase()
-
-    return (
-      (
-        !q ||
-        x.code.toLowerCase().includes(q) ||
-        x.name.toLowerCase().includes(q) ||
-        x.value.includes(q)
-      ) &&
-      (
-        status.value === 'all' ||
-        x.status === status.value
-      ) &&
-      (
-        !start.value ||
-        iso(x.start) >= start.value
-      ) &&
-      (
-        !end.value ||
-        iso(x.end) <= end.value
-      )
-    )
-  })
+watch([keyword, status, start, end, pageSize], () => {
+  window.clearTimeout(searchTimer)
+  ++requestId
+  if (page.value !== 1) page.value = 1
+  searchTimer = window.setTimeout(loadCampaigns, 250)
 })
-
-// ==========================
-// PHÂN TRANG
-// ==========================
-const pageSize = ref(5)
-const page = ref(1)
-
-const totalPages = computed(() =>
-  Math.max(
-    1,
-    Math.ceil(
-      filtered.value.length / pageSize.value
-    )
-  )
-)
-
-const paged = computed(() =>
-  filtered.value.slice(
-    (page.value - 1) * pageSize.value,
-    page.value * pageSize.value
-  )
-)
-
-watch([filtered, pageSize], () => {
-  if (page.value > totalPages.value) {
-    page.value = 1
-  }
+watch(page, () => {
+  window.clearTimeout(searchTimer)
+  loadCampaigns()
 })
-
-// ==========================
-// TRẠNG THÁI
-// ==========================
-const isActive = (x) =>
-  x.status === 'Đang hoạt động'
-
-// Tạm thời giữ chức năng cũ.
-// Bước sau mới nối PATCH backend.
-// ==========================
-// BẬT / TẮT TRẠNG THÁI
-// ==========================
+const isActive = x => x.statusValue === 1
 
 async function toggle(x) {
+  if (saving.value) return
   const newStatus = isActive(x) ? 0 : 1
-
-  const message = newStatus === 1
+  confirmAction(newStatus === 1
     ? `Bạn có chắc muốn kích hoạt ${x.code}?`
-    : `Bạn có chắc muốn ngừng hoạt động ${x.code}?`
-
-  if (!confirm(message)) {
-    return
-  }
-
-  try {
-    await api.patch(
-      `/dot-giam-gia/${x.code}/trang-thai`,
-      {
-        status: newStatus
-      }
-    )
-
-    await loadCampaigns()
-
-    alert(
-      newStatus === 1
-        ? 'Kích hoạt thành công!'
-        : 'Ngừng hoạt động thành công!'
-    )
-
-  } catch (error) {
-    console.error(
-      'Lỗi cập nhật trạng thái:',
-      error
-    )
-
-    alert(
-      error.response?.data?.message ||
-      'Không thể cập nhật trạng thái'
-    )
-  }
+    : `Bạn có chắc muốn ngừng hoạt động ${x.code}?`, async () => {
+    if (saving.value) return
+    saving.value = true
+    try {
+      await api.patch(`/dot-giam-gia/${encodeURIComponent(x.code)}/trang-thai`, { status: newStatus })
+      await loadCampaigns()
+      showSuccess(newStatus === 1 ? 'Kích hoạt thành công!' : 'Ngừng hoạt động thành công!')
+    } catch (error) {
+      showError(error.response?.data?.message || 'Không thể cập nhật trạng thái')
+    } finally {
+      saving.value = false
+    }
+  })
 }
 
-
-// ==========================
-// XÓA ĐỢT GIẢM GIÁ
-// ==========================
-
-
-// ==========================
-// RESET BỘ LỌC
-// ==========================
 function reset() {
   keyword.value = ''
   status.value = 'all'
   start.value = ''
   end.value = ''
   page.value = 1
+  window.clearTimeout(searchTimer)
+  loadCampaigns()
 }
 function viewDetail(x) {
-  router.push(`/dot-giam-gia/chi-tiet/${x.code}`)
+  router.push(`/dot-giam-gia/chi-tiet/${encodeURIComponent(x.code)}`)
 }
-// ==========================
-// KHI MỞ TRANG
-// ==========================
-onMounted(() => {
-  loadCampaigns()
-})
+onMounted(loadCampaigns)
+onUnmounted(() => { ++requestId; window.clearTimeout(searchTimer) })
 </script>
 
 <template>
@@ -287,11 +194,11 @@ onMounted(() => {
                 Tất cả trạng thái
               </option>
 
-              <option value="Đang hoạt động">
+              <option :value="1">
                 Đang hoạt động
               </option>
 
-              <option value="Ngừng hoạt động">
+              <option :value="0">
                 Ngừng hoạt động
               </option>
             </select>
@@ -338,11 +245,12 @@ onMounted(() => {
           <span class="ss-spacer"></span>
 
           <span class="ss-count">
-            {{ filtered.length }} bản ghi hiển thị.
+            {{ totalElements }} bản ghi hiển thị.
           </span>
 
         </div>
 
+        <p v-if="errorMessage" class="ss-empty" role="alert">{{ errorMessage }}</p>
         <!-- LOADING -->
         <div
           v-if="loading"
@@ -398,7 +306,7 @@ onMounted(() => {
             <tbody>
 
               <tr
-                v-for="(x, i) in paged"
+                v-for="(x, i) in rows"
                 :key="x.code"
               >
 
@@ -474,6 +382,7 @@ onMounted(() => {
                           ? 'Ngừng hoạt động'
                           : 'Kích hoạt'
                       "
+                      :disabled="saving"
                       @click="toggle(x)"
                     >
                       <i class="bi bi-power"></i>
@@ -489,7 +398,7 @@ onMounted(() => {
               </tr>
 
               <!-- KHÔNG CÓ DỮ LIỆU -->
-              <tr v-if="!paged.length">
+              <tr v-if="!rows.length">
                 <td
                   colspan="8"
                   class="ss-empty"

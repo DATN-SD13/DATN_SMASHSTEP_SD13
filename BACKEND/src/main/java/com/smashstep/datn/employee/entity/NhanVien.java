@@ -1,5 +1,6 @@
 package com.smashstep.datn.employee.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -33,6 +34,7 @@ public class NhanVien {
     @Column(name = "email")
     private String email;
 
+    @JsonIgnore
     @Column(name = "mat_khau")
     private String matKhau;
 

@@ -4,7 +4,8 @@ import com.smashstep.datn.common.exception.AppException;
 
 public enum LoaiHoaDon {
     TAI_QUAY(0, "Tại quầy", "store"),
-    TRUC_TUYEN(1, "Trực tuyến", "online");
+    TRUC_TUYEN(1, "Trực tuyến", "online"),
+    GIAO_HANG(2, "Giao hàng", "delivery");
 
     private final int ma;
     private final String nhan;

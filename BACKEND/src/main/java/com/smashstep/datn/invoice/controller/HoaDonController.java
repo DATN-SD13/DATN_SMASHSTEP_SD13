@@ -7,6 +7,7 @@ import com.smashstep.datn.invoice.dto.HoaDonDetailDto;
 import com.smashstep.datn.invoice.dto.HoaDonListDto;
 import com.smashstep.datn.invoice.dto.LichSuHoaDonDto;
 import com.smashstep.datn.invoice.service.HoaDonService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -54,7 +55,7 @@ public class HoaDonController {
     @PutMapping("/{ma}/trang-thai")
     public ApiResponse<HoaDonDetailDto> capNhatTrangThai(
             @PathVariable String ma,
-            @RequestBody CapNhatTrangThaiHoaDonDto request) {
+            @Valid @RequestBody CapNhatTrangThaiHoaDonDto request) {
         return ApiResponse.ok(
                 "Cập nhật trạng thái hóa đơn thành công",
                 hoaDonService.capNhatTrangThai(ma, request)

@@ -1,6 +1,7 @@
 <script setup>
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
-import { onMounted, ref } from 'vue'
+import api from '../../../../utils/api'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import DiscountFilter from '../components/DiscountFilter.vue'
@@ -26,6 +27,7 @@ const filters = ref({
 })
 
 const rows = ref([])
+const formSupported = ref(false)
 
 const pageSize = ref(5)
 const page = ref(1)
@@ -34,6 +36,7 @@ const totalElements = ref(0)
 const totalPages = ref(1)
 
 const loading = ref(false)
+let requestId = 0
 
 /* xac nhan */
 
@@ -137,6 +140,7 @@ function mapRow(item) {
 /* view du lieu */
 
 async function loadData() {
+  const currentRequest = ++requestId
   loading.value = true
 
   try {
@@ -168,7 +172,8 @@ async function loadData() {
       size: pageSize.value
     })
 
-    const data = response.data.data
+    if (currentRequest !== requestId) return
+    const data = response.data?.data
 
     let content = data?.content || []
 
@@ -193,8 +198,13 @@ async function loadData() {
 
     totalPages.value =
       Math.max(1, data?.totalPages ?? 1)
+    if (page.value > totalPages.value) {
+      page.value = totalPages.value
+      await loadData()
+    }
 
   } catch (error) {
+    if (currentRequest !== requestId) return
     console.error(error)
 
     showLocalToast(
@@ -205,7 +215,7 @@ async function loadData() {
     )
 
   } finally {
-    loading.value = false
+    if (currentRequest === requestId) loading.value = false
   }
 }
 
@@ -268,6 +278,7 @@ function removeVoucher(voucher) {
 /* xac nhan hanh dong*/
 
 async function handleConfirm() {
+  if (saving.value) return
   if (!selectedVoucher.value) {
     return
   }
@@ -404,7 +415,12 @@ function changePage(nextPage) {
   loadData()
 }
 
-onMounted(loadData)
+onMounted(async () => {
+  try { const response = await api.get('/phieu-giam-gia/capabilities'); formSupported.value = response.data?.data?.formSupported === true }
+  catch { showLocalToast('error', 'Không tải được cấu hình phiếu', 'Vui lòng tải lại trang.'); }
+  await loadData()
+})
+onUnmounted(() => { ++requestId; window.clearTimeout(toastTimer) })
 </script>
 
 <template>
@@ -415,6 +431,7 @@ onMounted(loadData)
 
       <!-- bo loc -->
       <DiscountFilter
+        :form-supported="formSupported"
         v-model="filters"
         @search="search"
         @reset="reset"

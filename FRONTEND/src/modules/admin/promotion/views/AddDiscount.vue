@@ -25,7 +25,8 @@ const form = ref({
   startDate: '',
   endDate: '',
   status: 1,
-  description: ''
+  description: '',
+  customerIds: []
   
 })
 
@@ -72,6 +73,13 @@ function generateCode() {
 generateCode()
 
 function validate() {
+  if (![1, 2].includes(Number(form.value.form)) || ![1, 2].includes(Number(form.value.discountType))) return 'Hình thức hoặc loại giảm không hợp lệ!'
+  for (const field of ['discountValue', 'minOrderValue', 'maxDiscount']) {
+    const value = form.value[field]
+    if (value == null || value === '' || !Number.isFinite(Number(value)) || Number(value) < 0) return 'Giá trị giảm và các giới hạn phải là số hợp lệ!'
+  }
+  if (!form.value.unlimited && (!Number.isInteger(Number(form.value.quantity)) || Number(form.value.quantity) <= 0)) return 'Số lượng phải là số nguyên lớn hơn 0!'
+  if (form.value.form === 2 && !form.value.customerIds?.length) return 'Vui lòng chọn khách hàng nhận phiếu!'
 
   if (!form.value.name?.trim()) {
     return 'Vui lòng nhập tên phiếu!'
@@ -83,7 +91,7 @@ function validate() {
 
   if (
     form.value.discountValue == null ||
-    form.value.discountValue < 0
+    form.value.discountValue <= 0
   ) {
     return 'Giá trị giảm không hợp lệ!'
   }
@@ -139,6 +147,7 @@ function validate() {
 
 
 function save() {
+  if (saving.value) return
   const message = validate()
 
   if (message) {
@@ -154,6 +163,7 @@ function save() {
 }
 
 async function handleConfirm() {
+  if (saving.value) return
   saving.value = true
 
   try {
@@ -210,6 +220,7 @@ async function handleConfirm() {
       <!-- form them phieu -->
       <DiscountForm
         :form="form"
+        :saving="saving"
         :edit-mode="false"
         @submit="save"
         @cancel="router.back()"

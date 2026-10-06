@@ -1,6 +1,7 @@
 <script setup>
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import AvatarCard from '../../../../components/AvatarCard.vue'
+import { persistAvatar } from '../../../../utils/avatar'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
@@ -8,6 +9,7 @@ import {
   wardsOf
 } from '../../../../utils/address'
 import customerService from '../services/customerService'
+import { showSuccess, showError } from '../../../../utils/feedback'
 
 const router = useRouter()
 
@@ -37,10 +39,11 @@ const err = ref('')
 const saving = ref(false)
 
 const errorMessage = (e) =>
-  e?.response?.data?.message ||
+  e?.response?.data?.message || e?.message ||
   'Không thể tạo khách hàng, vui lòng thử lại.'
 
 async function save() {
+  if (saving.value) return
   const v = f.value
 
   if (
@@ -58,7 +61,7 @@ async function save() {
   }
 
   if (
-    !/^\S+@\S+\.\S+$/.test(v.email)
+    !/^\S+@\S+\.\S+$/.test(v.email.trim())
   ) {
     err.value =
       'Email không hợp lệ.'
@@ -67,7 +70,7 @@ async function save() {
 
   if (
     v.phone &&
-    !/^0\d{9}$/.test(v.phone)
+    !/^0\d{9}$/.test(v.phone.trim())
   ) {
     err.value =
       'Số điện thoại khách hàng phải gồm 10 số và bắt đầu bằng 0.'
@@ -75,7 +78,7 @@ async function save() {
   }
 
   if (
-    !/^0\d{9}$/.test(v.rPhone)
+    !/^0\d{9}$/.test(v.rPhone.trim())
   ) {
     err.value =
       'Số điện thoại người nhận phải gồm 10 số và bắt đầu bằng 0.'
@@ -95,14 +98,8 @@ async function save() {
   err.value = ''
 
   try {
-    /*
-     * AvatarCard đang tạo Base64.
-     * Tạm thời không gửi Base64 xuống DB.
-     */
-    const image =
-      v.image?.startsWith('data:image/')
-        ? null
-        : (v.image || null)
+    const image = await persistAvatar(v.image)
+    v.image = image || ''
 
     await customerService.createCustomer({
       name: v.name.trim(),
@@ -149,7 +146,7 @@ async function save() {
       }
     })
 
-    alert(
+    showSuccess(
       'Đã tạo khách hàng thành công'
     )
 
@@ -157,6 +154,7 @@ async function save() {
 
   } catch (e) {
     err.value = errorMessage(e)
+    showError(err.value)
 
   } finally {
     saving.value = false
@@ -182,6 +180,7 @@ async function save() {
 
         <AvatarCard
           v-model:image="f.image"
+          :disabled="saving"
           :name="f.name"
           :email="f.email"
           fallback="KH"

@@ -24,7 +24,8 @@ const tabDefs = [
   ['delivered', 'Đã giao hàng'],
   ['done', 'Đã hoàn thành'],
   ['cancel', 'Đã hủy'],
-  ['refund', 'Hoàn tiền']
+  ['refund', 'Hoàn tiền'],
+  ['pending', 'Hóa đơn chờ']
 ]
 const tabs = computed(() => tabDefs.map(([key, label]) => [key, label, Number(props.stats[key] || 0)]))
 const pageStart = computed(() => props.totalElements ? (props.page - 1) * props.pageSize + 1 : 0)
@@ -39,7 +40,7 @@ const pageNumbers = computed(() => {
 })
 
 function typeName(type) {
-  return type === 'online' ? 'Trực tuyến' : type === 'store' ? 'Tại quầy' : 'Chưa xác định'
+  return type === 'online' ? 'Trực tuyến' : type === 'store' ? 'Tại quầy' : type === 'delivery' ? 'Giao hàng' : 'Chưa xác định'
 }
 function money(value) { return `${Number(value || 0).toLocaleString('vi-VN')} đ` }
 </script>
@@ -92,7 +93,7 @@ function money(value) { return `${Number(value || 0).toLocaleString('vi-VN')} đ
           <tr v-for="(invoice, index) in invoices" :key="invoice.code">
             <td class="stt">{{ (page - 1) * pageSize + index + 1 }}</td>
             <td><strong class="code">{{ invoice.code }}</strong></td>
-            <td>{{ invoice.employeeCode || 'NV001' }}</td>
+            <td>{{ invoice.employeeCode || '—' }}</td>
             <td class="customer">{{ invoice.customer }}</td>
             <td>{{ invoice.phone }}</td>
             <td><strong class="money">{{ money(invoice.total) }}</strong></td>
@@ -116,12 +117,12 @@ function money(value) { return `${Number(value || 0).toLocaleString('vi-VN')} đ
     <div class="table-footer">
       <span>Hiển thị <b>{{ pageStart }}–{{ pageEnd }}</b> trong {{ totalElements }} hóa đơn</span>
       <div class="pagination" aria-label="Phân trang danh sách hóa đơn">
-        <button type="button" :disabled="page === 1" aria-label="Trang trước" @click="emit('page-change', page - 1)">‹</button>
+        <button type="button" :disabled="loading || page === 1" aria-label="Trang trước" @click="emit('page-change', page - 1)">‹</button>
         <template v-for="(item, index) in pageNumbers" :key="`${item}-${index}`">
           <span v-if="item === '...'" class="ellipsis">…</span>
-          <button v-else type="button" :class="{ current: page === item }" :aria-current="page === item ? 'page' : undefined" @click="emit('page-change', item)">{{ item }}</button>
+          <button v-else type="button" :disabled="loading" :class="{ current: page === item }" :aria-current="page === item ? 'page' : undefined" @click="emit('page-change', item)">{{ item }}</button>
         </template>
-        <button type="button" :disabled="page === totalPages" aria-label="Trang sau" @click="emit('page-change', page + 1)">›</button>
+        <button type="button" :disabled="loading || page === totalPages" aria-label="Trang sau" @click="emit('page-change', page + 1)">›</button>
       </div>
     </div>
   </section>

@@ -1,5 +1,6 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import api from '../../../../utils/api'
 
 const props = defineProps({
   form: {
@@ -8,6 +9,10 @@ const props = defineProps({
   },
 
   editMode: {
+    type: Boolean,
+    default: false
+  },
+  saving: {
     type: Boolean,
     default: false
   }
@@ -22,10 +27,46 @@ const emit = defineEmits([
 const isPercent = computed(() => {
   return props.form.discountType === 1
 })
+
+const customers = ref([])
+const formSupported = ref(false)
+const capabilityError = ref('')
+onMounted(async () => {
+  try {
+    const response = await api.get('/phieu-giam-gia/capabilities')
+    formSupported.value = response.data?.data?.formSupported === true
+    if (!formSupported.value) capabilityError.value = 'Cấu hình hiện tại chưa hỗ trợ lưu hình thức phiếu. Không thể tạo hoặc sửa phiếu.'
+  } catch { capabilityError.value = 'Không thể kiểm tra khả năng lưu phiếu. Vui lòng tải lại trang.' }
+})
+const loadingCustomers = ref(false)
+const customerError = ref('')
+watch(() => props.form.form, async value => {
+  if (value !== 2 || customers.value.length || loadingCustomers.value) return
+  loadingCustomers.value = true
+  customerError.value = ''
+  try {
+    const result = []
+    let nextPage = 1
+    let pages = 1
+    do {
+      const response = await api.get('/khach-hang', { params: { trangThai: 1, page: nextPage, size: 100 } })
+      const data = response.data?.data
+      result.push(...(data?.content || []))
+      pages = data?.totalPages ?? 1
+      nextPage++
+    } while (nextPage <= pages)
+    customers.value = result
+  } catch (error) {
+    customerError.value = error.response?.data?.message || 'Không thể tải khách hàng nhận phiếu.'
+  } finally {
+    loadingCustomers.value = false
+  }
+}, { immediate: true })
 </script>
 
 <template>
   <section class="ss-card ss-form">
+    <p v-if="capabilityError" class="ss-hint warn" role="alert">{{ capabilityError }}</p>
 
     <div class="ss-head">
 
@@ -144,6 +185,18 @@ const isPercent = computed(() => {
 
       </div>
 
+      <div v-if="form.form === 2" class="ss-field full-width">
+        <label class="ss-label" for="voucher-customers">Khách hàng nhận phiếu <span class="req">*</span></label>
+        <select id="voucher-customers" class="ss-select" multiple v-model="form.customerIds" :disabled="loadingCustomers || saving">
+          <option v-for="customer in customers" :key="customer.id" :value="customer.id">
+            {{ customer.code || '—' }} — {{ customer.name || '—' }}
+          </option>
+        </select>
+        <span v-if="loadingCustomers" class="ss-hint">Đang tải khách hàng...</span>
+        <span v-else-if="customerError" class="ss-hint warn" role="alert">{{ customerError }}</span>
+        <span v-else class="ss-hint">Chọn ít nhất một khách hàng. Giữ Ctrl để chọn nhiều.</span>
+      </div>
+
       <div class="ss-field">
 
         <label class="ss-label">
@@ -156,7 +209,8 @@ const isPercent = computed(() => {
         <input
           class="ss-input"
           type="number"
-          min="0"
+          min="0.01"
+          step="0.01"
           v-model.number="form.discountValue"
         />
 
@@ -284,6 +338,7 @@ const isPercent = computed(() => {
       <button
         class="ss-btn primary"
         type="button"
+        :disabled="saving || !formSupported || (form.form === 2 && (loadingCustomers || !!customerError))"
         @click="emit('submit')"
       >
         <i class="bi bi-check2"></i>
@@ -297,6 +352,7 @@ const isPercent = computed(() => {
       <button
         class="ss-btn"
         type="button"
+        :disabled="saving"
         @click="emit('cancel')"
       >
         Hủy

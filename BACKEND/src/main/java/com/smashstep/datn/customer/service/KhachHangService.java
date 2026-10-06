@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
@@ -42,6 +43,7 @@ public class KhachHangService {
         int safePage = Math.max(page, 1) - 1;
         int safeSize = Math.min(Math.max(size, 1), 100);
 
+        if ((long) (safePage) * (safeSize) > Integer.MAX_VALUE) throw AppException.badRequest("Trang yêu cầu vượt giới hạn phân trang");
         Page<KhachHangResponse> result =
                 khachHangRepository.search(
                         normalizeKeyword(tuKhoa),
@@ -162,7 +164,7 @@ public class KhachHangService {
 
         validateCustomerRequest(
                 request,
-                customer.getId()
+                customer
         );
 
         customer.setTenKhachHang(
@@ -469,8 +471,9 @@ public class KhachHangService {
 
     private void validateCustomerRequest(
             KhachHangRequest request,
-            Long currentId
+            KhachHang currentCustomer
     ) {
+        Long currentId = currentCustomer == null ? null : currentCustomer.getId();
         String email =
                 cleanLower(request.getEmail());
 
@@ -479,7 +482,9 @@ public class KhachHangService {
 
         boolean emailExists;
 
-        if (currentId == null) {
+        if (currentCustomer != null && java.util.Objects.equals(email, cleanLower(currentCustomer.getEmail()))) {
+            emailExists = false;
+        } else if (currentId == null) {
 
             emailExists =
                     khachHangRepository
@@ -503,7 +508,8 @@ public class KhachHangService {
             );
         }
 
-        if (phone != null) {
+        if (phone != null && (currentCustomer == null
+                || !java.util.Objects.equals(phone, cleanNullable(currentCustomer.getSoDienThoai())))) {
 
             boolean phoneExists;
 
@@ -822,11 +828,16 @@ public class KhachHangService {
     private String generateCode(
             Long id
     ) {
-        return "KH"
-                + String.format(
-                "%04d",
-                id
-        );
+        long candidate = id;
+        String code = String.format(Locale.ROOT, "KH%04d", candidate);
+        while (khachHangRepository.existsByMaKhachHang(code)
+                || khachHangRepository.existsByTenTaiKhoan(code)) {
+            if (candidate == Long.MAX_VALUE) {
+                throw AppException.conflict("Không thể sinh mã khách hàng mới");
+            }
+            code = String.format(Locale.ROOT, "KH%04d", ++candidate);
+        }
+        return code;
     }
 
     private String genderLabel(
@@ -867,7 +878,7 @@ public class KhachHangService {
 
         return cleaned == null
                 ? null
-                : cleaned.toLowerCase();
+                : cleaned.toLowerCase(Locale.ROOT);
     }
 
     private String cleanNullable(
@@ -895,16 +906,13 @@ public class KhachHangService {
         String value =
                 image.trim();
 
-        /*
-         * AvatarCard hiện sinh Base64.
-         * Không lưu Base64 xuống DB.
-         */
+        // The upload API returns a persisted path; raw image data is never stored in NVARCHAR.
         if (
                 value.startsWith(
                         "data:image/"
                 )
         ) {
-            return null;
+            throw AppException.badRequest("Hãy tải ảnh đại diện lên trước khi lưu khách hàng");
         }
 
         if (value.length() > 1000) {
