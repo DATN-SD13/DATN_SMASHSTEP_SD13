@@ -15,7 +15,8 @@ const props = defineProps({
 
 const emit = defineEmits([
   'submit',
-  'cancel'
+  'cancel',
+  'generate-code'
 ])
 
 const isPercent = computed(() => {
@@ -45,11 +46,26 @@ const isPercent = computed(() => {
           <span class="req">*</span>
         </label>
 
-        <input
-          class="ss-input"
-          v-model="form.code"
-          :disabled="editMode"
-        />
+        <div class="code-input-wrapper">
+
+          <input
+            class="ss-input"
+            v-model="form.code"
+            readonly
+            placeholder="Tự động tạo"
+          />
+
+          <button
+            v-if="!editMode"
+            type="button"
+            class="generate-code-btn"
+            title="Tạo mã mới"
+            @click="emit('generate-code')"
+          >
+            <i class="bi bi-arrow-clockwise"></i>
+          </button>
+
+        </div>
 
       </div>
 
@@ -185,15 +201,35 @@ const isPercent = computed(() => {
 
         <label class="ss-label">
           Số lượng
-          <span class="req">*</span>
+          <span
+            v-if="!form.unlimited"
+            class="req"
+          >*</span>
         </label>
 
         <input
+          v-if="!form.unlimited"
           class="ss-input"
           type="number"
           min="1"
           v-model.number="form.quantity"
         />
+
+        <div
+          v-else
+          class="ss-input"
+          style="background: #f5f5f5;"
+        >
+          Không giới hạn
+        </div>
+
+        <label style="margin-top: 8px;">
+          <input
+            type="checkbox"
+            v-model="form.unlimited"
+          />
+          Không giới hạn số lượng
+        </label>
 
       </div>
 
@@ -227,6 +263,20 @@ const isPercent = computed(() => {
 
       </div>
 
+      <div class="ss-field full-width">
+
+        <label class="ss-label">
+          Mô tả phiếu giảm giá
+        </label>
+
+        <textarea
+          class="ss-input ss-textarea"
+          v-model="form.description"
+          rows="4"
+          placeholder="Nhập mô tả cho phiếu giảm giá..."
+        ></textarea>
+
+      </div>
     </div>
 
     <div class="ss-actions left">

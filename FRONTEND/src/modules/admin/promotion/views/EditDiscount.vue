@@ -4,6 +4,7 @@ import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import DiscountForm from '../components/DiscountForm.vue'
+import ConfirmModal from '../components/ConfirmModal.vue'
 
 import {
   getDiscountById,
@@ -14,6 +15,8 @@ const route = useRoute()
 const router = useRouter()
 
 const loading = ref(true)
+const saving = ref(false)
+const showConfirm = ref(false)
 
 const form = ref({
   code: '',
@@ -24,9 +27,38 @@ const form = ref({
   minOrderValue: 0,
   maxDiscount: 0,
   quantity: 0,
+  unlimited: false,
   startDate: '',
-  endDate: ''
+  endDate: '',
+  status: 1,
+  description: ''
 })
+
+const toast = ref({
+  visible: false,
+  type: 'success',
+  title: '',
+  message: ''
+})
+
+let toastTimer = null
+
+function showLocalToast(type, title, message) {
+  toast.value = {
+    visible: true,
+    type,
+    title,
+    message
+  }
+
+  if (toastTimer) {
+    window.clearTimeout(toastTimer)
+  }
+
+  toastTimer = window.setTimeout(() => {
+    toast.value.visible = false
+  }, 3000)
+}
 
 function toDate(value) {
   return value
@@ -35,9 +67,7 @@ function toDate(value) {
 }
 
 async function loadDetail() {
-
   try {
-
     const response =
       await getDiscountById(route.params.id)
 
@@ -52,29 +82,33 @@ async function loadDetail() {
       minOrderValue: data.minOrderValue ?? 0,
       maxDiscount: data.maxDiscount ?? 0,
       quantity: data.quantity ?? 0,
+      unlimited: data.unlimited ?? false,
       startDate: toDate(data.startDate),
-      endDate: toDate(data.endDate)
+      endDate: toDate(data.endDate),
+      status: data.status ?? 1,
+      description: data.description || ''
     }
 
   } catch (error) {
-
     console.error(error)
 
-    alert(
+    showLocalToast(
+      'error',
+      'Tải dữ liệu thất bại',
       error.response?.data?.message ||
       'Không thể tải phiếu giảm giá!'
     )
 
-    router.push('/giam-gia')
+    setTimeout(() => {
+      router.push('/giam-gia')
+    }, 1000)
 
   } finally {
-
     loading.value = false
   }
 }
 
 function validate() {
-
   if (!form.value.name.trim()) {
     return 'Vui lòng nhập tên phiếu!'
   }
@@ -93,11 +127,13 @@ function validate() {
     return 'Phần trăm giảm không được vượt quá 100%!'
   }
 
-  if (
-    !form.value.quantity ||
-    form.value.quantity < 1
-  ) {
-    return 'Số lượng phải lớn hơn 0!'
+  if (!form.value.unlimited) {
+    if (
+      !form.value.quantity ||
+      form.value.quantity < 1
+    ) {
+      return 'Số lượng phải lớn hơn 0!'
+    }
   }
 
   if (
@@ -117,23 +153,25 @@ function validate() {
   return null
 }
 
-async function save() {
-
+function save() {
   const message = validate()
 
   if (message) {
-    alert(message)
+    showLocalToast(
+      'error',
+      'Dữ liệu không hợp lệ',
+      message
+    )
     return
   }
 
-  const confirmed = window.confirm(
-    'Bạn có chắc chắn muốn lưu thay đổi phiếu giảm giá này không?'
-  )
+  showConfirm.value = true
+}
 
-  if (!confirmed) return
+async function handleConfirm() {
+  saving.value = true
 
   try {
-
     await updateDiscount(
       route.params.id,
       {
@@ -141,20 +179,32 @@ async function save() {
       }
     )
 
-    alert(
+    showConfirm.value = false
+
+    showLocalToast(
+      'success',
+      'Cập nhật thành công',
       'Cập nhật phiếu giảm giá thành công!'
     )
 
-    router.push('/giam-gia')
+    setTimeout(() => {
+      router.push('/giam-gia')
+    }, 1000)
 
   } catch (error) {
-
     console.error(error)
 
-    alert(
+    showConfirm.value = false
+
+    showLocalToast(
+      'error',
+      'Cập nhật thất bại',
       error.response?.data?.message ||
       'Cập nhật phiếu giảm giá thất bại!'
     )
+
+  } finally {
+    saving.value = false
   }
 }
 
@@ -162,21 +212,19 @@ onMounted(loadDetail)
 </script>
 
 <template>
-
   <AdminLayout>
 
     <main class="ss-page">
 
       <div>
-
         <button
           class="ss-back"
+          type="button"
           aria-label="Quay lại"
           @click="router.back()"
         >
           <i class="bi bi-arrow-left"></i>
         </button>
-
       </div>
 
       <div
@@ -197,6 +245,48 @@ onMounted(loadDetail)
 
     </main>
 
-  </AdminLayout>
+    <!-- tbao xac nhan -->
+    <ConfirmModal
+      :visible="showConfirm"
+      title="Xác nhận cập nhật"
+      message="Bạn có chắc chắn muốn cập nhật phiếu giảm giá này không?"
+      confirm-text="Cập nhật"
+      :loading="saving"
+      @confirm="handleConfirm"
+      @cancel="showConfirm = false"
+    />
 
+    <!-- tbao popup -->
+    <div
+      v-if="toast.visible"
+      class="ss-toast"
+      :class="`ss-toast-${toast.type}`"
+    >
+      <div class="ss-toast-icon">
+        <i
+          v-if="toast.type === 'success'"
+          class="bi bi-check-circle-fill"
+        ></i>
+
+        <i
+          v-else
+          class="bi bi-x-circle-fill"
+        ></i>
+      </div>
+
+      <div class="ss-toast-content">
+        <strong>{{ toast.title }}</strong>
+        <span>{{ toast.message }}</span>
+      </div>
+
+      <button
+        type="button"
+        class="ss-toast-close"
+        @click="toast.visible = false"
+      >
+        ×
+      </button>
+    </div>
+
+  </AdminLayout>
 </template>

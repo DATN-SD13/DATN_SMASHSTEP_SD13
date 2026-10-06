@@ -62,4 +62,6 @@ public class PhieuGiamGia {
     @Column(name = "mo_ta")
     private String moTa;
 
+    @Column(name = "vo_han")
+    private Boolean voHan = false;
 }

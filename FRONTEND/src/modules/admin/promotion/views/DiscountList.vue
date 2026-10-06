@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router'
 
 import DiscountFilter from '../components/DiscountFilter.vue'
 import DiscountTable from '../components/DiscountTable.vue'
+import ConfirmModal from '../components/ConfirmModal.vue'
 
 import {
   getDiscounts,
@@ -34,6 +35,45 @@ const totalPages = ref(1)
 
 const loading = ref(false)
 
+/* xac nhan */
+
+const showConfirm = ref(false)
+const saving = ref(false)
+
+const confirmAction = ref('')
+const selectedVoucher = ref(null)
+
+/* =========================
+  tbao popup*/
+
+const toast = ref({
+  visible: false,
+  type: 'success',
+  title: '',
+  message: ''
+})
+
+let toastTimer = null
+
+function showLocalToast(type, title, message) {
+  toast.value = {
+    visible: true,
+    type,
+    title,
+    message
+  }
+
+  if (toastTimer) {
+    window.clearTimeout(toastTimer)
+  }
+
+  toastTimer = window.setTimeout(() => {
+    toast.value.visible = false
+  }, 3000)
+}
+
+/*  bo loc */
+
 function typeToValue(type) {
   if (type === 'Công khai') return 1
   if (type === 'Cá nhân') return 2
@@ -54,6 +94,8 @@ function statusToValue(status) {
 
   return undefined
 }
+
+/*  format  */
 
 function formatDate(value) {
   if (!value) return '-'
@@ -92,6 +134,8 @@ function mapRow(item) {
   }
 }
 
+/* view du lieu */
+
 async function loadData() {
   loading.value = true
 
@@ -123,22 +167,17 @@ async function loadData() {
       page: page.value,
       size: pageSize.value
     })
+
     const data = response.data.data
 
     let content = data?.content || []
 
-    // =========================
-    // loc theo hinh thuc
-    // =========================
     if (filters.value.type !== 'all') {
       content = content.filter(item =>
         item.form === Number(filters.value.type)
       )
     }
 
-    // =========================
-    // loc theo loai
-    // =========================
     if (filters.value.discount !== 'all') {
       content = content.filter(item =>
         item.discountType === Number(
@@ -156,10 +195,11 @@ async function loadData() {
       Math.max(1, data?.totalPages ?? 1)
 
   } catch (error) {
-
     console.error(error)
 
-    alert(
+    showLocalToast(
+      'error',
+      'Tải dữ liệu thất bại',
       error.response?.data?.message ||
       'Không thể tải danh sách phiếu giảm giá!'
     )
@@ -168,6 +208,8 @@ async function loadData() {
     loading.value = false
   }
 }
+
+/* bo loc+ */
 
 function search(value) {
   filters.value = {
@@ -194,6 +236,7 @@ function reset() {
   loadData()
 }
 
+
 function viewVoucher(id) {
   router.push(`/giam-gia/chi-tiet/${id}`)
 }
@@ -202,33 +245,77 @@ function editVoucher(id) {
   router.push(`/giam-gia/sua/${id}`)
 }
 
-async function toggleVoucher(voucher) {
+/* mo tbao xac nhan*/
 
-  const active = voucher.status === 1
+function toggleVoucher(voucher) {
+  selectedVoucher.value = voucher
 
-  const action = active
-    ? 'ngừng hoạt động'
-    : 'bật hoạt động'
+  if (voucher.status === 1) {
+    confirmAction.value = 'deactivate'
+  } else {
+    confirmAction.value = 'activate'
+  }
 
-  const confirmed = window.confirm(
-    `Bạn có chắc chắn muốn ${action} phiếu "${voucher.code}" không?`
-  )
+  showConfirm.value = true
+}
 
-  if (!confirmed) return
+function removeVoucher(voucher) {
+  selectedVoucher.value = voucher
+  confirmAction.value = 'delete'
+  showConfirm.value = true
+}
+
+/* xac nhan hanh dong*/
+
+async function handleConfirm() {
+  if (!selectedVoucher.value) {
+    return
+  }
+
+  saving.value = true
+
+  const voucher = selectedVoucher.value
 
   try {
 
-    if (active) {
+    /* tat hoat dong */
+    if (confirmAction.value === 'deactivate') {
+
       await deactivateDiscount(voucher.id)
-    } else {
-      await activateDiscount(voucher.id)
+
+      showLocalToast(
+        'success',
+        'Thành công',
+        `Đã ngừng hoạt động phiếu "${voucher.code}"!`
+      )
     }
 
-    alert(
-      active
-        ? 'Ngừng hoạt động phiếu giảm giá thành công!'
-        : 'Bật hoạt động phiếu giảm giá thành công!'
-    )
+    /* bat hoat dong */
+    else if (confirmAction.value === 'activate') {
+
+      await activateDiscount(voucher.id)
+
+      showLocalToast(
+        'success',
+        'Thành công',
+        `Đã bật hoạt động phiếu "${voucher.code}"!`
+      )
+    }
+
+    /* xoa */
+    else if (confirmAction.value === 'delete') {
+
+      await deleteDiscount(voucher.id)
+
+      showLocalToast(
+        'success',
+        'Xóa thành công',
+        `Đã xóa phiếu "${voucher.code}"!`
+      )
+    }
+
+    showConfirm.value = false
+    selectedVoucher.value = null
 
     await loadData()
 
@@ -236,44 +323,75 @@ async function toggleVoucher(voucher) {
 
     console.error(error)
 
-    alert(
+    showConfirm.value = false
+
+    showLocalToast(
+      'error',
+      'Thao tác thất bại',
       error.response?.data?.message ||
-      `${active
-        ? 'Ngừng hoạt động'
-        : 'Bật hoạt động'} thất bại!`
+      'Không thể thực hiện thao tác!'
     )
+
+  } finally {
+    saving.value = false
   }
 }
 
-async function removeVoucher(voucher) {
+/* xac nhan  */
 
-  const confirmed = window.confirm(
-    `Bạn có chắc chắn muốn XÓA phiếu "${voucher.code}" không?\n\nThao tác này không thể hoàn tác.`
-  )
-
-  if (!confirmed) return
-
-  try {
-
-    await deleteDiscount(voucher.id)
-
-    alert('Xóa phiếu giảm giá thành công!')
-
-    await loadData()
-
-  } catch (error) {
-
-    console.error(error)
-
-    alert(
-      error.response?.data?.message ||
-      'Xóa phiếu giảm giá thất bại!'
-    )
+function confirmTitle() {
+  if (confirmAction.value === 'deactivate') {
+    return 'Xác nhận ngừng hoạt động'
   }
+
+  if (confirmAction.value === 'activate') {
+    return 'Xác nhận bật hoạt động'
+  }
+
+  if (confirmAction.value === 'delete') {
+    return 'Xác nhận xóa'
+  }
+
+  return 'Xác nhận'
 }
+
+function confirmMessage() {
+  const code =
+    selectedVoucher.value?.code || ''
+
+  if (confirmAction.value === 'deactivate') {
+    return `Bạn có chắc chắn muốn ngừng hoạt động phiếu "${code}" không?`
+  }
+
+  if (confirmAction.value === 'activate') {
+    return `Bạn có chắc chắn muốn bật hoạt động phiếu "${code}" không?`
+  }
+
+  if (confirmAction.value === 'delete') {
+    return `Bạn có chắc chắn muốn xóa phiếu "${code}" không? Thao tác này không thể hoàn tác.`
+  }
+
+  return 'Bạn có chắc chắn muốn thực hiện thao tác này không?'
+}
+
+function confirmText() {
+  if (confirmAction.value === 'deactivate') {
+    return 'Ngừng hoạt động'
+  }
+
+  if (confirmAction.value === 'activate') {
+    return 'Bật hoạt động'
+  }
+
+  if (confirmAction.value === 'delete') {
+    return 'Xóa'
+  }
+
+  return 'Đồng ý'
+}
+
 
 function changePage(nextPage) {
-
   if (
     nextPage < 1 ||
     nextPage > totalPages.value
@@ -295,7 +413,7 @@ onMounted(loadData)
 
     <main class="ss-page">
 
-      <!-- BỘ LỌC -->
+      <!-- bo loc -->
       <DiscountFilter
         v-model="filters"
         @search="search"
@@ -303,7 +421,7 @@ onMounted(loadData)
         @create="router.push('/giam-gia/them')"
       />
 
-      <!-- DANH SÁCH -->
+      <!-- danh sach -->
       <section class="ss-card">
 
         <div class="ss-head">
@@ -378,7 +496,7 @@ onMounted(loadData)
 
         </div>
 
-        <!-- PHÂN TRANG -->
+        <!-- phan trang -->
         <div class="ss-foot">
 
           <select
@@ -433,6 +551,62 @@ onMounted(loadData)
       </section>
 
     </main>
+
+    <!-- tbao xac nhan -->
+
+    <ConfirmModal
+      :visible="showConfirm"
+      :title="confirmTitle()"
+      :message="confirmMessage()"
+      :confirm-text="confirmText()"
+      :loading="saving"
+      @confirm="handleConfirm"
+      @cancel="showConfirm = false"
+    />
+
+    <!-- tbao popup -->
+
+    <div
+      v-if="toast.visible"
+      class="ss-toast"
+      :class="`ss-toast-${toast.type}`"
+    >
+
+      <div class="ss-toast-icon">
+
+        <i
+          v-if="toast.type === 'success'"
+          class="bi bi-check-circle-fill"
+        ></i>
+
+        <i
+          v-else
+          class="bi bi-x-circle-fill"
+        ></i>
+
+      </div>
+
+      <div class="ss-toast-content">
+
+        <strong>
+          {{ toast.title }}
+        </strong>
+
+        <span>
+          {{ toast.message }}
+        </span>
+
+      </div>
+
+      <button
+        type="button"
+        class="ss-toast-close"
+        @click="toast.visible = false"
+      >
+        ×
+      </button>
+
+    </div>
 
   </AdminLayout>
 
