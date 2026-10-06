@@ -243,7 +243,8 @@ onMounted(() => loadInvoices(1, true))
         @status-change="changeStatus"
         @page-change="changePage"
         @view="view"
-        :exporting="exporting" @export="exportExcel"
+        :exporting="exporting"
+        @export="exportExcel"
       />
       <div v-if="exportToast.visible" class="export-toast" :class="exportToast.type" role="status">
         <i :class="exportToast.type === 'success' ? 'bi bi-check-circle-fill' : 'bi bi-exclamation-circle-fill'"></i>
