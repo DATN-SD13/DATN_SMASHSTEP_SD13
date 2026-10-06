@@ -5,10 +5,10 @@ import com.smashstep.datn.common.exception.AppException;
 public enum TrangThaiHoaDon {
     CHO_XAC_NHAN(0, "Chờ xác nhận", "waiting"),
     DA_XAC_NHAN(1, "Đã xác nhận", "confirmed"),
-    CHO_GIAO_HANG(2, "Chờ giao hàng", "ready"),
+    CHO_GIAO_HANG(2, "Chờ lấy hàng", "ready"),
     DANG_GIAO_HANG(3, "Đang giao hàng", "shipping"),
     DA_GIAO_HANG(4, "Đã giao hàng", "delivered"),
-    HOAN_THANH(5, "Đã hoàn thành", "done"),
+    HOAN_THANH(5, "Hoàn thành", "done"),
     DA_HUY(6, "Đã hủy", "cancel"),
     HOAN_TIEN(7, "Hoàn tiền", "refund"),
     HOA_DON_CHO(8, "Hóa đơn chờ", "pending");

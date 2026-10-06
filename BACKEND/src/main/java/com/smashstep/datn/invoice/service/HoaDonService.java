@@ -82,17 +82,14 @@ public class HoaDonService {
                 .stream()
                 .map(LichSuThanhToanDto::from)
                 .toList();
-        return HoaDonDetailDto.from(hoaDon, items, paymentHistory);
+        List<LichSuHoaDonDto> history = layLichSu(hoaDon.getId());
+        return HoaDonDetailDto.from(hoaDon, items, paymentHistory, history);
     }
 
     @Transactional(readOnly = true)
     public List<LichSuHoaDonDto> lichSu(String ma) {
         HoaDon hoaDon = timHoaDon(ma);
-        return lichSuHoaDonRepository
-                .findByIdHoaDonIdOrderByNgayTaoDesc(hoaDon.getId())
-                .stream()
-                .map(LichSuHoaDonDto::from)
-                .toList();
+        return layLichSu(hoaDon.getId());
     }
 
     @Transactional
@@ -137,8 +134,12 @@ public class HoaDonService {
             }
         }
 
-        if (request.getIdNhanVien() != null) {
-            NhanVien nhanVien = nhanVienRepository.findById(request.getIdNhanVien())
+        Long idNhanVienThaoTac = request.getIdNhanVien();
+        if (idNhanVienThaoTac == null && hoaDon.getIdNhanVien() != null) {
+            idNhanVienThaoTac = hoaDon.getIdNhanVien().getId();
+        }
+        if (idNhanVienThaoTac != null) {
+            NhanVien nhanVien = nhanVienRepository.findById(idNhanVienThaoTac)
                     .orElseThrow(() -> AppException.notFound("Không tìm thấy nhân viên"));
             hoaDon.setIdNhanVien(nhanVien);
         }
@@ -148,12 +149,26 @@ public class HoaDonService {
         hoaDonRepository.save(hoaDon);
         LichSuHoaDon lichSu = new LichSuHoaDon();
         lichSu.setIdHoaDon(hoaDon);
-        lichSu.setNguoiTao(request.getIdNhanVien());
+        lichSu.setNguoiTao(idNhanVienThaoTac);
         lichSu.setTrangThai(request.getTrangThai());
         lichSu.setGhiChu(request.getGhiChu());
         lichSu.setNgayTao(LocalDateTime.now());
         lichSuHoaDonRepository.save(lichSu);
         return chiTiet(ma);
+    }
+
+    private List<LichSuHoaDonDto> layLichSu(Long idHoaDon) {
+        return lichSuHoaDonRepository
+                .findByIdHoaDonIdOrderByNgayTaoDesc(idHoaDon)
+                .stream()
+                .map(lichSu -> {
+                    NhanVien nhanVien = null;
+                    if (lichSu.getNguoiTao() != null) {
+                        nhanVien = nhanVienRepository.findById(lichSu.getNguoiTao()).orElse(null);
+                    }
+                    return LichSuHoaDonDto.from(lichSu, nhanVien);
+                })
+                .toList();
     }
 
     private HoaDon timHoaDon(String ma) {
