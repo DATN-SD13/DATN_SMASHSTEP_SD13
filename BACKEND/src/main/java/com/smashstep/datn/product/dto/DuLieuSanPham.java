@@ -54,7 +54,7 @@ public final class DuLieuSanPham {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class ThuocTinhRequest {
-        @Size(max = 50)
+        // Giữ field để tương thích client cũ; service tự sinh mã và giữ mã khi sửa.
         @JsonAlias({"maDanhMuc", "maThuongHieu", "maChatLieu", "maKieuDang", "maCoGiay", "maXuatXu", "maMauSac"})
         private String ma;
         @NotBlank(message = "Tên/giá trị không được trống")

@@ -11,6 +11,7 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import jakarta.persistence.criteria.Predicate;
+import java.math.BigInteger;
 import java.time.LocalDateTime;
 import java.util.*;
 
@@ -123,24 +124,61 @@ public class ThuocTinhSanPhamService {
         };
     }
 
-    private <T> Specification<T> kiemTraTrung(Long id, String truongMa, String truongTen, ThuocTinhRequest yeuCau) {
-        String truong = truongMa == null ? truongTen : truongMa;
-        String giaTri = truongMa == null ? yeuCau.getTen() : yeuCau.getMa();
-        return (bang, truyVan, tieuChi) -> tieuChi.and(
-                tieuChi.notEqual(bang.get("id"), id == null ? 0L : id),
-                tieuChi.equal(tieuChi.lower(bang.get(truong)),
-                        QuyTacSanPham.boKhoangTrang(giaTri).toLowerCase(Locale.ROOT)));
+    public String taoMaTiepTheo(String loai) {
+        String tienTo = switch (loai) {
+            case "categories" -> "DM";
+            case "brands" -> "TH";
+            case "materials" -> "CL";
+            case "styles" -> "KD";
+            case "collars" -> "CG";
+            case "origins" -> "XX";
+            case "colors" -> "MS";
+            case "sizes" -> throw AppException.badRequest("Kích thước không có mã.");
+            default -> throw AppException.badRequest("Loại thuộc tính không hợp lệ");
+        };
+        List<String> danhSachMa = switch (loai) {
+            case "categories" -> danhMucRepository.layDanhSachMa();
+            case "brands" -> thuongHieuRepository.layDanhSachMa();
+            case "materials" -> chatLieuRepository.layDanhSachMa();
+            case "styles" -> kieuDangRepository.layDanhSachMa();
+            case "collars" -> coGiayRepository.layDanhSachMa();
+            case "origins" -> xuatXuRepository.layDanhSachMa();
+            case "colors" -> mauSacRepository.layDanhSachMa();
+            default -> throw AppException.badRequest("Loại thuộc tính không hợp lệ");
+        };
+        BigInteger lonNhat = BigInteger.ZERO;
+        for (String ma : danhSachMa) {
+            if (ma != null && ma.matches(tienTo + "[0-9]+")) {
+                lonNhat = lonNhat.max(new BigInteger(ma.substring(tienTo.length())));
+            }
+        }
+        String soTiepTheo = lonNhat.add(BigInteger.ONE).toString();
+        String maMoi = tienTo + "0".repeat(Math.max(0, 3 - soTiepTheo.length())) + soTiepTheo;
+        if (maMoi.length() > 50) throw AppException.badRequest("Mã thuộc tính tiếp theo vượt quá 50 ký tự.");
+        return maMoi;
+    }
+
+    private <T> Specification<T> kiemTraTrung(Long id, String truongMa, String truongTen, String ma, String ten) {
+        return (bang, truyVan, tieuChi) -> {
+            Predicate trungTen = tieuChi.equal(tieuChi.lower(bang.get(truongTen)),
+                    QuyTacSanPham.boKhoangTrang(ten).toLowerCase(Locale.ROOT));
+            Predicate trung = truongMa == null ? trungTen : tieuChi.or(trungTen,
+                    tieuChi.equal(tieuChi.lower(bang.get(truongMa)),
+                            QuyTacSanPham.boKhoangTrang(ma).toLowerCase(Locale.ROOT)));
+            return tieuChi.and(tieuChi.notEqual(bang.get("id"), id == null ? 0L : id), trung);
+        };
     }
 
     @Transactional
     public ThuocTinhResponse luuThuocTinh(String loai, Long id, ThuocTinhRequest yeuCau) {
         QuyTacSanPham.kiemTraTrangThai(yeuCau.getTrangThai());
-        if (!"sizes".equals(loai) && !QuyTacSanPham.boKhoangTrang(yeuCau.getMa()).matches("^[A-Za-z0-9][A-Za-z0-9._-]{0,49}$"))
-            throw AppException.badRequest("Mã thuộc tính bắt buộc, tối đa 50 ký tự Latin/số, dấu chấm, gạch dưới hoặc gạch ngang");
         if ("sizes".equals(loai) && QuyTacSanPham.boKhoangTrang(yeuCau.getTen()).length() > 50)
             throw AppException.badRequest("Giá trị kích thước tối đa 50 ký tự");
         if ("colors".equals(loai) && !QuyTacSanPham.boKhoangTrang(yeuCau.getMaMauHex()).matches("^#[0-9a-fA-F]{6}$"))
             throw AppException.badRequest("Mã HEX phải có dạng #RRGGBB");
+        String maMoi = id == null && !"sizes".equals(loai) ? taoMaTiepTheo(loai) : null;
+        yeuCau = new ThuocTinhRequest(maMoi, yeuCau.getTen(), yeuCau.getGhiChu(),
+                yeuCau.getMaMauHex(), yeuCau.getTrangThai());
         return switch (loai) {
             case "categories" -> luuDanhMuc(id, yeuCau);
             case "brands" -> luuThuongHieu(id, yeuCau);
@@ -206,10 +244,10 @@ public class ThuocTinhSanPhamService {
     private ThuocTinhResponse luuDanhMuc(Long id, ThuocTinhRequest yeuCau) {
         DanhMuc thuocTinh = id == null ? new DanhMuc() : danhMucRepository.findById(id)
                 .orElseThrow(() -> AppException.notFound("Không tìm thấy danh mục"));
-        if (danhMucRepository.exists(kiemTraTrung(id, "maDanhMuc", "tenDanhMuc", yeuCau))) {
-            throw AppException.conflict("Mã danh mục đã tồn tại");
+        if (id == null) thuocTinh.setMaDanhMuc(yeuCau.getMa());
+        if (danhMucRepository.exists(kiemTraTrung(id, "maDanhMuc", "tenDanhMuc", thuocTinh.getMaDanhMuc(), yeuCau.getTen()))) {
+            throw AppException.conflict("Mã hoặc tên danh mục đã tồn tại");
         }
-        thuocTinh.setMaDanhMuc(QuyTacSanPham.boKhoangTrang(yeuCau.getMa()));
         thuocTinh.setTenDanhMuc(QuyTacSanPham.boKhoangTrang(yeuCau.getTen()));
         thuocTinh.setMoTa(QuyTacSanPham.boKhoangTrang(yeuCau.getGhiChu()));
         thuocTinh.setTrangThai(yeuCau.getTrangThai());
@@ -224,10 +262,10 @@ public class ThuocTinhSanPhamService {
     private ThuocTinhResponse luuThuongHieu(Long id, ThuocTinhRequest yeuCau) {
         ThuongHieu thuocTinh = id == null ? new ThuongHieu() : thuongHieuRepository.findById(id)
                 .orElseThrow(() -> AppException.notFound("Không tìm thấy thương hiệu"));
-        if (thuongHieuRepository.exists(kiemTraTrung(id, "maThuongHieu", "tenThuongHieu", yeuCau))) {
-            throw AppException.conflict("Mã thương hiệu đã tồn tại");
+        if (id == null) thuocTinh.setMaThuongHieu(yeuCau.getMa());
+        if (thuongHieuRepository.exists(kiemTraTrung(id, "maThuongHieu", "tenThuongHieu", thuocTinh.getMaThuongHieu(), yeuCau.getTen()))) {
+            throw AppException.conflict("Mã hoặc tên thương hiệu đã tồn tại");
         }
-        thuocTinh.setMaThuongHieu(QuyTacSanPham.boKhoangTrang(yeuCau.getMa()));
         thuocTinh.setTenThuongHieu(QuyTacSanPham.boKhoangTrang(yeuCau.getTen()));
         thuocTinh.setTrangThai(yeuCau.getTrangThai());
         return chuyenSangResponse(thuongHieuRepository.save(thuocTinh));
@@ -241,10 +279,10 @@ public class ThuocTinhSanPhamService {
     private ThuocTinhResponse luuChatLieu(Long id, ThuocTinhRequest yeuCau) {
         ChatLieu thuocTinh = id == null ? new ChatLieu() : chatLieuRepository.findById(id)
                 .orElseThrow(() -> AppException.notFound("Không tìm thấy chất liệu"));
-        if (chatLieuRepository.exists(kiemTraTrung(id, "maChatLieu", "tenChatLieu", yeuCau))) {
-            throw AppException.conflict("Mã chất liệu đã tồn tại");
+        if (id == null) thuocTinh.setMaChatLieu(yeuCau.getMa());
+        if (chatLieuRepository.exists(kiemTraTrung(id, "maChatLieu", "tenChatLieu", thuocTinh.getMaChatLieu(), yeuCau.getTen()))) {
+            throw AppException.conflict("Mã hoặc tên chất liệu đã tồn tại");
         }
-        thuocTinh.setMaChatLieu(QuyTacSanPham.boKhoangTrang(yeuCau.getMa()));
         thuocTinh.setTenChatLieu(QuyTacSanPham.boKhoangTrang(yeuCau.getTen()));
         thuocTinh.setTrangThai(yeuCau.getTrangThai());
         return chuyenSangResponse(chatLieuRepository.save(thuocTinh));
@@ -258,10 +296,10 @@ public class ThuocTinhSanPhamService {
     private ThuocTinhResponse luuXuatXu(Long id, ThuocTinhRequest yeuCau) {
         XuatXu thuocTinh = id == null ? new XuatXu() : xuatXuRepository.findById(id)
                 .orElseThrow(() -> AppException.notFound("Không tìm thấy xuất xứ"));
-        if (xuatXuRepository.exists(kiemTraTrung(id, "maXuatXu", "tenXuatXu", yeuCau))) {
-            throw AppException.conflict("Mã xuất xứ đã tồn tại");
+        if (id == null) thuocTinh.setMaXuatXu(yeuCau.getMa());
+        if (xuatXuRepository.exists(kiemTraTrung(id, "maXuatXu", "tenXuatXu", thuocTinh.getMaXuatXu(), yeuCau.getTen()))) {
+            throw AppException.conflict("Mã hoặc tên xuất xứ đã tồn tại");
         }
-        thuocTinh.setMaXuatXu(QuyTacSanPham.boKhoangTrang(yeuCau.getMa()));
         thuocTinh.setTenXuatXu(QuyTacSanPham.boKhoangTrang(yeuCau.getTen()));
         thuocTinh.setTrangThai(yeuCau.getTrangThai());
         return chuyenSangResponse(xuatXuRepository.save(thuocTinh));
@@ -275,10 +313,10 @@ public class ThuocTinhSanPhamService {
     private ThuocTinhResponse luuCoGiay(Long id, ThuocTinhRequest yeuCau) {
         CoGiay thuocTinh = id == null ? new CoGiay() : coGiayRepository.findById(id)
                 .orElseThrow(() -> AppException.notFound("Không tìm thấy cổ giày"));
-        if (coGiayRepository.exists(kiemTraTrung(id, "maCoGiay", "tenCoGiay", yeuCau))) {
-            throw AppException.conflict("Mã cổ giày đã tồn tại");
+        if (id == null) thuocTinh.setMaCoGiay(yeuCau.getMa());
+        if (coGiayRepository.exists(kiemTraTrung(id, "maCoGiay", "tenCoGiay", thuocTinh.getMaCoGiay(), yeuCau.getTen()))) {
+            throw AppException.conflict("Mã hoặc tên cổ giày đã tồn tại");
         }
-        thuocTinh.setMaCoGiay(QuyTacSanPham.boKhoangTrang(yeuCau.getMa()));
         thuocTinh.setTenCoGiay(QuyTacSanPham.boKhoangTrang(yeuCau.getTen()));
         thuocTinh.setTrangThai(yeuCau.getTrangThai());
         return chuyenSangResponse(coGiayRepository.save(thuocTinh));
@@ -292,10 +330,10 @@ public class ThuocTinhSanPhamService {
     private ThuocTinhResponse luuKieuDang(Long id, ThuocTinhRequest yeuCau) {
         KieuDang thuocTinh = id == null ? new KieuDang() : kieuDangRepository.findById(id)
                 .orElseThrow(() -> AppException.notFound("Không tìm thấy kiểu dáng"));
-        if (kieuDangRepository.exists(kiemTraTrung(id, "maKieuDang", "tenKieuDang", yeuCau))) {
-            throw AppException.conflict("Mã kiểu dáng đã tồn tại");
+        if (id == null) thuocTinh.setMaKieuDang(yeuCau.getMa());
+        if (kieuDangRepository.exists(kiemTraTrung(id, "maKieuDang", "tenKieuDang", thuocTinh.getMaKieuDang(), yeuCau.getTen()))) {
+            throw AppException.conflict("Mã hoặc tên kiểu dáng đã tồn tại");
         }
-        thuocTinh.setMaKieuDang(QuyTacSanPham.boKhoangTrang(yeuCau.getMa()));
         thuocTinh.setTenKieuDang(QuyTacSanPham.boKhoangTrang(yeuCau.getTen()));
         thuocTinh.setTrangThai(yeuCau.getTrangThai());
         return chuyenSangResponse(kieuDangRepository.save(thuocTinh));
@@ -309,10 +347,10 @@ public class ThuocTinhSanPhamService {
     private ThuocTinhResponse luuMauSac(Long id, ThuocTinhRequest yeuCau) {
         MauSac thuocTinh = id == null ? new MauSac() : mauSacRepository.findById(id)
                 .orElseThrow(() -> AppException.notFound("Không tìm thấy màu sắc"));
-        if (mauSacRepository.exists(kiemTraTrung(id, "maMauSac", "tenMauSac", yeuCau))) {
-            throw AppException.conflict("Mã màu sắc đã tồn tại");
+        if (id == null) thuocTinh.setMaMauSac(yeuCau.getMa());
+        if (mauSacRepository.exists(kiemTraTrung(id, "maMauSac", "tenMauSac", thuocTinh.getMaMauSac(), yeuCau.getTen()))) {
+            throw AppException.conflict("Mã hoặc tên màu sắc đã tồn tại");
         }
-        thuocTinh.setMaMauSac(QuyTacSanPham.boKhoangTrang(yeuCau.getMa()));
         thuocTinh.setTenMauSac(QuyTacSanPham.boKhoangTrang(yeuCau.getTen()));
         thuocTinh.setMaMauHex(QuyTacSanPham.boKhoangTrang(yeuCau.getMaMauHex()));
         thuocTinh.setTrangThai(yeuCau.getTrangThai());
@@ -332,7 +370,7 @@ public class ThuocTinhSanPhamService {
     private ThuocTinhResponse luuKichThuoc(Long id, ThuocTinhRequest yeuCau) {
         KichThuoc thuocTinh = id == null ? new KichThuoc() : kichThuocRepository.findById(id)
                 .orElseThrow(() -> AppException.notFound("Không tìm thấy kích thước"));
-        if (kichThuocRepository.exists(kiemTraTrung(id, null, "giaTri", yeuCau))) {
+        if (kichThuocRepository.exists(kiemTraTrung(id, null, "giaTri", null, yeuCau.getTen()))) {
             throw AppException.conflict("Giá trị kích thước đã tồn tại");
         }
         thuocTinh.setGiaTri(QuyTacSanPham.boKhoangTrang(yeuCau.getTen()));
