@@ -125,3 +125,6 @@ GO
 SELECT *
 FROM phieu_giam_gia
 ORDER BY id DESC;
+
+ALTER TABLE phieu_giam_gia
+ADD vo_han BIT NOT NULL DEFAULT 0;

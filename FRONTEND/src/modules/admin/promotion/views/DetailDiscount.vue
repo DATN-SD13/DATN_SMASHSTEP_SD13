@@ -255,6 +255,7 @@ onMounted(loadDetail)
 
     </main>
 
+    
   </AdminLayout>
 
 </template>

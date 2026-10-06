@@ -37,4 +37,6 @@ public class PhieuGiamGiaResponse {
     private String statusLabel;
 
     private String description;
+// vo han phieu
+    private Boolean unlimited;
 }

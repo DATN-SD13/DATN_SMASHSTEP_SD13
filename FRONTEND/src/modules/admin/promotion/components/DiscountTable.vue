@@ -36,20 +36,24 @@ function isActive(x) {
       :key="x.id ?? x.code"
     >
 
+      <!-- STT -->
       <td class="c">
         {{ (page - 1) * pageSize + i + 1 }}
       </td>
 
+      <!-- ma -->
       <td>
         <span class="ss-code">
           {{ x.code }}
         </span>
       </td>
 
+      <!-- ten -->
       <td>
         {{ x.name }}
       </td>
 
+      <!-- hinh thuc -->
       <td>
         <span
           class="ss-pill"
@@ -59,18 +63,22 @@ function isActive(x) {
         </span>
       </td>
 
+      <!-- gia tri -->
       <td>
         {{ x.value }}
       </td>
 
+      <!-- ngay bat dau -->
       <td class="nowrap">
         {{ x.start }}
       </td>
 
+      <!-- date -->
       <td class="nowrap">
         {{ x.end }}
       </td>
 
+      <!-- trang thai -->
       <td>
         <span
           class="ss-pill dot"
@@ -80,11 +88,13 @@ function isActive(x) {
         </span>
       </td>
 
+      <!-- Thao tác -->
       <td>
         <div class="ss-row-actions">
 
-          <!-- Xem -->
+          <!-- detail -->
           <button
+            type="button"
             class="ss-icon-btn"
             title="Xem chi tiết"
             @click="emit('view', x.id)"
@@ -92,8 +102,9 @@ function isActive(x) {
             <i class="bi bi-eye"></i>
           </button>
 
-          <!-- Sửa -->
+          <!-- edit -->
           <button
+            type="button"
             class="ss-icon-btn"
             title="Sửa"
             @click="emit('edit', x.id)"
@@ -101,19 +112,31 @@ function isActive(x) {
             <i class="bi bi-pencil"></i>
           </button>
 
-          <!-- Bật / ngừng -->
+          <!-- bat / tat hdong -->
           <button
-            class="ss-icon-btn danger"
-            :title="isActive(x)
-              ? 'Ngừng hoạt động'
-              : 'Kích hoạt'"
+            type="button"
+            class="ss-icon-btn"
+            :class="{ danger: isActive(x) }"
+            :title="
+              isActive(x)
+                ? 'Ngừng hoạt động'
+                : 'Bật hoạt động'
+            "
             @click="emit('toggle', x)"
           >
-            <i class="bi bi-power"></i>
+            <i
+              class="bi"
+              :class="
+                isActive(x)
+                  ? 'bi-power'
+                  : 'bi-check-circle'
+              "
+            ></i>
           </button>
 
-          <!-- Xóa -->
+          <!-- xoa -->
           <button
+            type="button"
             class="ss-icon-btn danger"
             title="Xóa"
             @click="emit('delete', x)"
@@ -126,6 +149,7 @@ function isActive(x) {
 
     </tr>
 
+    <!-- ko co du lieu -->
     <tr v-if="!rows.length">
       <td
         colspan="9"

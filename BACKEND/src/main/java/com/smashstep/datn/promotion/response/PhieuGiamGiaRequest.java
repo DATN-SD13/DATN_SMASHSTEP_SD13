@@ -36,4 +36,6 @@ public class PhieuGiamGiaRequest {
     private Integer status;
 
     private String description;
+
+    private Boolean unlimited;
 }
