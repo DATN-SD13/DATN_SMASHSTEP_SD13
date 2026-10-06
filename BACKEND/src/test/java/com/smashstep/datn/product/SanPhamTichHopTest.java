@@ -300,7 +300,7 @@ class SanPhamTichHopTest {
                 .andExpect(jsonPath("$.sku").value(code + "-SKU"))
                 .andReturn().getResponse().getContentAsString(), Map.class).get("id")).longValue();
         mvc.perform(get("/api/product-details/" + variantId)).andExpect(status().isOk())
-                .andExpect(jsonPath("$.maMauSac").value(code));
+                .andExpect(jsonPath("$.maMauSac").value(attributes.layChiTiet("colors", ids.get("colors")).getMa()));
         single.remove("maChiTietSanPham");
         single.put("soLuong", 12); single.put("kichHoat", false);
         mvc.perform(put("/api/product-details/" + variantId).contentType(MediaType.APPLICATION_JSON)
@@ -339,10 +339,11 @@ class SanPhamTichHopTest {
                     .andExpect(status().isNotFound()).andExpect(jsonPath("$.message").exists());
         }
         JsonMapper mapper = JsonMapper.builder().build();
+        String maMauMoi = attributes.taoMaTiepTheo("colors");
         mvc.perform(post("/api/product-attributes/colors").contentType(MediaType.APPLICATION_JSON)
                         .content(mapper.writeValueAsString(Map.of("maMauSac", code + "-MC", "tenMauSac", code + "-Màu",
                                 "maMauHex", "#AABBCC", "trangThai", 1))))
-                .andExpect(status().isCreated()).andExpect(jsonPath("$.ma").value(code + "-MC"));
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.ma").value(maMauMoi));
         mvc.perform(post("/api/product-attributes/sizes").contentType(MediaType.APPLICATION_JSON)
                         .content(mapper.writeValueAsString(Map.of("giaTri", code + "-40.5", "ghiChu", "Size dạng chuỗi", "trangThai", 1))))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.ten").value(code + "-40.5"));
@@ -426,7 +427,7 @@ class SanPhamTichHopTest {
     }
 
     @Test
-    void thuocTinhChiKiemTraTrungMaVaGiaTri() throws Exception {
+    void thuocTinhKiemTraTrungTenVaGiaTriKhiMaDoBackendSinh() throws Exception {
         JsonMapper mapper = JsonMapper.builder().build();
         for (String loai : ids.keySet()) {
             ThuocTinhResponse hienTai = attributes.layChiTiet(loai, ids.get(loai));
@@ -441,8 +442,7 @@ class SanPhamTichHopTest {
                         "", hienTai.getMaMauHex(), 1);
                 mvc.perform(post("/api/product-attributes/" + loai).contentType(MediaType.APPLICATION_JSON)
                                 .content(mapper.writeValueAsString(cungTen)))
-                        .andExpect(status().isCreated())
-                        .andExpect(jsonPath("$.ten").value(hienTai.getTen()));
+                        .andExpect(status().isConflict());
             }
             mvc.perform(put("/api/product-attributes/" + loai + "/9223372036854775807")
                             .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(trung)))
