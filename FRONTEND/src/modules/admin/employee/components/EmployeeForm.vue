@@ -1,94 +1,727 @@
 <script setup>
 import AvatarCard from '../../../../components/AvatarCard.vue'
-import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { provinceNames, wardsOf } from '../../../../utils/address'
-import { roles } from '../services/employeeData'
+import employeeService from '../services/employeeService'
 
-// mode = 'create' (frame 12) | 'edit' (frame 11)
-const props = defineProps({ mode: { type: String, default: 'create' }, employee: { type: Object, default: null } })
+import {
+  computed,
+  onMounted,
+  ref
+} from 'vue'
+
+import { useRouter } from 'vue-router'
+
+import {
+  provinceNames,
+  wardsOf
+} from '../../../../utils/address'
+
+const props = defineProps({
+  mode: {
+    type: String,
+    default: 'create'
+  },
+
+  employee: {
+    type: Object,
+    default: null
+  }
+})
+
 const router = useRouter()
-const edit = computed(() => props.mode === 'edit')
+
+const edit = computed(
+  () => props.mode === 'edit'
+)
+
+const roles = ref([])
+const saving = ref(false)
+
+const active = ref(
+  props.employee?.active ?? true
+)
 
 const f = ref({
-  name: props.employee?.name ?? '', email: props.employee?.email ?? '', phone: props.employee?.phone ?? '',
-  role: props.employee?.role ?? 'Nhân viên', gender: props.employee?.gender ?? 'Nam', dob: props.employee?.dob ?? '',
-  province: props.employee?.province ?? '', ward: props.employee?.ward ?? '', street: props.employee?.street ?? '', image: ''
+  name: props.employee?.name ?? '',
+
+  email: props.employee?.email ?? '',
+
+  phone: props.employee?.phone ?? '',
+
+  roleId:
+    props.employee?.roleId != null
+      ? String(props.employee.roleId)
+      : '',
+
+  gender:
+    props.employee?.gender != null
+      ? String(props.employee.gender)
+      : '1',
+
+  dob: props.employee?.dob ?? '',
+
+  province:
+    props.employee?.province ?? '',
+
+  ward:
+    props.employee?.ward ?? '',
+
+  street:
+    props.employee?.street ?? '',
+
+  image:
+    props.employee?.image ?? ''
 })
-const active = ref(props.employee?.active ?? true)
-const wards = computed(() => wardsOf(f.value.province))
+
+const wards = computed(
+  () => wardsOf(f.value.province)
+)
+
 const err = ref('')
 const msg = ref('')
 
-function submit() {
-  const v = f.value
-  if (!v.name || !v.email || !v.phone || !v.dob || !v.province || !v.ward) { err.value = 'Vui lòng nhập đầy đủ các trường bắt buộc (*).'; return }
-  if (!/^\S+@\S+\.\S+$/.test(v.email)) { err.value = 'Email không hợp lệ.'; return }
-  if (!/^0\d{9}$/.test(v.phone)) { err.value = 'Số điện thoại phải gồm 10 chữ số, bắt đầu bằng 0.'; return }
-  err.value = ''
-  if (edit.value) { msg.value = 'Đã lưu thay đổi'; setTimeout(() => (msg.value = ''), 2200) }
-  else { alert('Đã tạo nhân viên'); router.push('/nhan-vien') }
+function getErrorMessage(error) {
+  const response = error?.response?.data
+
+  if (!response) {
+    return (
+      error?.message ||
+      'Có lỗi xảy ra. Vui lòng thử lại.'
+    )
+  }
+
+  /*
+   * GlobalExceptionHandler có thể trả data
+   * là object chứa lỗi validation.
+   */
+  if (
+    response.data &&
+    typeof response.data === 'object' &&
+    !Array.isArray(response.data)
+  ) {
+    const messages =
+      Object.values(response.data)
+        .filter(Boolean)
+
+    if (messages.length) {
+      return messages.join(', ')
+    }
+  }
+
+  return (
+    response.message ||
+    'Có lỗi xảy ra. Vui lòng thử lại.'
+  )
 }
-function scanCccd() { alert('Chức năng quét mã CCCD sẽ kết nối thiết bị quét khi có backend.') }
-function changePassword() { alert('Đã gửi yêu cầu đổi mật khẩu.') }
+
+async function loadRoles() {
+  try {
+    const data =
+      await employeeService.getRoles()
+
+    roles.value =
+      Array.isArray(data)
+        ? data
+        : []
+
+    /*
+     * Nếu đang tạo mới thì mặc định chọn
+     * vai trò "Nhân viên" nếu có.
+     */
+    if (!edit.value && !f.value.roleId) {
+      const employeeRole =
+        roles.value.find(
+          role =>
+            role.name
+              ?.trim()
+              .toLowerCase() ===
+            'nhân viên'
+        )
+
+      if (employeeRole) {
+        f.value.roleId =
+          String(employeeRole.id)
+      } else if (roles.value.length) {
+        f.value.roleId =
+          String(roles.value[0].id)
+      }
+    }
+  } catch (error) {
+    console.error(
+      'Không tải được vai trò:',
+      error
+    )
+
+    err.value =
+      'Không thể tải danh sách vai trò.'
+  }
+}
+
+function validate() {
+  const v = f.value
+
+  if (
+    !v.name.trim() ||
+    !v.email.trim() ||
+    !v.phone.trim() ||
+    !v.roleId ||
+    v.gender === '' ||
+    !v.dob ||
+    !v.province ||
+    !v.ward
+  ) {
+    return 'Vui lòng nhập đầy đủ các trường bắt buộc (*).'
+  }
+
+  if (
+    !/^\S+@\S+\.\S+$/.test(
+      v.email.trim()
+    )
+  ) {
+    return 'Email không hợp lệ.'
+  }
+
+  if (
+    !/^0\d{9}$/.test(
+      v.phone.trim()
+    )
+  ) {
+    return 'Số điện thoại phải gồm 10 chữ số, bắt đầu bằng 0.'
+  }
+
+  const gender = Number(v.gender)
+
+  if (![0, 1, 2].includes(gender)) {
+    return 'Giới tính không hợp lệ.'
+  }
+
+  const dob = new Date(
+    `${v.dob}T00:00:00`
+  )
+
+  const today = new Date()
+
+  today.setHours(0, 0, 0, 0)
+
+  if (dob > today) {
+    return 'Ngày sinh không được lớn hơn ngày hiện tại.'
+  }
+
+  return ''
+}
+
+function buildPayload() {
+  return {
+    name: f.value.name.trim(),
+
+    email: f.value.email.trim(),
+
+    phone: f.value.phone.trim(),
+
+    roleId: Number(f.value.roleId),
+
+    gender: Number(f.value.gender),
+
+    dob: f.value.dob,
+
+    province:
+      f.value.province || null,
+
+    ward:
+      f.value.ward || null,
+
+    street:
+      f.value.street?.trim() || null,
+
+    /*
+     * Backend hiện không lưu base64.
+     * Nếu là URL/path cũ thì vẫn gửi.
+     */
+    image:
+      f.value.image?.startsWith(
+        'data:image/'
+      )
+        ? null
+        : f.value.image || null
+  }
+}
+
+async function submit() {
+  err.value = ''
+  msg.value = ''
+
+  const validationError =
+    validate()
+
+  if (validationError) {
+    err.value = validationError
+    return
+  }
+
+  saving.value = true
+
+  try {
+    const payload =
+      buildPayload()
+
+    if (edit.value) {
+      await employeeService.updateEmployee(
+        props.employee.code,
+        payload
+      )
+
+      msg.value =
+        'Đã lưu thay đổi thành công.'
+
+      setTimeout(() => {
+        router.push('/nhan-vien')
+      }, 700)
+    } else {
+      await employeeService.createEmployee(
+        payload
+      )
+
+      window.alert(
+        'Thêm nhân viên thành công.'
+      )
+
+      router.push('/nhan-vien')
+    }
+  } catch (error) {
+    console.error(error)
+
+    err.value =
+      getErrorMessage(error)
+  } finally {
+    saving.value = false
+  }
+}
+
+async function toggleStatus() {
+  if (!edit.value) {
+    return
+  }
+
+  const nextStatus =
+    active.value ? 0 : 1
+
+  const action =
+    active.value
+      ? 'khóa tài khoản'
+      : 'mở khóa tài khoản'
+
+  if (
+    !window.confirm(
+      `Bạn có chắc muốn ${action}?`
+    )
+  ) {
+    return
+  }
+
+  err.value = ''
+  msg.value = ''
+
+  try {
+    const data =
+      await employeeService.updateStatus(
+        props.employee.code,
+        nextStatus
+      )
+
+    active.value =
+      data?.active ??
+      nextStatus === 1
+
+    msg.value =
+      nextStatus === 1
+        ? 'Đã mở khóa tài khoản.'
+        : 'Đã khóa tài khoản.'
+  } catch (error) {
+    console.error(error)
+
+    err.value =
+      getErrorMessage(error)
+  }
+}
+
+function scanCccd() {
+  window.alert(
+    'Chức năng quét mã CCCD chưa được tích hợp.'
+  )
+}
+
+function changePassword() {
+  window.alert(
+    'Chức năng đổi mật khẩu chưa được tích hợp.'
+  )
+}
+
+onMounted(() => {
+  loadRoles()
+})
 </script>
 
 <template>
   <div class="ss-split">
+
     <div class="ss-stack">
-      <AvatarCard v-model:image="f.image" :name="f.name" :email="f.email" fallback="NV" :hint="!edit">
-        <span v-if="edit" class="ss-pill" :class="active ? 'success' : 'danger'" style="margin-top:2px">{{ active ? 'Hoạt động' : 'Đã khóa' }}</span>
+
+      <AvatarCard
+        v-model:image="f.image"
+        :name="f.name"
+        :email="f.email"
+        fallback="NV"
+        :hint="!edit"
+      >
+
+        <span
+          v-if="edit"
+          class="ss-pill"
+          :class="
+            active
+              ? 'success'
+              : 'danger'
+          "
+          style="margin-top:2px"
+        >
+          {{
+            active
+              ? 'Hoạt động'
+              : 'Đã khóa'
+          }}
+        </span>
+
       </AvatarCard>
 
       <template v-if="edit">
+
         <section class="ss-card">
-          <h3 class="side-title">Đổi mật khẩu</h3>
-          <button class="ss-btn block" @click="changePassword">Đổi mật khẩu</button>
+
+          <h3 class="side-title">
+            Đổi mật khẩu
+          </h3>
+
+          <button
+            class="ss-btn block"
+            type="button"
+            @click="changePassword"
+          >
+            Đổi mật khẩu
+          </button>
+
         </section>
+
         <section class="ss-card">
-          <h3 class="side-title">Trạng thái tài khoản</h3>
-          <button class="ss-btn block" :class="active ? 'danger-outline' : ''" @click="active = !active">{{ active ? 'Khóa tài khoản' : 'Mở khóa tài khoản' }}</button>
+
+          <h3 class="side-title">
+            Trạng thái tài khoản
+          </h3>
+
+          <button
+            class="ss-btn block"
+            type="button"
+            :class="
+              active
+                ? 'danger-outline'
+                : ''
+            "
+            @click="toggleStatus"
+          >
+            {{
+              active
+                ? 'Khóa tài khoản'
+                : 'Mở khóa tài khoản'
+            }}
+          </button>
+
         </section>
+
       </template>
+
     </div>
 
     <div class="ss-stack">
+
       <section class="ss-card ss-form">
-        <div class="ss-head"><div class="ss-head-icon"><i class="bi bi-person-vcard"></i></div><div><h2>Thông tin cơ bản</h2><p>Họ tên, email, liên hệ và tài khoản.</p></div></div>
-        <div><button type="button" class="ss-btn sm" @click="scanCccd"><i class="bi bi-upc-scan"></i> Quét mã CCCD</button></div>
+
+        <div class="ss-head">
+
+          <div class="ss-head-icon">
+            <i class="bi bi-person-vcard"></i>
+          </div>
+
+          <div>
+            <h2>Thông tin cơ bản</h2>
+
+            <p>
+              Họ tên, email, liên hệ và tài khoản.
+            </p>
+          </div>
+
+        </div>
+
+        <div>
+          <button
+            type="button"
+            class="ss-btn sm"
+            @click="scanCccd"
+          >
+            <i class="bi bi-upc-scan"></i>
+            Quét mã CCCD
+          </button>
+        </div>
+
         <div class="ss-grid2">
-          <div class="ss-field"><label class="ss-label">Họ và tên <span class="req">*</span></label><input class="ss-input" v-model="f.name" placeholder="Nhập họ tên" /></div>
-          <div class="ss-field"><label class="ss-label">Email <span class="req">*</span></label><input class="ss-input" type="email" v-model="f.email" placeholder="Nhập email" /></div>
-          <div class="ss-field"><label class="ss-label">Số điện thoại <span class="req">*</span></label><input class="ss-input" v-model="f.phone" placeholder="Nhập số điện thoại" /></div>
-          <div class="ss-field"><label class="ss-label">Vai trò <span class="req">*</span></label>
-            <select class="ss-select" v-model="f.role"><option v-for="r in roles" :key="r">{{ r }}</option></select></div>
-          <div class="ss-field"><label class="ss-label">Giới tính <span class="req">*</span></label>
-            <select class="ss-select" v-model="f.gender"><option>Nam</option><option>Nữ</option><option>Khác</option></select></div>
-          <div class="ss-field"><label class="ss-label">Ngày sinh <span class="req">*</span></label><input class="ss-input" type="date" v-model="f.dob" /></div>
+
+          <div class="ss-field">
+            <label class="ss-label">
+              Họ và tên
+              <span class="req">*</span>
+            </label>
+
+            <input
+              class="ss-input"
+              v-model="f.name"
+              placeholder="Nhập họ tên"
+            />
+          </div>
+
+          <div class="ss-field">
+            <label class="ss-label">
+              Email
+              <span class="req">*</span>
+            </label>
+
+            <input
+              class="ss-input"
+              type="email"
+              v-model="f.email"
+              placeholder="Nhập email"
+            />
+          </div>
+
+          <div class="ss-field">
+            <label class="ss-label">
+              Số điện thoại
+              <span class="req">*</span>
+            </label>
+
+            <input
+              class="ss-input"
+              v-model="f.phone"
+              maxlength="10"
+              placeholder="Nhập số điện thoại"
+            />
+          </div>
+
+          <div class="ss-field">
+            <label class="ss-label">
+              Vai trò
+              <span class="req">*</span>
+            </label>
+
+            <select
+              class="ss-select"
+              v-model="f.roleId"
+            >
+              <option value="">
+                Chọn vai trò
+              </option>
+
+              <option
+                v-for="role in roles"
+                :key="role.id"
+                :value="String(role.id)"
+              >
+                {{ role.name }}
+              </option>
+            </select>
+          </div>
+
+          <div class="ss-field">
+            <label class="ss-label">
+              Giới tính
+              <span class="req">*</span>
+            </label>
+
+            <select
+              class="ss-select"
+              v-model="f.gender"
+            >
+              <option value="1">
+                Nam
+              </option>
+
+              <option value="2">
+                Nữ
+              </option>
+
+              <option value="0">
+                Khác
+              </option>
+            </select>
+          </div>
+
+          <div class="ss-field">
+            <label class="ss-label">
+              Ngày sinh
+              <span class="req">*</span>
+            </label>
+
+            <input
+              class="ss-input"
+              type="date"
+              v-model="f.dob"
+            />
+          </div>
+
         </div>
       </section>
 
       <section class="ss-card ss-form">
-        <div class="ss-head"><div class="ss-head-icon"><i class="bi bi-geo-alt"></i></div><h2>Địa chỉ</h2></div>
+
+        <div class="ss-head">
+
+          <div class="ss-head-icon">
+            <i class="bi bi-geo-alt"></i>
+          </div>
+
+          <h2>Địa chỉ</h2>
+
+        </div>
+
         <div class="ss-grid2">
-          <div class="ss-field"><label class="ss-label">Tỉnh/Thành phố <span class="req">*</span></label>
-            <select class="ss-select" v-model="f.province" @change="f.ward = ''"><option value="">Chọn tỉnh thành</option><option v-for="p in provinceNames" :key="p">{{ p }}</option></select></div>
-          <div class="ss-field"><label class="ss-label">Xã/Phường/Thị trấn <span class="req">*</span></label>
-            <select class="ss-select" v-model="f.ward" :disabled="!f.province"><option value="">Chọn xã phường</option><option v-for="w in wards" :key="w">{{ w }}</option></select></div>
-          <div class="ss-field full"><label class="ss-label">Địa chỉ cụ thể</label><input class="ss-input" v-model="f.street" placeholder="Nhập địa chỉ cụ thể" /></div>
+
+          <div class="ss-field">
+
+            <label class="ss-label">
+              Tỉnh/Thành phố
+              <span class="req">*</span>
+            </label>
+
+            <select
+              class="ss-select"
+              v-model="f.province"
+              @change="f.ward = ''"
+            >
+              <option value="">
+                Chọn tỉnh thành
+              </option>
+
+              <option
+                v-for="p in provinceNames"
+                :key="p"
+                :value="p"
+              >
+                {{ p }}
+              </option>
+            </select>
+
+          </div>
+
+          <div class="ss-field">
+
+            <label class="ss-label">
+              Xã/Phường/Thị trấn
+              <span class="req">*</span>
+            </label>
+
+            <select
+              class="ss-select"
+              v-model="f.ward"
+              :disabled="!f.province"
+            >
+              <option value="">
+                Chọn xã phường
+              </option>
+
+              <option
+                v-for="w in wards"
+                :key="w"
+                :value="w"
+              >
+                {{ w }}
+              </option>
+            </select>
+
+          </div>
+
+          <div class="ss-field full">
+
+            <label class="ss-label">
+              Địa chỉ cụ thể
+            </label>
+
+            <input
+              class="ss-input"
+              v-model="f.street"
+              placeholder="Nhập địa chỉ cụ thể"
+            />
+
+          </div>
+
         </div>
-        <p v-if="err" class="ss-hint warn"><i class="bi bi-exclamation-triangle"></i> {{ err }}</p>
-        <p v-if="msg" class="ss-hint ok"><i class="bi bi-check-circle"></i> {{ msg }}</p>
+
+        <p
+          v-if="err"
+          class="ss-hint warn"
+        >
+          <i class="bi bi-exclamation-triangle"></i>
+          {{ err }}
+        </p>
+
+        <p
+          v-if="msg"
+          class="ss-hint ok"
+        >
+          <i class="bi bi-check-circle"></i>
+          {{ msg }}
+        </p>
+
         <div class="ss-actions left">
-          <button class="ss-btn primary" @click="submit">{{ edit ? 'Lưu thay đổi' : 'Tạo nhân viên' }}</button>
-          <button class="ss-btn" @click="router.push('/nhan-vien')">Hủy</button>
+
+          <button
+            class="ss-btn primary"
+            type="button"
+            :disabled="saving"
+            @click="submit"
+          >
+            {{
+              saving
+                ? 'Đang lưu...'
+                : edit
+                  ? 'Lưu thay đổi'
+                  : 'Tạo nhân viên'
+            }}
+          </button>
+
+          <button
+            class="ss-btn"
+            type="button"
+            :disabled="saving"
+            @click="
+              router.push('/nhan-vien')
+            "
+          >
+            Hủy
+          </button>
+
         </div>
+
       </section>
+
     </div>
+
   </div>
 </template>
 
 <style scoped>
-.side-title { font-size: 12px; font-weight: 700; color: var(--ss-text); }
-.ss-hint.ok { color: var(--ss-success); }
+.side-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ss-text);
+}
+
+.ss-hint.ok {
+  color: var(--ss-success);
+}
 </style>
