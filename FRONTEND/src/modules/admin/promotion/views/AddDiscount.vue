@@ -58,7 +58,7 @@ function showLocalToast(type, title, message) {
 
 function generateCode() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-  let code = ''
+  let code = 'VCH'
 
   for (let i = 0; i < 6; i++) {
     code += chars.charAt(

@@ -102,7 +102,7 @@ function isActive(x) {
             <i class="bi bi-eye"></i>
           </button>
 
-          <!-- edit -->
+          <!-- edit 
           <button
             type="button"
             class="ss-icon-btn"
@@ -110,7 +110,7 @@ function isActive(x) {
             @click="emit('edit', x.id)"
           >
             <i class="bi bi-pencil"></i>
-          </button>
+          </button> -->
 
           <!-- bat / tat hdong -->
           <button
@@ -134,7 +134,7 @@ function isActive(x) {
             ></i>
           </button>
 
-          <!-- xoa -->
+          <!-- xoa 
           <button
             type="button"
             class="ss-icon-btn danger"
@@ -142,7 +142,7 @@ function isActive(x) {
             @click="emit('delete', x)"
           >
             <i class="bi bi-trash"></i>
-          </button>
+          </button> -->
 
         </div>
       </td>
