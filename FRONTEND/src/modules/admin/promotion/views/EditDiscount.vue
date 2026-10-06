@@ -1,12 +1,19 @@
 <script setup>
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 import DiscountForm from '../components/DiscountForm.vue'
-import { createDiscount } from '../services/discountService'
 
+import {
+  getDiscountById,
+  updateDiscount
+} from '../services/discountService'
+
+const route = useRoute()
 const router = useRouter()
+
+const loading = ref(true)
 
 const form = ref({
   code: '',
@@ -16,16 +23,57 @@ const form = ref({
   discountValue: 0,
   minOrderValue: 0,
   maxDiscount: 0,
-  quantity: '',
+  quantity: 0,
   startDate: '',
   endDate: ''
 })
 
-function validate() {
+function toDate(value) {
+  return value
+    ? String(value).substring(0, 10)
+    : ''
+}
 
-  if (!form.value.code.trim()) {
-    return 'Vui lòng nhập mã phiếu!'
+async function loadDetail() {
+
+  try {
+
+    const response =
+      await getDiscountById(route.params.id)
+
+    const data = response.data.data
+
+    form.value = {
+      code: data.code || '',
+      name: data.name || '',
+      form: data.form ?? 1,
+      discountType: data.discountType ?? 1,
+      discountValue: data.discountValue ?? 0,
+      minOrderValue: data.minOrderValue ?? 0,
+      maxDiscount: data.maxDiscount ?? 0,
+      quantity: data.quantity ?? 0,
+      startDate: toDate(data.startDate),
+      endDate: toDate(data.endDate)
+    }
+
+  } catch (error) {
+
+    console.error(error)
+
+    alert(
+      error.response?.data?.message ||
+      'Không thể tải phiếu giảm giá!'
+    )
+
+    router.push('/giam-gia')
+
+  } finally {
+
+    loading.value = false
   }
+}
+
+function validate() {
 
   if (!form.value.name.trim()) {
     return 'Vui lòng nhập tên phiếu!'
@@ -79,19 +127,22 @@ async function save() {
   }
 
   const confirmed = window.confirm(
-    'Bạn có chắc chắn muốn tạo phiếu giảm giá này không?'
+    'Bạn có chắc chắn muốn lưu thay đổi phiếu giảm giá này không?'
   )
 
   if (!confirmed) return
 
   try {
 
-    await createDiscount({
-      ...form.value
-    })
+    await updateDiscount(
+      route.params.id,
+      {
+        ...form.value
+      }
+    )
 
     alert(
-      'Tạo phiếu giảm giá thành công!'
+      'Cập nhật phiếu giảm giá thành công!'
     )
 
     router.push('/giam-gia')
@@ -102,10 +153,12 @@ async function save() {
 
     alert(
       error.response?.data?.message ||
-      'Tạo phiếu giảm giá thất bại!'
+      'Cập nhật phiếu giảm giá thất bại!'
     )
   }
 }
+
+onMounted(loadDetail)
 </script>
 
 <template>
@@ -126,8 +179,18 @@ async function save() {
 
       </div>
 
+      <div
+        v-if="loading"
+        class="ss-card ss-empty"
+      >
+        <i class="bi bi-arrow-repeat"></i>
+        Đang tải dữ liệu...
+      </div>
+
       <DiscountForm
+        v-else
         :form="form"
+        :edit-mode="true"
         @submit="save"
         @cancel="router.back()"
       />
