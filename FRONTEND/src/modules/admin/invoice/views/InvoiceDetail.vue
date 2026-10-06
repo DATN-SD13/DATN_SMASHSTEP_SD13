@@ -58,6 +58,29 @@ const canCancelOrder = computed(() => {
   return Number.isInteger(code) && code >= 0 && code <= 4
 })
 
+const canPrintInvoice = computed(() => {
+  const status = Number(invoice.value?.statusCode)
+  return status === 0 || status === 1 || status === 5
+})
+
+const paymentHistory = computed(() => {
+  const items = Array.isArray(invoice.value?.paymentHistory) ? invoice.value.paymentHistory : []
+  if (items.length) return items
+
+  // Nếu DB chưa có bản ghi lịch sử thanh toán, vẫn hiển thị giao dịch/thông tin thanh toán hiện tại.
+  if (!invoice.value) return []
+  return [{
+    id: 'current-payment',
+    method: invoice.value.payment || 'Chưa cập nhật',
+    status: invoice.value.paymentStatus || 'Chưa cập nhật',
+    statusCode: invoice.value.paymentStatusCode,
+    time: invoice.value.paymentDate,
+    amount: invoice.value.total,
+    transactionCode: null,
+    description: 'Thông tin thanh toán hiện tại của hóa đơn'
+  }]
+})
+
 const hasShippingInfo = computed(() => {
   const current = invoice.value
   if (!current) return false
@@ -122,6 +145,16 @@ function mapInvoice(data) {
     paymentStatus: data?.trangThaiThanhToan || 'Chưa cập nhật',
     paymentStatusCode: Number.isFinite(Number(data?.maTrangThaiThanhToan)) ? Number(data?.maTrangThaiThanhToan) : null,
     paymentDate: data?.ngayThanhToan || null,
+    paymentHistory: (data?.lichSuThanhToan || []).map(item => ({
+      id: item?.id,
+      method: item?.phuongThucThanhToan || data?.phuongThucThanhToan || 'Chưa cập nhật',
+      status: item?.trangThaiThanhToan || item?.trangThai || 'Chưa cập nhật',
+      statusCode: item?.maTrangThaiThanhToan ?? null,
+      time: item?.thoiGian || null,
+      amount: Number(item?.soTien ?? 0),
+      transactionCode: item?.maGiaoDich || null,
+      description: item?.moTa || null
+    })),
     address: data?.diaChiGiaoHang || data?.diaChi || 'Chưa cập nhật',
     shippingCarrier: data?.donViVanChuyen || '—',
     note: data?.ghiChu || '—',
@@ -340,8 +373,17 @@ function historyAction(item) {
 }
 
 function printInvoice() {
-  window.print()
+  if (!canPrintInvoice.value) return
+  document.body.classList.add('invoice-print-mode')
+  window.setTimeout(() => window.print(), 50)
 }
+
+function clearPrintMode() {
+  document.body.classList.remove('invoice-print-mode')
+}
+
+window.addEventListener('afterprint', clearPrintMode)
+
 
 onMounted(loadInvoice)
 </script>
@@ -495,26 +537,37 @@ onMounted(loadInvoice)
           </section>
 
           <section class="panel card shadow-sm payment-history">
-            <h2><i class="bi bi-credit-card"></i> Thông tin thanh toán</h2>
-            <div class="payment-method">
-              <div>
-                <span>Phương thức thanh toán</span>
-                <strong>{{ invoice.payment }}</strong>
+            <h2><i class="bi bi-credit-card"></i> Lịch sử thanh toán</h2>
+
+            <div v-if="paymentHistory.length" class="payment-history-list">
+              <div v-for="payment in paymentHistory" :key="payment.id" class="payment-history-item">
+                <div class="payment-history-top">
+                  <div>
+                    <span class="payment-history-label">Phương thức thanh toán</span>
+                    <strong>{{ payment.method }}</strong>
+                  </div>
+                  <strong :class="payment.statusCode === 1 ? 'payment-status paid' : 'payment-status unpaid'">
+                    <i :class="payment.statusCode === 1 ? 'bi bi-check-circle-fill' : 'bi bi-clock-fill'"></i>
+                    {{ payment.status }}
+                  </strong>
+                </div>
+                <div class="payment-history-meta">
+                  <span v-if="payment.time"><i class="bi bi-clock"></i>{{ payment.time }}</span>
+                  <span v-if="payment.transactionCode"><i class="bi bi-upc"></i>{{ payment.transactionCode }}</span>
+                </div>
+                <div class="payment-history-amount">
+                  <span>Số tiền</span><strong>{{ money(payment.amount) }}</strong>
+                </div>
+                <p v-if="payment.description">{{ payment.description }}</p>
               </div>
             </div>
-            <div class="payment-amount-row"><span>Thành tiền</span><strong>{{ money(invoice.total) }}</strong></div>
-            <div class="payment-status-row">
-              <span>Trạng thái thanh toán</span>
-              <strong :class="invoice.paymentStatusCode === 1 ? 'payment-status paid' : 'payment-status unpaid'">
-                <i :class="invoice.paymentStatusCode === 1 ? 'bi bi-check-circle-fill' : 'bi bi-clock-fill'"></i>
-                {{ invoice.paymentStatus }}
-              </strong>
+            <div v-else class="payment-history-empty">
+              <i class="bi bi-credit-card-2-front"></i>
+              <span>Chưa có lịch sử thanh toán.</span>
             </div>
-            <div v-if="invoice.paymentDate" class="payment-status-row">
-              <span>Ngày thanh toán</span><strong>{{ invoice.paymentDate }}</strong>
-            </div>
+
             <button
-              v-if="Number(invoice.statusCode) < 2"
+              v-if="canPrintInvoice"
               class="print-button btn btn-primary"
               type="button"
               @click="printInvoice"
@@ -936,4 +989,11 @@ onMounted(loadInvoice)
 .payment-status.paid { color:#16a34a; }
 .payment-status.unpaid { color:#d97706; }
 @media print{html,body{margin:0!important;padding:0!important;background:#fff!important}.detail-page{padding:0!important}.detail-page>.page-title-row,.detail-page>.back-link,.detail-page>.detail-layout,.detail-page>.invoice-toast,.detail-page>.modal{display:none!important}.print-invoice{display:block!important;padding:12mm 10mm;color:#222;background:#fff;font-family:Arial,sans-serif}.print-invoice *{box-sizing:border-box}}
+
+.payment-history-list{display:flex;flex-direction:column;gap:10px;min-height:0}.payment-history-item{border:1px solid #e6eef3;border-radius:10px;padding:12px;background:#fbfdff}.payment-history-top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.payment-history-label{display:block;color:#91a0a8;font-size:10px;margin-bottom:4px}.payment-history-top>div>strong{display:block;color:#3b5662;font-size:12px}.payment-history-meta{display:flex;flex-wrap:wrap;gap:8px 14px;margin-top:8px;color:#7c909a;font-size:10px}.payment-history-meta i{margin-right:4px;color:#1689cf}.payment-history-amount{display:flex;justify-content:space-between;align-items:center;margin-top:9px;padding-top:9px;border-top:1px solid #edf2f7;font-size:10px}.payment-history-amount strong{font-size:13px;color:#344e5a}.payment-history-item p{margin:7px 0 0;color:#7c909a;font-size:10px}.payment-history-empty{min-height:145px;display:flex;align-items:center;justify-content:center;gap:8px;color:#93a1a8;font-size:11px}.payment-history-empty i{font-size:18px;color:#b7c7cf}
+:global(body.invoice-print-mode > *){visibility:hidden!important}.invoice-print{visibility:hidden}.invoice-print *{visibility:hidden}
+:global(body.invoice-print-mode .print-invoice){visibility:visible!important;display:block!important;position:fixed!important;inset:0!important;width:100%!important;min-height:100vh!important;margin:0!important;padding:12mm 14mm!important;background:#fff!important;z-index:2147483647!important;overflow:visible!important;color:#222!important;font-family:Arial,Helvetica,sans-serif!important;box-sizing:border-box!important}
+:global(body.invoice-print-mode .print-invoice *){visibility:visible!important}
+:global(body.invoice-print-mode .print-header){display:flex!important}.print-header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1689cf;padding-bottom:14px;margin-bottom:18px}.print-brand{font-size:24px;font-weight:800;letter-spacing:1px}.print-subtitle{font-size:9px;letter-spacing:2px;margin-top:3px}.print-title{font-size:18px;font-weight:800}.print-meta-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px 28px;margin-bottom:20px}.print-meta-grid div{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid #ddd;padding-bottom:5px;font-size:10px}.print-meta-grid span{color:#666}.print-product-table{width:100%;border-collapse:collapse;font-size:10px}.print-product-table th,.print-product-table td{border:1px solid #ccc;padding:7px 6px;text-align:left}.print-product-table th{font-weight:700;background:#f5f5f5}.print-summary{width:300px;margin:18px 0 0 auto;font-size:10px}.print-summary div{display:flex;justify-content:space-between;padding:5px 0}.print-grand-total{border-top:2px solid #222;margin-top:5px;padding-top:9px!important;font-size:13px;font-weight:800}.print-payment{margin-top:20px;padding-top:10px;border-top:1px solid #ddd;font-size:10px}.print-payment div{margin:4px 0}.print-payment span{font-weight:700}.print-shipping{margin-top:20px;padding-top:10px;border-top:1px solid #ddd;font-size:10px}.print-shipping h3{font-size:12px;margin:0 0 8px;font-weight:800}.print-shipping div{margin:4px 0}.print-shipping span{font-weight:700}.print-footer{text-align:center;margin-top:28px;font-size:10px;font-style:italic}
+@media print{html,body{margin:0!important;padding:0!important;background:#fff!important}.detail-page{padding:0!important}.detail-page>.page-title-row,.detail-page>.back-link,.detail-page>.detail-layout,.detail-page>.invoice-toast,.detail-page>.modal{display:none!important}.print-invoice{display:block!important;visibility:visible!important;position:static!important;width:auto!important;min-height:0!important;padding:0!important;color:#222!important;background:#fff!important}.print-invoice *{visibility:visible!important}.payment-history{min-height:0}.print-button{display:block!important}}
 </style>
