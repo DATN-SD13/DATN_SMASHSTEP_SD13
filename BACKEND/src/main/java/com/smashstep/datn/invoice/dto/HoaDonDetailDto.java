@@ -54,8 +54,13 @@ public class HoaDonDetailDto {
     private String ghiChu;
 
     private List<HoaDonChiTietDto> chiTietHoaDon;
+    private List<LichSuThanhToanDto> lichSuThanhToan;
 
     public static HoaDonDetailDto from(HoaDon hoaDon, List<HoaDonChiTietDto> chiTietHoaDon) {
+        return from(hoaDon, chiTietHoaDon, List.of());
+    }
+
+    public static HoaDonDetailDto from(HoaDon hoaDon, List<HoaDonChiTietDto> chiTietHoaDon, List<LichSuThanhToanDto> lichSuThanhToan) {
         KhachHang khachHang = hoaDon.getIdKhachHang();
         NhanVien nhanVien = hoaDon.getIdNhanVien();
         PhuongThucThanhToan phuongThuc = hoaDon.getIdPhuongThucThanhToan();
@@ -96,6 +101,7 @@ public class HoaDonDetailDto {
                 .diaChiGiaoHang(hoaDon.getDiaChiGiaoHang())
                 .ghiChu(hoaDon.getGhiChu())
                 .chiTietHoaDon(chiTietHoaDon)
+                .lichSuThanhToan(lichSuThanhToan == null ? List.of() : lichSuThanhToan)
                 .build();
     }
 

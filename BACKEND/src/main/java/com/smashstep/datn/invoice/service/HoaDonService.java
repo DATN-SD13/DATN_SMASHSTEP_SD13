@@ -9,6 +9,7 @@ import com.smashstep.datn.invoice.dto.HoaDonChiTietDto;
 import com.smashstep.datn.invoice.dto.HoaDonDetailDto;
 import com.smashstep.datn.invoice.dto.HoaDonListDto;
 import com.smashstep.datn.invoice.dto.LichSuHoaDonDto;
+import com.smashstep.datn.invoice.dto.LichSuThanhToanDto;
 import com.smashstep.datn.invoice.entity.HoaDon;
 import com.smashstep.datn.invoice.entity.LichSuHoaDon;
 import com.smashstep.datn.invoice.enums.TrangThaiHoaDon;
@@ -16,6 +17,7 @@ import com.smashstep.datn.invoice.enums.LoaiHoaDon;
 import com.smashstep.datn.invoice.repository.HoaDonChiTietRepository;
 import com.smashstep.datn.invoice.repository.HoaDonRepository;
 import com.smashstep.datn.invoice.repository.LichSuHoaDonRepository;
+import com.smashstep.datn.invoice.repository.LichSuThanhToanRepository;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -38,6 +40,7 @@ public class HoaDonService {
     private final HoaDonRepository hoaDonRepository;
     private final HoaDonChiTietRepository hoaDonChiTietRepository;
     private final LichSuHoaDonRepository lichSuHoaDonRepository;
+    private final LichSuThanhToanRepository lichSuThanhToanRepository;
     private final NhanVienRepository nhanVienRepository;
 
     @Transactional(readOnly = true)
@@ -74,7 +77,12 @@ public class HoaDonService {
                 .stream()
                 .map(HoaDonChiTietDto::from)
                 .toList();
-        return HoaDonDetailDto.from(hoaDon, items);
+        List<LichSuThanhToanDto> paymentHistory = lichSuThanhToanRepository
+                .findByIdHoaDonIdOrderByThoiGianDesc(hoaDon.getId())
+                .stream()
+                .map(LichSuThanhToanDto::from)
+                .toList();
+        return HoaDonDetailDto.from(hoaDon, items, paymentHistory);
     }
 
     @Transactional(readOnly = true)
