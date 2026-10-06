@@ -31,6 +31,11 @@ public class ThuocTinhSanPhamController {
         return thuocTinhService.layDanhSach(loai, trang, kichThuocTrang, tuKhoa, trangThai);
     }
 
+    @GetMapping("/{type}/next-code")
+    public Map<String, String> layMaTiepTheo(@PathVariable("type") String loai) {
+        return Map.of("ma", thuocTinhService.taoMaTiepTheo(loai));
+    }
+
     @GetMapping("/{type}/{id}")
     public ThuocTinhResponse layChiTiet(@PathVariable("type") String loai, @PathVariable Long id) {
         return thuocTinhService.layChiTiet(loai, id);

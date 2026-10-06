@@ -24,6 +24,7 @@ export const productAttributeService = {
   options: async (keys = attributeTypes.map(type => type.key)) =>
     Object.fromEntries(await Promise.all(keys.map(async key => [key, await allAttributes(key)]))),
   list: (type, params) => api.get(`/product-attributes/${type}`, { params }).then(r => r.data),
+  nextCode: type => api.get(`/product-attributes/${type}/next-code`).then(r => r.data),
   create: (type, data) => api.post(`/product-attributes/${type}`, data).then(r => r.data),
   update: (type, id, data) => api.put(`/product-attributes/${type}/${id}`, data).then(r => r.data),
   status: (type, id, trangThai) => api.patch(`/product-attributes/${type}/${id}/status`, { trangThai }).then(r => r.data)
