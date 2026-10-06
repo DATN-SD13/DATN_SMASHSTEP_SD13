@@ -9,6 +9,7 @@ import com.smashstep.datn.invoice.dto.HoaDonChiTietDto;
 import com.smashstep.datn.invoice.dto.HoaDonDetailDto;
 import com.smashstep.datn.invoice.dto.HoaDonListDto;
 import com.smashstep.datn.invoice.dto.LichSuHoaDonDto;
+import com.smashstep.datn.invoice.dto.LichSuThanhToanDto;
 import com.smashstep.datn.invoice.entity.HoaDon;
 import com.smashstep.datn.invoice.entity.LichSuHoaDon;
 import com.smashstep.datn.invoice.enums.TrangThaiHoaDon;
@@ -16,6 +17,7 @@ import com.smashstep.datn.invoice.enums.LoaiHoaDon;
 import com.smashstep.datn.invoice.repository.HoaDonChiTietRepository;
 import com.smashstep.datn.invoice.repository.HoaDonRepository;
 import com.smashstep.datn.invoice.repository.LichSuHoaDonRepository;
+import com.smashstep.datn.invoice.repository.LichSuThanhToanRepository;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -38,6 +40,7 @@ public class HoaDonService {
     private final HoaDonRepository hoaDonRepository;
     private final HoaDonChiTietRepository hoaDonChiTietRepository;
     private final LichSuHoaDonRepository lichSuHoaDonRepository;
+    private final LichSuThanhToanRepository lichSuThanhToanRepository;
     private final NhanVienRepository nhanVienRepository;
 
     @Transactional(readOnly = true)
@@ -74,17 +77,19 @@ public class HoaDonService {
                 .stream()
                 .map(HoaDonChiTietDto::from)
                 .toList();
-        return HoaDonDetailDto.from(hoaDon, items);
+        List<LichSuThanhToanDto> paymentHistory = lichSuThanhToanRepository
+                .findByIdHoaDonIdOrderByThoiGianDesc(hoaDon.getId())
+                .stream()
+                .map(LichSuThanhToanDto::from)
+                .toList();
+        List<LichSuHoaDonDto> history = layLichSu(hoaDon.getId());
+        return HoaDonDetailDto.from(hoaDon, items, paymentHistory, history);
     }
 
     @Transactional(readOnly = true)
     public List<LichSuHoaDonDto> lichSu(String ma) {
         HoaDon hoaDon = timHoaDon(ma);
-        return lichSuHoaDonRepository
-                .findByIdHoaDonIdOrderByNgayTaoDesc(hoaDon.getId())
-                .stream()
-                .map(LichSuHoaDonDto::from)
-                .toList();
+        return layLichSu(hoaDon.getId());
     }
 
     @Transactional
@@ -129,8 +134,12 @@ public class HoaDonService {
             }
         }
 
-        if (request.getIdNhanVien() != null) {
-            NhanVien nhanVien = nhanVienRepository.findById(request.getIdNhanVien())
+        Long idNhanVienThaoTac = request.getIdNhanVien();
+        if (idNhanVienThaoTac == null && hoaDon.getIdNhanVien() != null) {
+            idNhanVienThaoTac = hoaDon.getIdNhanVien().getId();
+        }
+        if (idNhanVienThaoTac != null) {
+            NhanVien nhanVien = nhanVienRepository.findById(idNhanVienThaoTac)
                     .orElseThrow(() -> AppException.notFound("Không tìm thấy nhân viên"));
             hoaDon.setIdNhanVien(nhanVien);
         }
@@ -140,12 +149,26 @@ public class HoaDonService {
         hoaDonRepository.save(hoaDon);
         LichSuHoaDon lichSu = new LichSuHoaDon();
         lichSu.setIdHoaDon(hoaDon);
-        lichSu.setNguoiTao(request.getIdNhanVien());
+        lichSu.setNguoiTao(idNhanVienThaoTac);
         lichSu.setTrangThai(request.getTrangThai());
         lichSu.setGhiChu(request.getGhiChu());
         lichSu.setNgayTao(LocalDateTime.now());
         lichSuHoaDonRepository.save(lichSu);
         return chiTiet(ma);
+    }
+
+    private List<LichSuHoaDonDto> layLichSu(Long idHoaDon) {
+        return lichSuHoaDonRepository
+                .findByIdHoaDonIdOrderByNgayTaoDesc(idHoaDon)
+                .stream()
+                .map(lichSu -> {
+                    NhanVien nhanVien = null;
+                    if (lichSu.getNguoiTao() != null) {
+                        nhanVien = nhanVienRepository.findById(lichSu.getNguoiTao()).orElse(null);
+                    }
+                    return LichSuHoaDonDto.from(lichSu, nhanVien);
+                })
+                .toList();
     }
 
     private HoaDon timHoaDon(String ma) {

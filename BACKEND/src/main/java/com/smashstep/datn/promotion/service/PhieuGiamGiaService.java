@@ -143,6 +143,10 @@ public class PhieuGiamGiaService {
                 p.getSoLuong()
         );
 
+        response.setUnlimited(
+                p.getVoHan()
+        );
+
         response.setUsedQuantity(
                 p.getSoLuongDaDung()
         );
@@ -215,17 +219,15 @@ public class PhieuGiamGiaService {
 // tao moi
     public PhieuGiamGiaResponse create(
             PhieuGiamGiaRequest request
-    ) {
 
+    ) {
         if (request.getCode() == null ||
                 request.getCode().trim().isEmpty()) {
-
             throw new RuntimeException("Mã phiếu không được để trống");
         }
 
         if (phieuGiamGiaRepository
                 .existsByMaPhieuGiamGia(request.getCode().trim())) {
-
             throw new RuntimeException("Mã phiếu đã tồn tại");
         }
 
@@ -255,7 +257,14 @@ public class PhieuGiamGiaService {
                 )
         );
 
-        p.setSoLuong(request.getQuantity());
+        p.setVoHan(Boolean.TRUE.equals(request.getUnlimited()));
+
+        if (Boolean.TRUE.equals(request.getUnlimited())) {
+            p.setSoLuong(null);
+        } else {
+            p.setSoLuong(request.getQuantity());
+        }
+
         p.setSoLuongDaDung(0);
 
         p.setTrangThai(
@@ -275,6 +284,7 @@ public class PhieuGiamGiaService {
                 phieuGiamGiaRepository.save(p);
 
         return convertToResponse(saved);
+
     }
 // update
     public PhieuGiamGiaResponse update(
@@ -290,28 +300,9 @@ public class PhieuGiamGiaService {
                                 )
                         );
 
-        if (request.getCode() == null ||
-                request.getCode().trim().isEmpty()) {
-
-            throw new RuntimeException(
-                    "Mã phiếu không được để trống"
-            );
-        }
-
-        if (phieuGiamGiaRepository
-                .existsByMaPhieuGiamGiaAndIdNot(
-                        request.getCode().trim(),
-                        id
-                )) {
-
-            throw new RuntimeException(
-                    "Mã phiếu đã tồn tại"
-            );
-        }
 
         validateRequest(request);
 
-        p.setMaPhieuGiamGia(request.getCode().trim());
         p.setTenPhieuGiamGia(request.getName());
 
         p.setHinhThucPhieu(request.getForm());
@@ -333,7 +324,13 @@ public class PhieuGiamGiaService {
                 )
         );
 
-        p.setSoLuong(request.getQuantity());
+        p.setVoHan(Boolean.TRUE.equals(request.getUnlimited()));
+
+        if (Boolean.TRUE.equals(request.getUnlimited())) {
+            p.setSoLuong(null);
+        } else {
+            p.setSoLuong(request.getQuantity());
+        }
 
         p.setTrangThai(
                 request.getStatus() == null
@@ -442,12 +439,13 @@ public class PhieuGiamGiaService {
             );
         }
 
-        if (request.getQuantity() == null ||
-                request.getQuantity() < 0) {
-
-            throw new RuntimeException(
-                    "Số lượng không hợp lệ"
-            );
+        if (!Boolean.TRUE.equals(request.getUnlimited())) {
+            if (request.getQuantity() == null ||
+                    request.getQuantity() <= 0) {
+                throw new RuntimeException(
+                        "Số lượng phải lớn hơn 0"
+                );
+            }
         }
 
         if (request.getStartDate() == null ||
@@ -475,4 +473,6 @@ public class PhieuGiamGiaService {
             );
         }
     }
+
+
 }

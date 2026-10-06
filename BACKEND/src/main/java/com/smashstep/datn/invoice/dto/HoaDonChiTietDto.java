@@ -16,6 +16,12 @@ public class HoaDonChiTietDto {
     private String maSku;
     private String mauSac;
     private String kichThuoc;
+    private String tenDanhMuc;
+    private String tenThuongHieu;
+    private String tenChatLieu;
+    private String tenKieuDang;
+    private String tenCoGiay;
+    private String tenXuatXu;
     private Integer soLuong;
     private BigDecimal donGia;
     private BigDecimal thanhTien;
@@ -26,6 +32,12 @@ public class HoaDonChiTietDto {
         String kichThuoc = null;
         String maSku = null;
         String maChiTiet = null;
+        String tenDanhMuc = null;
+        String tenThuongHieu = null;
+        String tenChatLieu = null;
+        String tenKieuDang = null;
+        String tenCoGiay = null;
+        String tenXuatXu = null;
         Long idSanPhamChiTiet = null;
 
         if (chiTiet.getIdSanPhamChiTiet() != null) {
@@ -34,7 +46,26 @@ public class HoaDonChiTietDto {
             maSku = chiTiet.getIdSanPhamChiTiet().getSku();
 
             if (chiTiet.getIdSanPhamChiTiet().getIdSanPham() != null) {
-                tenSanPham = chiTiet.getIdSanPhamChiTiet().getIdSanPham().getTenSanPham();
+                var sanPham = chiTiet.getIdSanPhamChiTiet().getIdSanPham();
+                tenSanPham = sanPham.getTenSanPham();
+                if (sanPham.getIdDanhMuc() != null) {
+                    tenDanhMuc = sanPham.getIdDanhMuc().getTenDanhMuc();
+                }
+                if (sanPham.getIdThuongHieu() != null) {
+                    tenThuongHieu = sanPham.getIdThuongHieu().getTenThuongHieu();
+                }
+                if (sanPham.getIdChatLieu() != null) {
+                    tenChatLieu = sanPham.getIdChatLieu().getTenChatLieu();
+                }
+                if (sanPham.getIdKieuDang() != null) {
+                    tenKieuDang = sanPham.getIdKieuDang().getTenKieuDang();
+                }
+                if (sanPham.getIdCoGiay() != null) {
+                    tenCoGiay = sanPham.getIdCoGiay().getTenCoGiay();
+                }
+                if (sanPham.getIdXuatXu() != null) {
+                    tenXuatXu = sanPham.getIdXuatXu().getTenXuatXu();
+                }
             }
             if (chiTiet.getIdSanPhamChiTiet().getIdMauSac() != null) {
                 mauSac = chiTiet.getIdSanPhamChiTiet().getIdMauSac().getTenMauSac();
@@ -52,6 +83,12 @@ public class HoaDonChiTietDto {
                 .maSku(maSku)
                 .mauSac(mauSac)
                 .kichThuoc(kichThuoc)
+                .tenDanhMuc(tenDanhMuc)
+                .tenThuongHieu(tenThuongHieu)
+                .tenChatLieu(tenChatLieu)
+                .tenKieuDang(tenKieuDang)
+                .tenCoGiay(tenCoGiay)
+                .tenXuatXu(tenXuatXu)
                 .soLuong(chiTiet.getSoLuong())
                 .donGia(chiTiet.getDonGia())
                 .thanhTien(chiTiet.getThanhTien())

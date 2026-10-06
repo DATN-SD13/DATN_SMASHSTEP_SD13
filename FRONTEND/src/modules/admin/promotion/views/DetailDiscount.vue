@@ -189,7 +189,7 @@ onMounted(loadDetail)
           <div class="detail-item">
             <span>Số lượng</span>
             <strong>
-              {{ voucher.quantity }}
+              {{ voucher.unlimited ? 'Không giới hạn' : voucher.quantity }}
             </strong>
           </div>
 
@@ -255,6 +255,7 @@ onMounted(loadDetail)
 
     </main>
 
+    
   </AdminLayout>
 
 </template>
