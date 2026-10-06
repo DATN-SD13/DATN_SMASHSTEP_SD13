@@ -5,6 +5,7 @@ import DiscountList from '../modules/admin/promotion/views/DiscountList.vue'
 import CampaignList from '../modules/admin/promotion/views/CampaignList.vue'
 import AddDiscount from '../modules/admin/promotion/views/AddDiscount.vue'
 import AddCampaign from '../modules/admin/promotion/views/AddCampaign.vue'
+import DetailCampaign from '../modules/admin/promotion/views/DetailCampaign.vue'
 import CustomerList from '../modules/admin/customer/views/CustomerList.vue'
 import AddCustomer from '../modules/admin/customer/views/AddCustomer.vue'
 import EmployeeList from '../modules/admin/employee/views/EmployeeList.vue'
@@ -14,7 +15,7 @@ import POSSales from '../modules/admin/sales/views/POSSales.vue'
 import ComingSoon from '../layouts/ComingSoon.vue'
 import EditDiscount from '../modules/admin/promotion/views/EditDiscount.vue'
 import DetailDiscount from '../modules/admin/promotion/views/DetailDiscount.vue'
-
+import EditCampaign from '../modules/admin/promotion/views/EditCampaign.vue'
 
 const promo = { label: 'Quản lý giảm giá', to: '/giam-gia' }
 const prod = { label: 'Quản lý sản phẩm', to: '/san-pham' }
@@ -32,6 +33,8 @@ const router = createRouter({
     {path: '/giam-gia/chi-tiet/:id',component: DetailDiscount},
     { path: '/dot-giam-gia', component: CampaignList, meta: { title: 'Đợt giảm giá', parent: promo } },
     { path: '/dot-giam-gia/them', component: AddCampaign, meta: { title: 'Thêm đợt giảm giá', parent: { label: 'Đợt giảm giá', to: '/dot-giam-gia' } } },
+    { path: '/dot-giam-gia/chi-tiet/:code',component: DetailCampaign,meta: {title: 'Chi tiết đợt giảm giá',parent: {label: 'Đợt giảm giá',to: '/dot-giam-gia' } }},
+    {path: '/dot-giam-gia/sua/:code',component: EditCampaign,meta: {title: 'Sửa đợt giảm giá',parent: {label: 'Đợt giảm giá',to: '/dot-giam-gia'}}},
     { path: '/ban-hang', component: POSSales, meta: { title: 'Bán hàng tại quầy' } },
     { path: '/thong-ke', component: ComingSoon, meta: { title: 'Thống kê' } },
     { path: '/san-pham', component: () => import('../modules/admin/product/views/ProductList.vue'), meta: { title: 'Sản phẩm', parent: prod } },
