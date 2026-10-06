@@ -101,33 +101,44 @@ public class DotGiamGiaService {
     // =====================================================
     // TẠO ĐỢT GIẢM GIÁ
     // =====================================================
+    private String generateCode() {
 
+        DotGiamGia latest =
+                dotGiamGiaRepository
+                        .findTopByOrderByIdDesc()
+                        .orElse(null);
+
+        if (latest == null
+                || latest.getMaDotGiamGia() == null) {
+            return "DGG001";
+        }
+
+        String latestCode =
+                latest.getMaDotGiamGia();
+
+        try {
+            int number = Integer.parseInt(
+                    latestCode.replace("DGG", "")
+            );
+
+            return String.format(
+                    "DGG%03d",
+                    number + 1
+            );
+
+        } catch (NumberFormatException e) {
+            return "DGG001";
+        }
+    }
     @Transactional
     public DotGiamGiaResponse create(
             DotGiamGiaRequest request
     ) {
 
         // -----------------------------
-        // 1. Chuẩn hóa mã
-        // -----------------------------
-
-        String code = request
-                .getCode()
-                .trim()
-                .toUpperCase();
-
-
-        // -----------------------------
-        // 2. Kiểm tra mã trùng
-        // -----------------------------
-
-        if (dotGiamGiaRepository
-                .existsByMaDotGiamGia(code)) {
-
-            throw AppException.conflict(
-                    "Mã đợt giảm giá đã tồn tại"
-            );
-        }
+// 1. Tự động sinh mã
+// -----------------------------
+        String code = generateCode();
 
 
         // -----------------------------
@@ -450,23 +461,9 @@ public class DotGiamGiaService {
         );
 
         // 3. Chuẩn hóa mã mới
-        String newCode = request.getCode()
-                .trim()
-                .toUpperCase();
 
-        // 4. Nếu đổi mã thì kiểm tra trùng
-        if (!entity.getMaDotGiamGia()
-                .equalsIgnoreCase(newCode)
-                && dotGiamGiaRepository
-                .existsByMaDotGiamGia(newCode)) {
-
-            throw AppException.conflict(
-                    "Mã đợt giảm giá đã tồn tại"
-            );
-        }
 
         // 5. Cập nhật thông tin
-        entity.setMaDotGiamGia(newCode);
 
         entity.setTenDotGiamGia(
                 request.getName().trim()

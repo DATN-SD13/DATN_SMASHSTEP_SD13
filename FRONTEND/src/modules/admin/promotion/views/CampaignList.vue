@@ -191,38 +191,6 @@ async function toggle(x) {
 // XÓA ĐỢT GIẢM GIÁ
 // ==========================
 
-async function removeCampaign(x) {
-  const confirmed = window.confirm(
-    `Bạn có chắc muốn xóa đợt giảm giá ${x.code} không?`
-  )
-
-  if (!confirmed) {
-    return
-  }
-
-  try {
-    await api.delete(
-      `/dot-giam-gia/${x.code}`
-    )
-
-    alert(
-      'Xóa đợt giảm giá thành công!'
-    )
-
-    await loadCampaigns()
-
-  } catch (error) {
-    console.error(
-      'Lỗi xóa đợt giảm giá:',
-      error
-    )
-
-    alert(
-      error.response?.data?.message ||
-      'Không thể xóa đợt giảm giá'
-    )
-  }
-}
 
 // ==========================
 // RESET BỘ LỌC
@@ -512,13 +480,7 @@ onMounted(() => {
 
                     </button>
                                         <!-- XÓA -->
-                    <button
-                      class="ss-icon-btn danger"
-                      title="Xóa đợt giảm giá"
-                      @click="removeCampaign(x)"
-                    >
-                      <i class="bi bi-trash"></i>
-                    </button>
+                   
 
                   </div>
 

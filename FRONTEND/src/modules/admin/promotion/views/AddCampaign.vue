@@ -10,7 +10,6 @@ const router = useRouter()
 // FORM ĐỢT GIẢM GIÁ
 // =====================================================
 const form = ref({
-  code: '',
   name: '',
   value: 0,
   start: '',
@@ -350,10 +349,7 @@ const money = (n) =>
 // =====================================================
 async function save() {
   // Kiểm tra dữ liệu
-  if (!form.value.code.trim()) {
-    alert('Vui lòng nhập mã đợt giảm giá')
-    return
-  }
+  
 
   if (!form.value.name.trim()) {
     alert('Vui lòng nhập tên đợt giảm giá')
@@ -392,14 +388,13 @@ async function save() {
   }
 
   const data = {
-    code: form.value.code.trim(),
-    name: form.value.name.trim(),
-    discountValue: discountValue,
-    startDate: form.value.start,
-    endDate: form.value.end,
-    description: form.value.desc.trim(),
-    productDetailIds: selected.value
-  }
+  name: form.value.name.trim(),
+  discountValue: discountValue,
+  startDate: form.value.start,
+  endDate: form.value.end,
+  description: form.value.desc.trim(),
+  productDetailIds: selected.value
+}
 
   try {
     await api.post(
@@ -457,19 +452,7 @@ onMounted(() => {
 
           </div>
 
-          <div class="ss-field">
-
-            <label class="ss-label">
-              Mã đợt
-              <span class="req">*</span>
-            </label>
-
-            <input
-              class="ss-input"
-              v-model="form.code"
-            />
-
-          </div>
+          
 
           <div class="ss-field">
 

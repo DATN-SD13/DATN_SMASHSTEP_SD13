@@ -13,6 +13,6 @@ public interface DotGiamGiaRepository
         JpaSpecificationExecutor<DotGiamGia> {
 
     boolean existsByMaDotGiamGia(String maDotGiamGia);
-
+    Optional<DotGiamGia> findTopByOrderByIdDesc();
     Optional<DotGiamGia> findByMaDotGiamGia(String maDotGiamGia);
 }

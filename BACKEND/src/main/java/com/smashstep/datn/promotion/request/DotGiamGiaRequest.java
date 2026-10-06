@@ -15,15 +15,21 @@ import java.util.List;
 @Setter
 public class DotGiamGiaRequest {
 
-    @NotBlank(message = "Mã đợt giảm giá không được để trống")
+    // Khi tạo mới backend tự sinh mã
     private String code;
 
     @NotBlank(message = "Tên đợt giảm giá không được để trống")
     private String name;
 
     @NotNull(message = "Giá trị giảm không được để trống")
-    @DecimalMin(value = "0.01", message = "Giá trị giảm phải lớn hơn 0")
-    @DecimalMax(value = "100.00", message = "Giá trị giảm không được vượt quá 100%")
+    @DecimalMin(
+            value = "0.01",
+            message = "Giá trị giảm phải lớn hơn 0"
+    )
+    @DecimalMax(
+            value = "100.00",
+            message = "Giá trị giảm không được vượt quá 100%"
+    )
     private BigDecimal discountValue;
 
     @NotNull(message = "Ngày bắt đầu không được để trống")
