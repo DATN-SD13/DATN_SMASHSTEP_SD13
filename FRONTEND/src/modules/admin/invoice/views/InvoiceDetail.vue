@@ -31,7 +31,7 @@ const toast = ref({ visible: false, type: 'success', title: '', message: '' })
 let toastTimer = null
 let invoiceLoadVersion = 0
 
-const steps = [
+const deliverySteps = [
   { key: 'waiting', label: 'Chờ xác nhận', icon: 'bi-hourglass-split', value: 0 },
   { key: 'confirmed', label: 'Đã xác nhận', icon: 'bi-check2-circle', value: 1 },
   { key: 'ready', label: 'Chờ giao hàng', icon: 'bi-box-seam', value: 2 },
@@ -40,15 +40,20 @@ const steps = [
   { key: 'done', label: 'Hoàn thành', icon: 'bi-flag', value: 5 }
 ]
 
-const statusOptions = steps.map(step => ({
-  value: step.value,
-  key: step.key,
-  label: step.label
-}))
+const pickupSteps = [
+  { key: 'waiting', label: 'Chờ xác nhận', icon: 'bi-hourglass-split', value: 0 },
+  { key: 'confirmed', label: 'Đã xác nhận', icon: 'bi-check2-circle', value: 1 },
+  { key: 'done', label: 'Hoàn thành', icon: 'bi-flag', value: 5 }
+]
+
+const steps = computed(() => invoice.value?.receiveMethodCode === 0 ? pickupSteps : deliverySteps)
+const statusOptions = computed(() => steps.value.map(step => ({
+  value: step.value, key: step.key, label: step.label
+})))
 
 const progress = computed(() => {
   const code = invoice.value?.statusCode
-  return steps.some(step => step.value === code) ? code : -1
+  return steps.value.findIndex(step => step.value === code)
 })
 
 const nextStatus = computed(() => {
@@ -63,7 +68,8 @@ const canUpdateStatus = computed(() => Boolean(nextStatus.value))
 
 const canCancelOrder = computed(() => {
   const code = invoice.value?.statusCode
-  return Number.isInteger(code) && code >= 0 && code <= 4
+  if (!Number.isInteger(code)) return false
+  return invoice.value?.receiveMethodCode === 0 ? code <= 1 : code <= 4
 })
 
 const canPrintInvoice = computed(() => {
@@ -75,9 +81,12 @@ const paymentHistory = computed(() => {
   return Array.isArray(invoice.value?.paymentHistory) ? invoice.value.paymentHistory : []
 })
 
+const isDeliveryOrder = computed(() => invoice.value?.receiveMethodCode === 1)
+
 const hasShippingInfo = computed(() => {
   const current = invoice.value
   if (!current) return false
+  if (current.receiveMethodCode !== 1) return false
   return Boolean(
     current.shippingCarrier ||
     current.shippingRecipient ||
@@ -153,7 +162,7 @@ function formatHistoryDate(value) {
 
 function mapInvoice(data) {
   const statusCode = data?.maTrangThai == null ? null : Number(data.maTrangThai)
-  const status = statusOptions.find(item => item.value === statusCode)
+  const status = (statusOptions.value || []).find(item => item.value === statusCode)
 
   return {
     id: data?.id,
@@ -167,6 +176,10 @@ function mapInvoice(data) {
     email: data?.email || data?.emailKhachHang || data?.emailNguoiNhan || '—',
     recipient: data?.hoTenNguoiNhan || data?.tenKhachHang || '—',
     recipientPhone: data?.soDienThoaiNguoiNhan || data?.soDienThoai || '—',
+    orderType: data?.loaiHoaDon || (Number(data?.maLoaiHoaDon) === 1 ? 'Trực tuyến' : 'Tại quầy'),
+    orderTypeCode: data?.maLoaiHoaDon == null ? null : Number(data.maLoaiHoaDon),
+    receiveMethod: data?.hinhThucNhan || (Number(data?.maHinhThucNhan) === 0 ? 'Nhận tại quầy' : 'Giao hàng'),
+    receiveMethodCode: data?.maHinhThucNhan == null ? (Number(data?.maLoaiHoaDon) === 0 ? 0 : 1) : Number(data.maHinhThucNhan),
     shippingRecipient: data?.hoTenNguoiNhan || '',
     shippingRecipientPhone: data?.soDienThoaiNguoiNhan || '',
     shippingAddress: data?.diaChiGiaoHang || '',
@@ -298,10 +311,10 @@ const editableStatusOptions = computed(() => {
   if (!invoice.value) return []
   const currentCode = invoice.value.statusCode
   const options = []
-  const current = statusOptions.find(item => item.value === currentCode)
+  const current = statusOptions.value.find(item => item.value === currentCode)
   if (current) options.push(current)
   if (nextStatus.value && nextStatus.value.value !== currentCode) {
-    const next = statusOptions.find(item => item.value === nextStatus.value.value) || {
+    const next = statusOptions.value.find(item => item.value === nextStatus.value.value) || {
       value: nextStatus.value.value,
       key: 'next',
       label: nextStatus.value.label
@@ -580,6 +593,8 @@ onUnmounted(() => {
           <div class="info-grid">
             <section class="panel card shadow-sm info-panel">
               <h2><i class="bi bi-person-lock"></i> Thông tin khách hàng</h2>
+              <div class="info-row"><span>Loại đơn</span><strong>{{ invoice.orderType }}</strong></div>
+              <div class="info-row"><span>Hình thức nhận</span><strong>{{ invoice.receiveMethod }}</strong></div>
               <div class="info-row"><span>Tên khách hàng</span><strong>{{ invoice.customer }}</strong></div>
               <div class="info-row"><span>Mã khách hàng</span><strong>{{ invoice.customerCode }}</strong></div>
               <div class="info-row"><span>Số điện thoại</span><strong>{{ invoice.phone }}</strong></div>
@@ -617,7 +632,7 @@ onUnmounted(() => {
             <h2><i class="bi bi-calendar2-check"></i> Tổng kết thanh toán</h2>
             <div class="amount-row"><span>Tổng tiền hàng</span><strong>{{ money(subtotal) }}</strong></div>
             <div class="amount-row"><span>Giảm giá</span><strong class="discount">− {{ money(invoice.discount) }}</strong></div>
-            <div class="amount-row"><span>Phí vận chuyển</span><strong>+ {{ money(invoice.shippingFee) }}</strong></div>
+            <div v-if="isDeliveryOrder" class="amount-row"><span>Phí vận chuyển</span><strong>+ {{ money(invoice.shippingFee) }}</strong></div>
             <div class="grand-total"><span>TỔNG TIỀN</span><strong>{{ money(invoice.total) }}</strong></div>
           </section>
 

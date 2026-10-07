@@ -14,6 +14,7 @@ import com.smashstep.datn.invoice.entity.HoaDon;
 import com.smashstep.datn.invoice.entity.LichSuHoaDon;
 import com.smashstep.datn.invoice.enums.TrangThaiHoaDon;
 import com.smashstep.datn.invoice.enums.LoaiHoaDon;
+import com.smashstep.datn.invoice.enums.HinhThucNhan;
 import com.smashstep.datn.invoice.repository.HoaDonChiTietRepository;
 import com.smashstep.datn.invoice.repository.HoaDonRepository;
 import com.smashstep.datn.invoice.repository.LichSuHoaDonRepository;
@@ -119,9 +120,16 @@ public class HoaDonService {
             if (trangThaiHienTai != null && trangThaiHienTai == TrangThaiHoaDon.HOAN_TIEN.getMa()) {
                 throw AppException.badRequest("Đơn hàng đã hoàn tiền, không thể hủy.");
             }
+            HinhThucNhan hinhThucNhan = HinhThucNhan.tuMa(hoaDon.getHinhThucNhan());
+            if (hinhThucNhan == null) {
+                hinhThucNhan = hoaDon.getLoaiHoaDon() != null && hoaDon.getLoaiHoaDon() == LoaiHoaDon.TAI_QUAY.getMa()
+                        ? HinhThucNhan.NHAN_TAI_QUAY : HinhThucNhan.GIAO_HANG;
+            }
+            int trangThaiCuoiCoTheHuy = hinhThucNhan == HinhThucNhan.NHAN_TAI_QUAY
+                    ? TrangThaiHoaDon.DA_XAC_NHAN.getMa() : TrangThaiHoaDon.DA_GIAO_HANG.getMa();
             if (trangThaiHienTai == null
                     || trangThaiHienTai < TrangThaiHoaDon.CHO_XAC_NHAN.getMa()
-                    || trangThaiHienTai > TrangThaiHoaDon.DA_GIAO_HANG.getMa()) {
+                    || trangThaiHienTai > trangThaiCuoiCoTheHuy) {
                 throw AppException.badRequest("Đơn hàng hiện tại không thể hủy.");
             }
         } else {
@@ -134,7 +142,13 @@ public class HoaDonService {
             if (trangThaiHienTai != null && trangThaiHienTai == TrangThaiHoaDon.HOAN_TIEN.getMa()) {
                 throw AppException.badRequest("Đơn hàng đã hoàn tiền, không thể cập nhật trạng thái.");
             }
-            TrangThaiHoaDon trangThaiKeTiep = TrangThaiHoaDon.trangThaiTiepTheo(trangThaiHienTai);
+            HinhThucNhan hinhThucNhan = HinhThucNhan.tuMa(hoaDon.getHinhThucNhan());
+            if (hinhThucNhan == null) {
+                hinhThucNhan = hoaDon.getLoaiHoaDon() != null && hoaDon.getLoaiHoaDon() == LoaiHoaDon.TAI_QUAY.getMa()
+                        ? HinhThucNhan.NHAN_TAI_QUAY : HinhThucNhan.GIAO_HANG;
+            }
+            TrangThaiHoaDon trangThaiKeTiep = TrangThaiHoaDon.trangThaiTiepTheo(
+                    trangThaiHienTai, hinhThucNhan == HinhThucNhan.GIAO_HANG);
             if (trangThaiKeTiep == null || request.getTrangThai() != trangThaiKeTiep.getMa()) {
                 throw AppException.badRequest("Chỉ được chuyển sang trạng thái kế tiếp của đơn hàng.");
             }

@@ -28,9 +28,13 @@ public enum TrangThaiHoaDon {
     public String getLop() { return lop; }
 
     public static TrangThaiHoaDon trangThaiTiepTheo(Integer maHienTai) {
-        if (maHienTai == null || maHienTai < CHO_XAC_NHAN.ma || maHienTai >= HOAN_THANH.ma) {
-            return null;
-        }
+        return trangThaiTiepTheo(maHienTai, true);
+    }
+
+    public static TrangThaiHoaDon trangThaiTiepTheo(Integer maHienTai, boolean giaoHang) {
+        if (maHienTai == null) return null;
+        if (!giaoHang && maHienTai == DA_XAC_NHAN.ma) return HOAN_THANH;
+        if (maHienTai < CHO_XAC_NHAN.ma || maHienTai >= HOAN_THANH.ma) return null;
         return tuMa(maHienTai + 1);
     }
 

@@ -4,6 +4,7 @@ import com.smashstep.datn.customer.entity.KhachHang;
 import com.smashstep.datn.employee.entity.NhanVien;
 import com.smashstep.datn.invoice.entity.HoaDon;
 import com.smashstep.datn.invoice.enums.LoaiHoaDon;
+import com.smashstep.datn.invoice.enums.HinhThucNhan;
 import com.smashstep.datn.invoice.enums.TrangThaiHoaDon;
 import com.smashstep.datn.payment.entity.PhuongThucThanhToan;
 import lombok.Builder;
@@ -33,6 +34,8 @@ public class HoaDonDetailDto {
 
     private String loaiHoaDon;
     private Integer maLoaiHoaDon;
+    private String hinhThucNhan;
+    private Integer maHinhThucNhan;
     private String trangThai;
     private Integer maTrangThai;
     private Integer maTrangThaiTiepTheo;
@@ -71,7 +74,9 @@ public class HoaDonDetailDto {
         PhuongThucThanhToan phuongThuc = hoaDon.getIdPhuongThucThanhToan();
         LoaiHoaDon loai = LoaiHoaDon.tuMa(hoaDon.getLoaiHoaDon());
         TrangThaiHoaDon trangThai = TrangThaiHoaDon.tuMa(hoaDon.getTrangThai());
-        TrangThaiHoaDon trangThaiTiepTheo = TrangThaiHoaDon.trangThaiTiepTheo(hoaDon.getTrangThai());
+        HinhThucNhan hinhThucNhan = HinhThucNhan.tuMa(hoaDon.getHinhThucNhan());
+        if (hinhThucNhan == null) hinhThucNhan = hoaDon.getLoaiHoaDon() != null && hoaDon.getLoaiHoaDon() == 0 ? HinhThucNhan.NHAN_TAI_QUAY : HinhThucNhan.GIAO_HANG;
+        TrangThaiHoaDon trangThaiTiepTheo = TrangThaiHoaDon.trangThaiTiepTheo(hoaDon.getTrangThai(), hinhThucNhan == HinhThucNhan.GIAO_HANG);
 
         return HoaDonDetailDto.builder()
                 .id(hoaDon.getId())
@@ -88,6 +93,8 @@ public class HoaDonDetailDto {
                 .maNhanVien(nhanVien != null ? nhanVien.getMaNhanVien() : null)
                 .loaiHoaDon(loai != null ? loai.getNhan() : null)
                 .maLoaiHoaDon(hoaDon.getLoaiHoaDon())
+                .hinhThucNhan(hinhThucNhan.getNhan())
+                .maHinhThucNhan(hinhThucNhan.getMa())
                 .trangThai(trangThai != null ? trangThai.getNhan() : "Không xác định")
                 .maTrangThai(hoaDon.getTrangThai())
                 .maTrangThaiTiepTheo(trangThaiTiepTheo != null ? trangThaiTiepTheo.getMa() : null)

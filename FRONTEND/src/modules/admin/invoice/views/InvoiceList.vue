@@ -39,7 +39,6 @@ function normalizeType(value) {
   const v = String(value).toLowerCase()
   if (v === 'online' || v.includes('trực tuyến')) return 'online'
   if (v === 'store' || v.includes('tại quầy')) return 'store'
-  if (v === 'delivery' || v.includes('giao hàng')) return 'delivery'
   return v
 }
 
@@ -75,7 +74,7 @@ function buildParams(page = currentPage.value, status = activeStatus.value, size
   if (query.value.from) params.tuNgay = query.value.from
   if (query.value.to) params.denNgay = query.value.to
   if (status !== 'all') params.trangThai = statusCodes[status]
-  if (query.value.type !== 'all') params.loaiDon = { store: 0, online: 1, delivery: 2 }[query.value.type]
+  if (query.value.type !== 'all') params.loaiDon = { store: 0, online: 1 }[query.value.type]
   return params
 }
 
@@ -202,7 +201,7 @@ function downloadExcelFile(rows) {
 }
 
 function typeNameForExport(type) {
-  return type === 'online' ? 'Trực tuyến' : type === 'store' ? 'Tại quầy' : type === 'delivery' ? 'Giao hàng' : 'Chưa xác định'
+  return type === 'online' ? 'Trực tuyến' : type === 'store' ? 'Tại quầy' : 'Chưa xác định'
 }
 
 async function exportExcel() {

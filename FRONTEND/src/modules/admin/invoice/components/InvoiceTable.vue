@@ -38,7 +38,7 @@ const pageNumbers = computed(() => {
 })
 
 function typeName(type) {
-  return type === 'online' ? 'Trực tuyến' : type === 'store' ? 'Tại quầy' : type === 'delivery' ? 'Giao hàng' : 'Chưa xác định'
+  return type === 'online' ? 'Trực tuyến' : type === 'store' ? 'Tại quầy' : 'Chưa xác định'
 }
 function money(value) { return `${Number(value || 0).toLocaleString('vi-VN')} đ` }
 </script>
