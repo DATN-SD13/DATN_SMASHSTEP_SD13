@@ -119,9 +119,9 @@ public class HoaDonService {
             if (trangThaiHienTai != null && trangThaiHienTai == TrangThaiHoaDon.HOAN_TIEN.getMa()) {
                 throw AppException.badRequest("Đơn hàng đã hoàn tiền, không thể hủy.");
             }
-            if (trangThaiHienTai == null || (trangThaiHienTai != TrangThaiHoaDon.HOA_DON_CHO.getMa()
-                    && (trangThaiHienTai < TrangThaiHoaDon.CHO_XAC_NHAN.getMa()
-                    || trangThaiHienTai > TrangThaiHoaDon.DA_GIAO_HANG.getMa()))) {
+            if (trangThaiHienTai == null
+                    || trangThaiHienTai < TrangThaiHoaDon.CHO_XAC_NHAN.getMa()
+                    || trangThaiHienTai > TrangThaiHoaDon.DA_GIAO_HANG.getMa()) {
                 throw AppException.badRequest("Đơn hàng hiện tại không thể hủy.");
             }
         } else {

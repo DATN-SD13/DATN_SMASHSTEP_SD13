@@ -63,7 +63,7 @@ const canUpdateStatus = computed(() => Boolean(nextStatus.value))
 
 const canCancelOrder = computed(() => {
   const code = invoice.value?.statusCode
-  return Number.isInteger(code) && ((code >= 0 && code <= 4) || code === 8)
+  return Number.isInteger(code) && code >= 0 && code <= 4
 })
 
 const canPrintInvoice = computed(() => {
