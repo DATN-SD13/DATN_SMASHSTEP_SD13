@@ -530,6 +530,8 @@ onUnmounted(() => {
         <div><span>Ngày Tạo:</span><strong>{{ invoice.date }}</strong></div>
         <div><span>Tạo bởi:</span><strong>{{ invoice.employeeCode !== '—' ? invoice.employeeCode : invoice.employee }}</strong></div>
         <div><span>Cập Nhật Gần Nhất:</span><strong>{{ invoice.updatedDate }}</strong></div>
+        <div><span>Loại đơn:</span><strong>{{ invoice.orderType }}</strong></div>
+        <div><span>Hình thức nhận:</span><strong>{{ invoice.receiveMethod }}</strong></div>
       </section>
 
       <div v-if="loading" class="panel card shadow-sm loading-panel">
@@ -543,7 +545,7 @@ onUnmounted(() => {
           <section class="panel card shadow-sm timeline-panel">
             <h2><i class="bi bi-clipboard2-check"></i> Trạng thái đơn hàng</h2>
 
-            <div v-if="progress >= 0" class="timeline">
+            <div v-if="progress >= 0" class="timeline" :class="{ 'timeline-pickup': steps.length === 3 }">
               <div
                 v-for="(step, index) in steps"
                 :key="step.key"
@@ -593,8 +595,6 @@ onUnmounted(() => {
           <div class="info-grid">
             <section class="panel card shadow-sm info-panel">
               <h2><i class="bi bi-person-lock"></i> Thông tin khách hàng</h2>
-              <div class="info-row"><span>Loại đơn</span><strong>{{ invoice.orderType }}</strong></div>
-              <div class="info-row"><span>Hình thức nhận</span><strong>{{ invoice.receiveMethod }}</strong></div>
               <div class="info-row"><span>Tên khách hàng</span><strong>{{ invoice.customer }}</strong></div>
               <div class="info-row"><span>Mã khách hàng</span><strong>{{ invoice.customerCode }}</strong></div>
               <div class="info-row"><span>Số điện thoại</span><strong>{{ invoice.phone }}</strong></div>
@@ -602,25 +602,30 @@ onUnmounted(() => {
               <div class="info-row"><span>SĐT nhận hàng</span><strong>{{ invoice.recipientPhone }}</strong></div>
             </section>
 
-            <section v-if="hasShippingInfo" class="panel card shadow-sm info-panel">
+            <section class="panel card shadow-sm info-panel shipping-panel">
               <h2><i class="bi bi-geo-alt"></i> Thông tin giao hàng</h2>
-              <div v-if="invoice.shippingCarrier" class="info-row">
-                <span>Đơn vị vận chuyển</span><strong>{{ invoice.shippingCarrier }}</strong>
-              </div>
-              <div class="info-row">
-                <span>Phí vận chuyển</span><strong>{{ money(invoice.shippingFee) }}</strong>
-              </div>
-              <div v-if="invoice.shippingRecipient" class="info-row">
-                <span>Người nhận</span><strong>{{ invoice.shippingRecipient }}</strong>
-              </div>
-              <div v-if="invoice.shippingRecipientPhone" class="info-row">
-                <span>Số điện thoại</span><strong>{{ invoice.shippingRecipientPhone }}</strong>
-              </div>
-              <div v-if="invoice.shippingAddress" class="info-row address-row">
-                <span>Địa chỉ giao hàng</span><strong>{{ invoice.shippingAddress }}</strong>
-              </div>
-              <div v-if="invoice.shippingNote" class="info-row">
-                <span>Ghi chú</span><strong>{{ invoice.shippingNote }}</strong>
+              <template v-if="isDeliveryOrder">
+                <div v-if="invoice.shippingCarrier" class="info-row">
+                  <span>Đơn vị vận chuyển</span><strong>{{ invoice.shippingCarrier }}</strong>
+                </div>
+                <div class="info-row">
+                  <span>Phí vận chuyển</span><strong>{{ money(invoice.shippingFee) }}</strong>
+                </div>
+                <div v-if="invoice.shippingRecipient" class="info-row">
+                  <span>Người nhận</span><strong>{{ invoice.shippingRecipient }}</strong>
+                </div>
+                <div v-if="invoice.shippingRecipientPhone" class="info-row">
+                  <span>Số điện thoại</span><strong>{{ invoice.shippingRecipientPhone }}</strong>
+                </div>
+                <div v-if="invoice.shippingAddress" class="info-row address-row">
+                  <span>Địa chỉ giao hàng</span><strong>{{ invoice.shippingAddress }}</strong>
+                </div>
+                <div v-if="invoice.shippingNote" class="info-row">
+                  <span>Ghi chú</span><strong>{{ invoice.shippingNote }}</strong>
+                </div>
+              </template>
+              <div v-else class="info-row shipping-fee-only">
+                <span>Phí vận chuyển</span><strong>− {{ money(invoice.shippingFee) }}</strong>
               </div>
             </section>
           </div>
@@ -1131,9 +1136,12 @@ onUnmounted(() => {
 .back-link{display:flex;align-items:center;gap:10px;border:0;background:transparent;color:#435b67;padding:0 0 16px 3px;font-size:15px;font-weight:650;cursor:pointer}.back-link i{font-size:15px;color:#1689cf}.back-link b{color:#1689cf}
 .detail-layout{display:grid;grid-template-columns:minmax(0,1.85fr) minmax(285px,.9fr);gap:18px;align-items:start}.main-column,.side-column{display:grid;gap:16px;min-width:0}.panel{background:#fff;border:1px solid #e5edf1!important;border-radius:14px;box-shadow:0 3px 12px rgba(35,73,91,.045)!important;padding:19px}
 .panel h2{display:flex;align-items:center;gap:9px;margin:0 0 20px;color:#263f4b;font-size:13px;font-weight:700}.panel h2 i{color:#1689cf;font-size:14px}
-.timeline-panel{padding-bottom:16px}.timeline{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));position:relative;padding:7px 0 0;gap:0}.timeline:before{content:"";position:absolute;left:8.2%;right:8.2%;height:2px;background:#dce9ef;top:22px}.timeline-step{position:relative;display:flex;align-items:center;flex-direction:column;text-align:center;min-width:0}.timeline-node{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:#eaf1f5;color:#91a4ae;border:2px solid #fff;box-shadow:0 0 0 1px #dbe7ed;z-index:1;font-size:14px}.timeline-step.reached .timeline-node{background:#1689cf;color:white;box-shadow:0 0 0 1px #1689cf}.timeline-step.current .timeline-node{box-shadow:0 0 0 4px #d9f0fb,0 0 0 5px #1689cf}.step-label{font-size:11px;font-weight:650;color:#91a0a8;margin-top:11px;line-height:1.4}.timeline-step.reached .step-label{color:#147fb9}.timeline-step small{font-size:9px;color:#98a7ae;margin-top:5px}
+.timeline-panel{padding-bottom:16px}.timeline{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));position:relative;padding:7px 0 0;gap:0}.timeline.timeline-pickup{grid-template-columns:repeat(3,minmax(0,1fr))}.timeline:before{content:"";position:absolute;left:8.2%;right:8.2%;height:2px;background:#dce9ef;top:24px}.timeline.timeline-pickup:before{left:16.67%;right:16.67%}.timeline-step{position:relative;display:flex;align-items:center;flex-direction:column;text-align:center;min-width:0}.timeline-node{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;background:#fff;color:#a2afb6;border:2px solid #d9e5ea;box-shadow:0 0 0 4px #fff;z-index:1;font-size:14px}.timeline-step.reached .timeline-node{background:#1689cf;color:#fff;border-color:#1689cf;box-shadow:0 0 0 4px #d9f0fb}.timeline-step.current .timeline-node{box-shadow:0 0 0 4px #d9f0fb,0 0 0 6px #1689cf}.step-label{font-size:11px;font-weight:650;color:#91a0a8;margin-top:11px;line-height:1.4}.timeline-step.reached .step-label{color:#147fb9}.timeline-step small{font-size:9px;color:#98a7ae;margin-top:5px}
 .timeline-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:18px}.soft-button,.edit-order-button,.cancel-order-button{height:34px;border-radius:8px;padding:0 11px;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap}.soft-button{border:1px solid #d6e7ef;background:#f7fbfd;color:#477182;min-width:0}.soft-button:hover{background:#e9f6fc;color:#0878bd}
 .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.info-panel{padding:18px 19px 10px}.info-panel h2{margin-bottom:13px}.info-row{display:flex;justify-content:space-between;align-items:flex-start;gap:15px;padding:11px 0;border-bottom:1px solid #edf2f5;font-size:11px}.info-row:last-child{border-bottom:0}.info-row>span{color:#82949e;flex:0 0 auto}.info-row>strong{color:#334d59;font-weight:650;text-align:right;line-height:1.55;min-width:0}.address-row strong{max-width:65%}
+.shipping-fee-only strong{color:#1689cf!important}
+.shipping-panel .info-row:last-child{border-bottom:0}
+
 .products-panel{padding:19px 0 0}.products-panel h2{padding:0 19px}.product-table-wrap{overflow-x:auto}.product-table{width:100%;border-collapse:collapse;min-width:650px}.product-table thead{background:#edf5fa}.product-table th{height:39px;padding:0 13px;text-align:left;font-size:10px;color:#607b8a;font-weight:700;white-space:nowrap}.product-table td{padding:12px 13px;border-bottom:1px solid #edf2f5;color:#5a707b;font-size:11px;white-space:nowrap}.product-name{display:flex;align-items:center;gap:9px}.product-name strong{color:#344e5a;font-size:11px}.product-thumb{width:46px;height:46px;border-radius:8px;background:#f3f8fb;color:#1689cf;display:grid;place-items:center;font-size:16px;overflow:hidden;border:1px solid #e3edf2}.product-thumb img{width:100%;height:100%;display:block;object-fit:cover}.product-total{color:#1681c3!important;font-weight:700}.empty-products{text-align:center!important;color:#91a0a8!important}
 .payment-panel h2,.payment-history h2,.invoice-meta h2{margin-bottom:18px}.amount-row{display:flex;justify-content:space-between;gap:12px;margin:0 0 13px;font-size:11px}.amount-row span{color:#7e909a}.amount-row strong{color:#334c58;font-weight:650;white-space:nowrap}.amount-row .discount{color:#16966f}.grand-total{border-top:1px solid #e5edf1;margin-top:17px;padding-top:15px;display:flex;justify-content:space-between;gap:10px;align-items:center}.grand-total span{font-size:12px;color:#55707d;font-weight:650}.grand-total strong{font-size:18px;color:#1689cf}
 .payment-history{min-height:245px;display:flex;flex-direction:column}.payment-method{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.payment-method strong{display:block;color:#3b5662;font-size:11px;font-weight:650;line-height:1.5}.payment-method small{display:block;color:#91a0a8;font-size:10px;margin-top:7px}.paid-tag{color:#168b68;font-size:10px;font-weight:650;white-space:nowrap}.paid-amount{text-align:right;color:#344e5a;font-size:13px;margin-top:10px}.payment-history-actions{display:flex;flex-direction:column;gap:8px;margin-top:auto}.payment-history-actions.single-action{display:flex;flex-direction:column}.payment-action-button{height:42px!important;width:100%!important;min-height:42px!important;box-sizing:border-box!important;display:flex!important;align-items:center!important;justify-content:center!important;padding:0 12px!important}.print-button{height:42px;width:100%;margin-top:0;border:1px solid #1689cf;border-radius:10px;background:#1689cf;color:#fff;font-size:12px;font-weight:700;cursor:pointer;--bs-btn-bg:#1689cf;--bs-btn-border-color:#1689cf;--bs-btn-hover-bg:#0d72b0;--bs-btn-hover-border-color:#0d72b0}.print-button:hover{background:#0d72b0;color:#fff}
@@ -1216,26 +1224,41 @@ onUnmounted(() => {
 .back-list-button:hover{border-color:#b9d8e7;color:#1689cf;background:#f7fbfd}
 
 .invoice-summary-strip{
-  display:flex;
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
   align-items:center;
-  flex-wrap:wrap;
-  gap:0 28px;
-  min-height:66px;
+  gap:0;
+  min-height:72px;
   margin-bottom:16px;
-  padding:14px 18px;
+  padding:8px 16px;
   border:1px solid #e8eef2;
-  border-radius:4px;
+  border-radius:10px;
   background:#f8fafb;
 }
 .invoice-summary-strip>div{
   display:flex;
-  align-items:baseline;
-  gap:4px;
-  min-height:22px;
+  align-items:center;
+  gap:7px;
+  min-width:0;
+  min-height:27px;
+  padding:0 14px;
+  border-right:1px solid #e6edf1;
   font-size:11px;
+  white-space:nowrap;
 }
-.invoice-summary-strip span{color:#748892}
-.invoice-summary-strip strong{color:#263943;font-weight:700}
+.invoice-summary-strip>div:nth-child(3n){border-right:0}
+.invoice-summary-strip>div:nth-child(n+4){border-top:1px solid #e6edf1}
+.invoice-summary-strip span{
+  color:#7b8d96;
+  flex:0 0 auto;
+}
+.invoice-summary-strip strong{
+  color:#263943;
+  font-weight:700;
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
 .invoice-summary-strip>div:first-child strong{color:#1689cf}
 
 .products-panel{
@@ -1387,8 +1410,10 @@ onUnmounted(() => {
 }
 @media(max-width:760px){
   .page-title-row{align-items:flex-start;flex-direction:column}
-  .invoice-summary-strip{gap:6px 18px}
-  .invoice-summary-strip>div{flex:1 1 45%}
+  .invoice-summary-strip{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:6px 18px;
+  }
   .product-filter-box{grid-template-columns:1fr 1fr}
   .product-search-field{grid-column:1 / -1}
   .product-reset-button{width:100%}
