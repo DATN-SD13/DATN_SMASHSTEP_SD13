@@ -444,8 +444,14 @@ async function openHistoryModal() {
       throw new Error(response?.message || 'Không thể tải lịch sử hóa đơn')
     }
 
-    // BE đã trả theo ngayTao DESC; giữ nguyên thứ tự để item mới nhất ở trên.
-    historyItems.value = Array.isArray(response.data) ? response.data : []
+    // BE trả theo ngayTao DESC; giữ nguyên thứ tự để item mới nhất ở trên.
+    // Đơn nhận tại quầy không có các trạng thái giao hàng (2/3/4),
+    // nên loại các bản ghi giao hàng nếu dữ liệu lịch sử cũ còn tồn tại.
+    const rawHistory = Array.isArray(response.data) ? response.data : []
+    const isPickupOrder = Number(invoice.value?.receiveMethodCode) === 0
+    historyItems.value = isPickupOrder
+      ? rawHistory.filter(item => ![2, 3, 4].includes(Number(item?.maTrangThai)))
+      : rawHistory
   } catch (error) {
     if (invoice.value?.code !== code) return
     historyItems.value = []
@@ -604,28 +610,23 @@ onUnmounted(() => {
 
             <section class="panel card shadow-sm info-panel shipping-panel">
               <h2><i class="bi bi-geo-alt"></i> Thông tin giao hàng</h2>
-              <template v-if="isDeliveryOrder">
-                <div v-if="invoice.shippingCarrier" class="info-row">
-                  <span>Đơn vị vận chuyển</span><strong>{{ invoice.shippingCarrier }}</strong>
-                </div>
-                <div class="info-row">
-                  <span>Phí vận chuyển</span><strong>{{ money(invoice.shippingFee) }}</strong>
-                </div>
-                <div v-if="invoice.shippingRecipient" class="info-row">
-                  <span>Người nhận</span><strong>{{ invoice.shippingRecipient }}</strong>
-                </div>
-                <div v-if="invoice.shippingRecipientPhone" class="info-row">
-                  <span>Số điện thoại</span><strong>{{ invoice.shippingRecipientPhone }}</strong>
-                </div>
-                <div v-if="invoice.shippingAddress" class="info-row address-row">
-                  <span>Địa chỉ giao hàng</span><strong>{{ invoice.shippingAddress }}</strong>
-                </div>
-                <div v-if="invoice.shippingNote" class="info-row">
-                  <span>Ghi chú</span><strong>{{ invoice.shippingNote }}</strong>
-                </div>
-              </template>
-              <div v-else class="info-row shipping-fee-only">
-                <span>Phí vận chuyển</span><strong>− {{ money(invoice.shippingFee) }}</strong>
+              <div class="info-row">
+                <span>Đơn vị vận chuyển</span><strong>{{ invoice.shippingCarrier || '—' }}</strong>
+              </div>
+              <div class="info-row">
+                <span>Phí vận chuyển</span><strong :class="{ 'shipping-fee-zero': !isDeliveryOrder }">{{ money(invoice.shippingFee) }}</strong>
+              </div>
+              <div class="info-row">
+                <span>Người nhận</span><strong>{{ invoice.shippingRecipient || '—' }}</strong>
+              </div>
+              <div class="info-row">
+                <span>Số điện thoại</span><strong>{{ invoice.shippingRecipientPhone || '—' }}</strong>
+              </div>
+              <div class="info-row address-row">
+                <span>Địa chỉ giao hàng</span><strong>{{ invoice.shippingAddress || '—' }}</strong>
+              </div>
+              <div class="info-row">
+                <span>Ghi chú</span><strong>{{ invoice.shippingNote || '—' }}</strong>
               </div>
             </section>
           </div>
@@ -1139,8 +1140,7 @@ onUnmounted(() => {
 .timeline-panel{padding-bottom:16px}.timeline{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));position:relative;padding:7px 0 0;gap:0}.timeline.timeline-pickup{grid-template-columns:repeat(3,minmax(0,1fr))}.timeline:before{content:"";position:absolute;left:8.2%;right:8.2%;height:2px;background:#dce9ef;top:24px}.timeline.timeline-pickup:before{left:16.67%;right:16.67%}.timeline-step{position:relative;display:flex;align-items:center;flex-direction:column;text-align:center;min-width:0}.timeline-node{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;background:#fff;color:#a2afb6;border:2px solid #d9e5ea;box-shadow:0 0 0 4px #fff;z-index:1;font-size:14px}.timeline-step.reached .timeline-node{background:#1689cf;color:#fff;border-color:#1689cf;box-shadow:0 0 0 4px #d9f0fb}.timeline-step.current .timeline-node{box-shadow:0 0 0 4px #d9f0fb,0 0 0 6px #1689cf}.step-label{font-size:11px;font-weight:650;color:#91a0a8;margin-top:11px;line-height:1.4}.timeline-step.reached .step-label{color:#147fb9}.timeline-step small{font-size:9px;color:#98a7ae;margin-top:5px}
 .timeline-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:18px}.soft-button,.edit-order-button,.cancel-order-button{height:34px;border-radius:8px;padding:0 11px;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap}.soft-button{border:1px solid #d6e7ef;background:#f7fbfd;color:#477182;min-width:0}.soft-button:hover{background:#e9f6fc;color:#0878bd}
 .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.info-panel{padding:18px 19px 10px}.info-panel h2{margin-bottom:13px}.info-row{display:flex;justify-content:space-between;align-items:flex-start;gap:15px;padding:11px 0;border-bottom:1px solid #edf2f5;font-size:11px}.info-row:last-child{border-bottom:0}.info-row>span{color:#82949e;flex:0 0 auto}.info-row>strong{color:#334d59;font-weight:650;text-align:right;line-height:1.55;min-width:0}.address-row strong{max-width:65%}
-.shipping-fee-only strong{color:#1689cf!important}
-.shipping-panel .info-row:last-child{border-bottom:0}
+.shipping-panel .info-row:last-child{border-bottom:0}.shipping-fee-zero{color:#1689cf!important}
 
 .products-panel{padding:19px 0 0}.products-panel h2{padding:0 19px}.product-table-wrap{overflow-x:auto}.product-table{width:100%;border-collapse:collapse;min-width:650px}.product-table thead{background:#edf5fa}.product-table th{height:39px;padding:0 13px;text-align:left;font-size:10px;color:#607b8a;font-weight:700;white-space:nowrap}.product-table td{padding:12px 13px;border-bottom:1px solid #edf2f5;color:#5a707b;font-size:11px;white-space:nowrap}.product-name{display:flex;align-items:center;gap:9px}.product-name strong{color:#344e5a;font-size:11px}.product-thumb{width:46px;height:46px;border-radius:8px;background:#f3f8fb;color:#1689cf;display:grid;place-items:center;font-size:16px;overflow:hidden;border:1px solid #e3edf2}.product-thumb img{width:100%;height:100%;display:block;object-fit:cover}.product-total{color:#1681c3!important;font-weight:700}.empty-products{text-align:center!important;color:#91a0a8!important}
 .payment-panel h2,.payment-history h2,.invoice-meta h2{margin-bottom:18px}.amount-row{display:flex;justify-content:space-between;gap:12px;margin:0 0 13px;font-size:11px}.amount-row span{color:#7e909a}.amount-row strong{color:#334c58;font-weight:650;white-space:nowrap}.amount-row .discount{color:#16966f}.grand-total{border-top:1px solid #e5edf1;margin-top:17px;padding-top:15px;display:flex;justify-content:space-between;gap:10px;align-items:center}.grand-total span{font-size:12px;color:#55707d;font-weight:650}.grand-total strong{font-size:18px;color:#1689cf}

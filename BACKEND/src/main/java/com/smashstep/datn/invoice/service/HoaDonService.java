@@ -125,12 +125,17 @@ public class HoaDonService {
                 hinhThucNhan = hoaDon.getLoaiHoaDon() != null && hoaDon.getLoaiHoaDon() == LoaiHoaDon.TAI_QUAY.getMa()
                         ? HinhThucNhan.NHAN_TAI_QUAY : HinhThucNhan.GIAO_HANG;
             }
-            int trangThaiCuoiCoTheHuy = hinhThucNhan == HinhThucNhan.NHAN_TAI_QUAY
-                    ? TrangThaiHoaDon.DA_XAC_NHAN.getMa() : TrangThaiHoaDon.DA_GIAO_HANG.getMa();
-            if (trangThaiHienTai == null
-                    || trangThaiHienTai < TrangThaiHoaDon.CHO_XAC_NHAN.getMa()
-                    || trangThaiHienTai > trangThaiCuoiCoTheHuy) {
-                throw AppException.badRequest("Đơn hàng hiện tại không thể hủy.");
+            // Hóa đơn chờ (8) là phiếu tạm giữ tại POS, cho phép hủy riêng để giải phóng phiếu.
+            if (Integer.valueOf(TrangThaiHoaDon.HOA_DON_CHO.getMa()).equals(trangThaiHienTai)) {
+                // continue
+            } else {
+                int trangThaiCuoiCoTheHuy = hinhThucNhan == HinhThucNhan.NHAN_TAI_QUAY
+                        ? TrangThaiHoaDon.DA_XAC_NHAN.getMa() : TrangThaiHoaDon.DA_GIAO_HANG.getMa();
+                if (trangThaiHienTai == null
+                        || trangThaiHienTai < TrangThaiHoaDon.CHO_XAC_NHAN.getMa()
+                        || trangThaiHienTai > trangThaiCuoiCoTheHuy) {
+                    throw AppException.badRequest("Đơn hàng hiện tại không thể hủy.");
+                }
             }
         } else {
             if (trangThaiHienTai != null && trangThaiHienTai == TrangThaiHoaDon.HOAN_THANH.getMa()) {
@@ -181,9 +186,27 @@ public class HoaDonService {
     }
 
     private List<LichSuHoaDonDto> layLichSu(Long idHoaDon) {
+        HoaDon hoaDon = hoaDonRepository.findById(idHoaDon)
+                .orElseThrow(() -> AppException.notFound("Không tìm thấy hóa đơn"));
+        HinhThucNhan hinhThucNhan = HinhThucNhan.tuMa(hoaDon.getHinhThucNhan());
+        if (hinhThucNhan == null) {
+            hinhThucNhan = hoaDon.getLoaiHoaDon() != null && hoaDon.getLoaiHoaDon() == LoaiHoaDon.TAI_QUAY.getMa()
+                    ? HinhThucNhan.NHAN_TAI_QUAY : HinhThucNhan.GIAO_HANG;
+        }
+        final HinhThucNhan finalHinhThucNhan = hinhThucNhan;
+
         return lichSuHoaDonRepository
                 .findByIdHoaDonIdOrderByNgayTaoDesc(idHoaDon)
                 .stream()
+                // Đơn nhận tại quầy không có các trạng thái của quy trình giao hàng.
+                .filter(lichSu -> finalHinhThucNhan == HinhThucNhan.GIAO_HANG
+                        || lichSu.getTrangThai() == null
+                        || lichSu.getTrangThai() == TrangThaiHoaDon.CHO_XAC_NHAN.getMa()
+                        || lichSu.getTrangThai() == TrangThaiHoaDon.DA_XAC_NHAN.getMa()
+                        || lichSu.getTrangThai() == TrangThaiHoaDon.HOAN_THANH.getMa()
+                        || lichSu.getTrangThai() == TrangThaiHoaDon.DA_HUY.getMa()
+                        || lichSu.getTrangThai() == TrangThaiHoaDon.HOAN_TIEN.getMa()
+                        || lichSu.getTrangThai() == TrangThaiHoaDon.HOA_DON_CHO.getMa())
                 .map(lichSu -> {
                     NhanVien nhanVien = null;
                     if (lichSu.getNguoiTao() != null) {
