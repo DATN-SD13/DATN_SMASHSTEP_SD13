@@ -334,40 +334,40 @@ function closeCancelModal() {
   showCancelModal.value = false
 }
 
-async function cancelOrder() {
-  if (!canCancelOrder.value || confirmSubmitting.value || updatingStatus.value) return
+// async function cancelOrder() {
+//   if (!canCancelOrder.value || confirmSubmitting.value || updatingStatus.value) return
 
-  confirmSubmitting.value = true
-  try {
-    const response = await invoiceService.updateStatus(invoice.value.code, {
-      trangThai: 6,
-      ghiChu: 'Hủy đơn hàng'
-    })
+//   confirmSubmitting.value = true
+//   try {
+//     const response = await invoiceService.updateStatus(invoice.value.code, {
+//       trangThai: 6,
+//       ghiChu: 'Hủy đơn hàng'
+//     })
 
-    if (!response?.success) {
-      throw new Error(response?.message || 'Không thể hủy đơn hàng')
-    }
+//     if (!response?.success) {
+//       throw new Error(response?.message || 'Không thể hủy đơn hàng')
+//     }
 
-    if (response.data) {
-      invoice.value = mapInvoice(response.data)
-    await loadProductImages()
-    } else {
-      await loadInvoice()
-    }
+//     if (response.data) {
+//       invoice.value = mapInvoice(response.data)
+//     await loadProductImages()
+//     } else {
+//       await loadInvoice()
+//     }
 
-    showCancelModal.value = false
-    showLocalToast('success', 'Hủy đơn hàng thành công', response.message || 'Đơn hàng đã được chuyển sang trạng thái Đã hủy.')
-  } catch (error) {
-    showCancelModal.value = false
-    showLocalToast(
-      'error',
-      'Hủy đơn hàng thất bại',
-      error?.response?.data?.message || error?.message || 'Không thể hủy đơn hàng.'
-    )
-  } finally {
-    confirmSubmitting.value = false
-  }
-}
+//     showCancelModal.value = false
+//     showLocalToast('success', 'Hủy đơn hàng thành công', response.message || 'Đơn hàng đã được chuyển sang trạng thái Đã hủy.')
+//   } catch (error) {
+//     showCancelModal.value = false
+//     showLocalToast(
+//       'error',
+//       'Hủy đơn hàng thất bại',
+//       error?.response?.data?.message || error?.message || 'Không thể hủy đơn hàng.'
+//     )
+//   } finally {
+//     confirmSubmitting.value = false
+//   }
+// }
 
 function showLocalToast(type, title, message) {
   toast.value = { visible: true, type, title, message }
@@ -575,7 +575,7 @@ onUnmounted(() => {
             </div>
 
             <div class="timeline-actions">
-              <button
+              <!-- <button
                 v-if="canCancelOrder"
                 class="cancel-order-button btn btn-danger"
                 type="button"
@@ -584,7 +584,7 @@ onUnmounted(() => {
               >
                 <i class="bi bi-x-circle"></i>
                 Hủy đơn hàng
-              </button>
+              </button> -->
 
               <button
                 class="soft-button btn btn-outline-primary btn-sm"
@@ -884,7 +884,7 @@ onUnmounted(() => {
         <button type="button" class="btn-close ms-auto" aria-label="Đóng" @click="toast.visible = false"></button>
       </div>
 
-      <!-- Modal xác nhận hủy đơn hàng -->
+      <!-- Modal xác nhận hủy đơn hàng
       <div
         v-if="showCancelModal"
         class="modal fade show d-block status-modal-backdrop confirm-layer"
@@ -912,7 +912,7 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
-      </div>
+      </div> -->
 
       <!-- Modal chỉnh sửa đơn hàng -->
       <div

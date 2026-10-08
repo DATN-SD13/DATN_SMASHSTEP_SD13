@@ -23,7 +23,7 @@ const tabDefs = [
   ['shipping', 'Đang giao hàng'],
   ['delivered', 'Đã giao hàng'],
   ['done', 'Đã hoàn thành'],
-  ['cancel', 'Đã hủy'],
+  // ['cancel', 'Đã hủy'],
 ]
 const tabs = computed(() => tabDefs.map(([key, label]) => [key, label, Number(props.stats[key] || 0)]))
 const pageStart = computed(() => props.totalElements ? (props.page - 1) * props.pageSize + 1 : 0)
