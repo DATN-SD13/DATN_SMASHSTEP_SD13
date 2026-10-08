@@ -162,16 +162,14 @@ public class PhieuGiamGiaService {
         response.setStartDate(
                 p.getNgayBatDau() != null
                         ? p.getNgayBatDau()
-                        .toLocalDate()
-                        .toString()
+                        .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm"))
                         : null
         );
 
         response.setEndDate(
                 p.getNgayKetThuc() != null
                         ? p.getNgayKetThuc()
-                        .toLocalDate()
-                        .toString()
+                        .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm"))
                         : null
         );
 
@@ -180,7 +178,7 @@ public class PhieuGiamGiaService {
         );
 
         response.setUnlimited(
-                p.getSoLuong() == null
+                Boolean.TRUE.equals(p.getVoHan())
         );
 
         response.setUsedQuantity(
@@ -195,6 +193,14 @@ public class PhieuGiamGiaService {
                 getStatusLabel(
                         p.getTrangThai()
                 )
+        );
+// trang thai pgg theo tgian thuc
+        Integer timeStatus = getTimeStatus(p);
+
+        response.setTimeStatus(timeStatus);
+
+        response.setTimeStatusLabel(
+                getTimeStatusLabel(timeStatus)
         );
 
         response.setDescription(
@@ -287,19 +293,21 @@ public class PhieuGiamGiaService {
 
         p.setNgayBatDau(
                 LocalDateTime.parse(
-                        request.getStartDate() + "T00:00:00"
+                        request.getStartDate()
                 )
         );
 
         p.setNgayKetThuc(
                 LocalDateTime.parse(
-                        request.getEndDate() + "T23:59:59"
+                        request.getEndDate()
                 )
         );
 
         if (Boolean.TRUE.equals(request.getUnlimited())) {
+            p.setVoHan(true);
             p.setSoLuong(null);
         } else {
+            p.setVoHan(false);
             p.setSoLuong(request.getQuantity());
         }
 
@@ -358,19 +366,21 @@ public class PhieuGiamGiaService {
 
         p.setNgayBatDau(
                 LocalDateTime.parse(
-                        request.getStartDate() + "T00:00:00"
+                        request.getStartDate()
                 )
         );
 
         p.setNgayKetThuc(
                 LocalDateTime.parse(
-                        request.getEndDate() + "T23:59:59"
+                        request.getEndDate()
                 )
         );
 
         if (Boolean.TRUE.equals(request.getUnlimited())) {
+            p.setVoHan(true);
             p.setSoLuong(null);
         } else {
+            p.setVoHan(false);
             p.setSoLuong(request.getQuantity());
         }
 
@@ -531,18 +541,21 @@ public class PhieuGiamGiaService {
             );
         }
 
-        LocalDate start;
-        LocalDate end;
-        try {
-            start = LocalDate.parse(request.getStartDate());
-            end = LocalDate.parse(request.getEndDate());
-        } catch (DateTimeParseException ex) {
-            throw AppException.badRequest("Ngày bắt đầu và kết thúc phải có định dạng yyyy-MM-dd hợp lệ");
-        }
-        if (end.isBefore(start)) {
+        LocalDateTime start;
+        LocalDateTime end;
 
+        try {
+            start = LocalDateTime.parse(request.getStartDate());
+            end = LocalDateTime.parse(request.getEndDate());
+        } catch (DateTimeParseException ex) {
             throw AppException.badRequest(
-                    "Ngày kết thúc phải lớn hơn hoặc bằng ngày bắt đầu"
+                    "Ngày giờ bắt đầu và kết thúc không đúng định dạng"
+            );
+        }
+
+        if (!end.isAfter(start)) {
+            throw AppException.badRequest(
+                    "Ngày giờ kết thúc phải sau ngày giờ bắt đầu"
             );
         }
 
@@ -583,6 +596,38 @@ public class PhieuGiamGiaService {
             assignments.save(link);
         }
     }
+// trang thai cua pgg theo tgian thuc
+    private Integer getTimeStatus(PhieuGiamGia p) {
 
+        LocalDateTime now = LocalDateTime.now();
+
+        if (p.getNgayBatDau() == null || p.getNgayKetThuc() == null) {
+            return null;
+        }
+
+        if (now.isBefore(p.getNgayBatDau())) {
+            return 1; // Sắp diễn ra
+        }
+
+        if (now.isBefore(p.getNgayKetThuc())) {
+            return 2; // Đang diễn ra
+        }
+
+        return 3; // Đã kết thúc
+    }
+
+    private String getTimeStatusLabel(Integer value) {
+
+        if (value == null) {
+            return "Không xác định";
+        }
+
+        return switch (value) {
+            case 1 -> "Sắp diễn ra";
+            case 2 -> "Đang diễn ra";
+            case 3 -> "Đã kết thúc";
+            default -> "Không xác định";
+        };
+    }
 
 }

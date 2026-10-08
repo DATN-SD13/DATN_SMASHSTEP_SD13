@@ -135,11 +135,19 @@ function validate() {
     return 'Vui lòng nhập đầy đủ ngày bắt đầu và ngày kết thúc!'
   }
 
-  if (
-    form.value.endDate <
-    form.value.startDate
-  ) {
-    return 'Ngày kết thúc phải sau ngày bắt đầu!'
+  const start = new Date(form.value.startDate)
+  const end = new Date(form.value.endDate)
+
+  if (Number.isNaN(start.getTime())) {
+    return 'Ngày giờ bắt đầu không hợp lệ!'
+  }
+
+  if (Number.isNaN(end.getTime())) {
+    return 'Ngày giờ kết thúc không hợp lệ!'
+  }
+
+  if (end <= start) {
+    return 'Ngày giờ kết thúc phải sau ngày giờ bắt đầu!'
   }
 
   return null
