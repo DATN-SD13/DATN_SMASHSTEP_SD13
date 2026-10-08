@@ -492,7 +492,7 @@ window.addEventListener('afterprint', clearPrintMode)
 
 function stepDate(status) {
   const entry = invoice.value?.history?.find(item => Number(item?.maTrangThai) === status)
-  return entry?.ngayTao || (status === 0 ? invoice.value?.date : '—')
+  return entry?.ngayTao || '—'
 }
 
 onMounted(loadInvoice)
@@ -604,26 +604,16 @@ onUnmounted(() => {
               <div class="info-row"><span>Tên khách hàng</span><strong>{{ invoice.customer }}</strong></div>
               <div class="info-row"><span>Mã khách hàng</span><strong>{{ invoice.customerCode }}</strong></div>
               <div class="info-row"><span>Số điện thoại</span><strong>{{ invoice.phone }}</strong></div>
-              <div class="info-row"><span>Người nhận</span><strong>{{ invoice.recipient }}</strong></div>
-              <div class="info-row"><span>SĐT nhận hàng</span><strong>{{ invoice.recipientPhone }}</strong></div>
+              <div class="info-row"><span>Email</span><strong>{{ invoice.email || '—' }}</strong></div>
             </section>
 
             <section class="panel card shadow-sm info-panel shipping-panel">
               <h2><i class="bi bi-geo-alt"></i> Thông tin giao hàng</h2>
-              <div class="info-row">
-                <span>Đơn vị vận chuyển</span><strong>{{ invoice.shippingCarrier || '—' }}</strong>
-              </div>
-              <div class="info-row">
-                <span>Phí vận chuyển</span><strong :class="{ 'shipping-fee-zero': !isDeliveryOrder }">{{ money(invoice.shippingFee) }}</strong>
-              </div>
-              <div class="info-row">
-                <span>Người nhận</span><strong>{{ invoice.shippingRecipient || '—' }}</strong>
-              </div>
-              <div class="info-row">
-                <span>Số điện thoại</span><strong>{{ invoice.shippingRecipientPhone || '—' }}</strong>
-              </div>
               <div class="info-row address-row">
                 <span>Địa chỉ giao hàng</span><strong>{{ invoice.shippingAddress || '—' }}</strong>
+              </div>
+              <div class="info-row">
+                <span>Đơn vị vận chuyển</span><strong>{{ invoice.shippingCarrier || '—' }}</strong>
               </div>
               <div class="info-row">
                 <span>Ghi chú</span><strong>{{ invoice.shippingNote || '—' }}</strong>

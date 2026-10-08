@@ -3151,21 +3151,39 @@ WHERE NOT EXISTS (SELECT 1 FROM nhan_vien n WHERE n.ma_nhan_vien = v.ma
                                           OR n.email = v.email);
 
 /* ---------- 3. Khách hàng tạm ---------- */
-INSERT INTO khach_hang (ma_khach_hang, ten_tai_khoan, ten_khach_hang, so_dien_thoai, trang_thai, ngay_tao, ngay_cap_nhat)
-SELECT v.ma, LOWER(v.ma), v.ten, v.sdt, 1, SYSDATETIME(), SYSDATETIME()
+INSERT INTO khach_hang (ma_khach_hang, ten_tai_khoan, ten_khach_hang, email, so_dien_thoai, trang_thai, ngay_tao, ngay_cap_nhat)
+SELECT v.ma, LOWER(v.ma), v.ten, v.email, v.sdt, 1, SYSDATETIME(), SYSDATETIME()
 FROM (VALUES
-    ('KH001', N'Trần Minh Bảo Hoàng', '0909899999'),
-    ('KH002', N'Nguyễn Thị An', '0911111111'),
-    ('KH003', N'Lê Quốc Hưng', '0911111111'),
-    ('KH004', N'Phạm Thanh Tú', '0983214567'),
-    ('KH005', N'Võ Gia Hân', '0905882114'),
-    ('KH006', N'Đặng Hoài Nam', '0934625881'),
-    ('KH007', N'Bùi Mỹ Linh', '0972230456'),
-    ('KH008', N'Ngô Đức Anh', '0902718663'),
-    ('KH009', N'Đỗ Phương Vy', '0968440127'),
-    ('KH010', N'Mai Tiến Thành', '0918305902')
-     ) AS v(ma, ten, sdt)
+    ('KH001', N'Trần Minh Bảo Hoàng', 'tranminhbaohoang@smashstep.vn', '0909899999'),
+    ('KH002', N'Nguyễn Thị An', 'nguyenthian@smashstep.vn', '0911111111'),
+    ('KH003', N'Lê Quốc Hưng', 'lequochung@smashstep.vn', '0911111111'),
+    ('KH004', N'Phạm Thanh Tú', 'phamthanhtu@smashstep.vn', '0983214567'),
+    ('KH005', N'Võ Gia Hân', 'vogiahan@smashstep.vn', '0905882114'),
+    ('KH006', N'Đặng Hoài Nam', 'danghoainam@smashstep.vn', '0934625881'),
+    ('KH007', N'Bùi Mỹ Linh', 'buimylinh@smashstep.vn', '0972230456'),
+    ('KH008', N'Ngô Đức Anh', 'ngoducanh@smashstep.vn', '0902718663'),
+    ('KH009', N'Đỗ Phương Vy', 'dophuongvy@smashstep.vn', '0968440127'),
+    ('KH010', N'Mai Tiến Thành', 'maitienthanh@smashstep.vn', '0918305902')
+     ) AS v(ma, ten, email, sdt)
 WHERE NOT EXISTS (SELECT 1 FROM khach_hang k WHERE k.ma_khach_hang = v.ma OR k.ten_tai_khoan = LOWER(v.ma));
+
+-- Bổ sung email cho các khách hàng seed đã tồn tại từ lần chạy trước.
+UPDATE k
+SET k.email = v.email, k.ngay_cap_nhat = COALESCE(k.ngay_cap_nhat, SYSDATETIME())
+FROM khach_hang k
+JOIN (VALUES
+    ('KH001', 'tranminhbaohoang@smashstep.vn'),
+    ('KH002', 'nguyenthian@smashstep.vn'),
+    ('KH003', 'lequochung@smashstep.vn'),
+    ('KH004', 'phamthanhtu@smashstep.vn'),
+    ('KH005', 'vogiahan@smashstep.vn'),
+    ('KH006', 'danghoainam@smashstep.vn'),
+    ('KH007', 'buimylinh@smashstep.vn'),
+    ('KH008', 'ngoducanh@smashstep.vn'),
+    ('KH009', 'dophuongvy@smashstep.vn'),
+    ('KH010', 'maitienthanh@smashstep.vn')
+) v(ma, email) ON k.ma_khach_hang = v.ma
+WHERE k.email IS NULL OR LTRIM(RTRIM(k.email)) = '';
 
 /* ---------- 4. Hóa đơn ----------
    tong_tien  = tiền hàng
@@ -3243,13 +3261,18 @@ INSERT INTO @hd VALUES
     ('HD000067', 'KH009', 'NV002', 'CHUYEN_KHOAN', 1, 1, 2240000, 0, 30000, 5, N'Đỗ Phương Vy', '0968440127', N'Hà Nội', '2026-09-19T16:15:00');
 
 -- Chuẩn hóa dữ liệu hóa đơn cũ: chỉ còn 0=Tại quầy, 1=Trực tuyến.
--- Mọi giá trị loại đơn cũ ngoài 0/1 được đưa về Tại quầy + Giao hàng.
+-- Dữ liệu legacy loại 2 được coi là đơn tại quầy nhưng giao hàng, nên giữ hinh_thuc_nhan=1.
 UPDATE dbo.hoa_don
 SET loai_hoa_don = 0, hinh_thuc_nhan = 1, ngay_cap_nhat = COALESCE(ngay_cap_nhat, SYSDATETIME())
 WHERE loai_hoa_don IS NOT NULL AND loai_hoa_don NOT IN (0, 1);
 
 UPDATE dbo.hoa_don
-SET hinh_thuc_nhan = CASE WHEN loai_hoa_don = 0 THEN 0 WHEN loai_hoa_don = 1 THEN 1 ELSE 0 END
+SET hinh_thuc_nhan = CASE
+    WHEN loai_hoa_don = 0 AND hinh_thuc_nhan = 1 THEN 1
+    WHEN loai_hoa_don = 0 THEN 0
+    WHEN loai_hoa_don = 1 THEN 1
+    ELSE 0
+END
 WHERE hinh_thuc_nhan IS NULL OR hinh_thuc_nhan NOT IN (0, 1);
 
 IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_hoa_don_hinh_thuc_nhan')
@@ -3272,19 +3295,114 @@ LEFT JOIN nhan_vien nv ON nv.ma_nhan_vien = h.ma_nv
 LEFT JOIN phuong_thuc_thanh_toan pt ON pt.ma_phuong_thuc = h.ma_pt
 WHERE NOT EXISTS (SELECT 1 FROM hoa_don x WHERE x.ma_hoa_don = h.ma);
 
-/* ---------- 5. Lịch sử hóa đơn (dùng cho timeline ở ngày 3) ----------
-   Mỗi hóa đơn có 1 dòng "Tạo hóa đơn" (trạng thái 0) và, nếu đã đổi trạng thái, 1 dòng trạng thái hiện tại. */
-INSERT INTO lich_su_hoa_don (id_hoa_don, nguoi_tao, trang_thai, ghi_chu, ngay_tao)
-SELECT hd.id, hd.id_nhan_vien, 0, N'Tạo hóa đơn', hd.ngay_tao
-FROM hoa_don hd
-WHERE EXISTS (SELECT 1 FROM @NewInvoices ni WHERE ni.id=hd.id)
-  AND NOT EXISTS (SELECT 1 FROM lich_su_hoa_don l WHERE l.id_hoa_don = hd.id AND l.trang_thai = 0);
+/* ---------- 5. Làm sạch thông tin giao hàng + lịch sử hóa đơn ----------
+   Dữ liệu seed phải có thông tin giao hàng để FE chi tiết hóa đơn hiển thị đúng.
+   Lịch sử được tạo đủ theo từng trạng thái đã đi qua, không dùng DATEADD(HOUR, 2, ...). */
+UPDATE hd
+SET hd.don_vi_van_chuyen = CASE hd.ma_hoa_don
+        WHEN 'HD000080' THEN N'Giao Hàng Nhanh'
+        WHEN 'HD000079' THEN N'GHTK'
+        WHEN 'HD000078' THEN N'Viettel Post'
+        WHEN 'HD000076' THEN N'Giao Hàng Nhanh'
+        WHEN 'HD000075' THEN N'GHTK'
+        WHEN 'HD000073' THEN N'Viettel Post'
+        WHEN 'HD000072' THEN N'GHTK'
+        WHEN 'HD000070' THEN N'Giao Hàng Nhanh'
+        WHEN 'HD000069' THEN N'Viettel Post'
+        WHEN 'HD000067' THEN N'GHTK'
+        ELSE NULL
+    END,
+    hd.ghi_chu = CASE hd.ma_hoa_don
+        WHEN 'HD000080' THEN N'Giao trong giờ hành chính, gọi trước khi giao.'
+        WHEN 'HD000079' THEN N'Để hàng tại quầy bảo vệ nếu khách không nghe máy.'
+        WHEN 'HD000078' THEN N'Vui lòng giao đúng địa chỉ đã đăng ký.'
+        WHEN 'HD000076' THEN N'Đơn đã hủy theo yêu cầu của khách hàng.'
+        WHEN 'HD000075' THEN N'Giao trong giờ hành chính.'
+        WHEN 'HD000073' THEN N'Liên hệ khách hàng trước khi giao.'
+        WHEN 'HD000072' THEN N'Giao giờ hành chính, ưu tiên buổi chiều.'
+        WHEN 'HD000070' THEN N'Vui lòng kiểm tra hàng trước khi nhận.'
+        WHEN 'HD000069' THEN N'Đơn đã hủy theo yêu cầu của khách hàng.'
+        WHEN 'HD000067' THEN N'Giao giờ hành chính.'
+        ELSE NULL
+    END
+FROM dbo.hoa_don hd
+JOIN @hd seed ON seed.ma = hd.ma_hoa_don;
 
+;DECLARE @ExpectedHistory TABLE (
+    id_hoa_don BIGINT NOT NULL,
+    nguoi_tao BIGINT NULL,
+    trang_thai INT NOT NULL,
+    ghi_chu NVARCHAR(1000),
+    ngay_tao DATETIME2 NOT NULL,
+    PRIMARY KEY (id_hoa_don, trang_thai)
+);
+
+INSERT INTO @ExpectedHistory (id_hoa_don, nguoi_tao, trang_thai, ghi_chu, ngay_tao)
+SELECT
+    hd.id AS id_hoa_don,
+    hd.id_nhan_vien AS nguoi_tao,
+    s.trang_thai,
+    CASE s.trang_thai
+        WHEN 0 THEN N'Tạo hóa đơn'
+        WHEN 1 THEN N'Đã xác nhận đơn hàng'
+        WHEN 2 THEN N'Chuyển sang chờ giao hàng'
+        WHEN 3 THEN N'Bắt đầu giao hàng'
+        WHEN 4 THEN N'Giao hàng thành công'
+        WHEN 5 THEN N'Hoàn thành đơn hàng'
+        WHEN 6 THEN N'Hủy đơn hàng'
+        WHEN 7 THEN N'Hoàn tiền đơn hàng'
+        WHEN 8 THEN N'Hóa đơn chờ'
+    END AS ghi_chu,
+    CASE s.trang_thai
+        WHEN 0 THEN seed.ngay
+        WHEN 1 THEN DATEADD(MINUTE, 10, seed.ngay)
+        WHEN 2 THEN DATEADD(MINUTE, 30, seed.ngay)
+        WHEN 3 THEN DATEADD(MINUTE, 60, seed.ngay)
+        WHEN 4 THEN DATEADD(MINUTE, 90, seed.ngay)
+        WHEN 5 THEN DATEADD(MINUTE, CASE WHEN seed.hinh_nhan = 0 THEN 60 ELSE 120 END, seed.ngay)
+        WHEN 6 THEN DATEADD(MINUTE, 150, seed.ngay)
+        WHEN 7 THEN DATEADD(MINUTE, 180, seed.ngay)
+        WHEN 8 THEN DATEADD(MINUTE, 5, seed.ngay)
+    END AS ngay_tao
+FROM dbo.hoa_don hd
+JOIN @hd seed ON seed.ma = hd.ma_hoa_don
+CROSS APPLY (VALUES (0),(1),(2),(3),(4),(5),(6),(7),(8)) s(trang_thai)
+WHERE
+    -- Đơn tại quầy: chỉ 0 -> 1 -> 5; trạng thái hủy/hoàn tiền vẫn giữ lịch sử trước đó.
+    (seed.hinh_nhan = 0 AND (
+        s.trang_thai = 0 OR
+        (s.trang_thai = 1 AND seed.trang_thai IN (1,5,6,7)) OR
+        (s.trang_thai = 5 AND seed.trang_thai IN (5,7)) OR
+        (s.trang_thai IN (6,7) AND seed.trang_thai = s.trang_thai)
+    ))
+    OR
+    -- Đơn giao hàng: đầy đủ 0 -> 1 -> 2 -> 3 -> 4 -> 5 theo trạng thái hiện tại.
+    (seed.hinh_nhan = 1 AND (
+        (seed.trang_thai BETWEEN 0 AND 5 AND s.trang_thai BETWEEN 0 AND seed.trang_thai) OR
+        (seed.trang_thai = 6 AND s.trang_thai IN (0,1,2,6)) OR
+        (seed.trang_thai = 7 AND s.trang_thai IN (0,1,2,3,4,5,7))
+    ));
+
+-- Nếu lịch sử đã tồn tại từ lần seed trước, cập nhật lại ngày/ghi chú cho đúng dữ liệu chuẩn.
+UPDATE l
+SET l.nguoi_tao = e.nguoi_tao,
+    l.ghi_chu = e.ghi_chu,
+    l.ngay_tao = e.ngay_tao
+FROM lich_su_hoa_don l
+JOIN @ExpectedHistory e
+  ON e.id_hoa_don = l.id_hoa_don
+ AND e.trang_thai = l.trang_thai;
+
+-- Chỉ thêm những trạng thái còn thiếu, không tạo duplicate.
 INSERT INTO lich_su_hoa_don (id_hoa_don, nguoi_tao, trang_thai, ghi_chu, ngay_tao)
-SELECT hd.id, hd.id_nhan_vien, hd.trang_thai, N'Cập nhật trạng thái', DATEADD(HOUR, 2, hd.ngay_tao)
-FROM hoa_don hd
-WHERE EXISTS (SELECT 1 FROM @NewInvoices ni WHERE ni.id=hd.id) AND hd.trang_thai <> 0
-  AND NOT EXISTS (SELECT 1 FROM lich_su_hoa_don l WHERE l.id_hoa_don = hd.id AND l.trang_thai = hd.trang_thai);
+SELECT e.id_hoa_don, e.nguoi_tao, e.trang_thai, e.ghi_chu, e.ngay_tao
+FROM @ExpectedHistory e
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM lich_su_hoa_don l
+    WHERE l.id_hoa_don = e.id_hoa_don
+      AND l.trang_thai = e.trang_thai
+);
 
     INSERT INTO hoa_don_chi_tiet
         (id_hoa_don, id_san_pham_chi_tiet, so_luong,

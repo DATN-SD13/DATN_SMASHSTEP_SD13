@@ -25,6 +25,7 @@ public class HoaDonDetailDto {
     private Long idKhachHang;
     private String tenKhachHang;
     private String maKhachHang;
+    private String email;
     private String soDienThoai;
     private String diaChi;
 
@@ -86,6 +87,7 @@ public class HoaDonDetailDto {
                 .idKhachHang(khachHang != null ? khachHang.getId() : null)
                 .tenKhachHang(khachHang != null ? khachHang.getTenKhachHang() : hoaDon.getHoTenNguoiNhan())
                 .maKhachHang(khachHang != null ? khachHang.getMaKhachHang() : null)
+                .email(khachHang != null ? khachHang.getEmail() : null)
                 .soDienThoai(khachHang != null ? khachHang.getSoDienThoai() : hoaDon.getSoDienThoaiNguoiNhan())
                 .diaChi(hoaDon.getDiaChiGiaoHang())
                 .idNhanVien(nhanVien != null ? nhanVien.getId() : null)
