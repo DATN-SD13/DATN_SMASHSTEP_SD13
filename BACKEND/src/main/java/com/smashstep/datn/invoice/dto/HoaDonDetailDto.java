@@ -46,6 +46,9 @@ public class HoaDonDetailDto {
     private Integer maTrangThaiThanhToan;
     private String ngayThanhToan;
     private String donViVanChuyen;
+    private String maPhieuGiamGia;
+    private Integer loaiGiamGia;
+    private BigDecimal giaTriGiam;
 
     private BigDecimal tongTien;
     private BigDecimal tienGiamGia;
@@ -106,6 +109,9 @@ public class HoaDonDetailDto {
                 .maTrangThaiThanhToan(hoaDon.getNgayThanhToan() != null ? 1 : 0)
                 .ngayThanhToan(formatDateTime(hoaDon.getNgayThanhToan()))
                 .donViVanChuyen(hoaDon.getDonViVanChuyen())
+                .maPhieuGiamGia(hoaDon.getIdPhieuGiamGia() != null ? hoaDon.getIdPhieuGiamGia().getMaPhieuGiamGia() : null)
+                .loaiGiamGia(hoaDon.getIdPhieuGiamGia() != null ? hoaDon.getIdPhieuGiamGia().getLoaiGiamGia() : null)
+                .giaTriGiam(hoaDon.getIdPhieuGiamGia() != null ? zero(hoaDon.getIdPhieuGiamGia().getGiaTriGiam()) : BigDecimal.ZERO)
                 .tongTien(zero(hoaDon.getTongTien()))
                 .tienGiamGia(HoaDonAmounts.discount(hoaDon))
                 .phiVanChuyen(zero(hoaDon.getPhiVanChuyen()))

@@ -7,7 +7,13 @@ import { useRouter } from 'vue-router'
 import { invoiceService } from '../services/invoiceService'
 
 const router = useRouter()
-const query = ref({ code: '', from: '', to: '', type: 'all' })
+function today() {
+  const now = new Date()
+  const offset = now.getTimezoneOffset()
+  return new Date(now.getTime() - offset * 60000).toISOString().slice(0, 10)
+}
+const currentDate = today()
+const query = ref({ code: '', from: currentDate, to: currentDate, type: 'all' })
 const invoices = ref([])
 const loading = ref(false)
 const loadError = ref('')
@@ -137,7 +143,7 @@ async function search(filters) {
 }
 
 async function reset() {
-  query.value = { code: '', from: '', to: '', type: 'all' }
+  query.value = { code: '', from: currentDate, to: currentDate, type: 'all' }
   activeStatus.value = 'all'
   currentPage.value = 1
   await loadInvoices(1, true)

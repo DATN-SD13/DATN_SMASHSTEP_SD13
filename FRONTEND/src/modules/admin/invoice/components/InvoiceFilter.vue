@@ -2,7 +2,13 @@
 import { nextTick, onUnmounted, reactive, watch } from 'vue'
 
 const emit = defineEmits(['search', 'reset'])
-const filters = reactive({ code: '', from: '', to: '', type: 'all' })
+function today() {
+  const now = new Date()
+  const offset = now.getTimezoneOffset()
+  return new Date(now.getTime() - offset * 60000).toISOString().slice(0, 10)
+}
+const currentDate = today()
+const filters = reactive({ code: '', from: currentDate, to: currentDate, type: 'all' })
 
 let searchTimer = null
 let resetting = false
@@ -15,7 +21,7 @@ watch(filters, () => {
 function reset() {
   window.clearTimeout(searchTimer)
   resetting = true
-  Object.assign(filters, { code: '', from: '', to: '', type: 'all' })
+  Object.assign(filters, { code: '', from: currentDate, to: currentDate, type: 'all' })
   emit('reset')
   nextTick(() => { resetting = false })
 }

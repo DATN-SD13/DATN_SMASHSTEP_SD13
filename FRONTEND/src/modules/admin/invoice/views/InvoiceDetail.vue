@@ -151,6 +151,24 @@ function money(value) {
   return `${Number(value || 0).toLocaleString('vi-VN')} đ`
 }
 
+const hasVoucher = computed(() => Boolean(invoice.value?.voucherCode))
+
+const voucherLabel = computed(() => {
+  if (!invoice.value?.voucherCode) return ''
+  if (Number(invoice.value?.voucherType) === 1 && Number(invoice.value?.voucherValue) > 0) {
+    return `${Number(invoice.value.voucherValue).toLocaleString('vi-VN')}%`
+  }
+  return ''
+})
+
+const isGHN = computed(() => String(invoice.value?.shippingCarrier || '').trim().toUpperCase() === 'GHN' || String(invoice.value?.shippingCarrier || '').toUpperCase().includes('GIAO HÀNG NHANH'))
+
+const qrCodeUrl = computed(() => {
+  const code = invoice.value?.code || route.params.code || ''
+  const payload = `SMASHSTEP|${code}`
+  return `https://quickchart.io/qr?text=${encodeURIComponent(payload)}&size=140&margin=1`
+})
+
 function formatDate(value) {
   if (!value) return '—'
   return String(value)
@@ -190,6 +208,9 @@ function mapInvoice(data) {
     totalBeforeAdjustments: Number(data?.tongTien ?? 0),
     total: Number(data?.thanhTien ?? 0),
     discount: Number(data?.tienGiamGia ?? 0),
+    voucherCode: data?.maPhieuGiamGia || '',
+    voucherType: data?.loaiGiamGia == null ? null : Number(data.loaiGiamGia),
+    voucherValue: Number(data?.giaTriGiam ?? 0),
     shippingFee: Number(data?.phiVanChuyen ?? 0),
     status: data?.trangThai || status?.label || 'Không xác định',
     statusClass: data?.lopTrangThai || status?.key || 'unknown',
@@ -272,6 +293,7 @@ async function loadInvoice() {
       throw new Error(response?.message || 'Không thể tải chi tiết hóa đơn')
     }
     invoice.value = mapInvoice(response.data)
+    selectedStatus.value = Number(invoice.value.statusCode)
     await loadProductImages()
   } catch (error) {
     if (version !== invoiceLoadVersion) return
@@ -413,7 +435,7 @@ async function saveStatus() {
 
     if (response.data) {
       invoice.value = mapInvoice(response.data)
-    await loadProductImages()
+      await loadProductImages()
     } else {
       await loadInvoice()
     }
@@ -423,6 +445,12 @@ async function saveStatus() {
     editOrderTab.value = 'order'
     const message = response.message || 'Cập nhật trạng thái hóa đơn thành công'
     showLocalToast('success', 'Cập nhật thành công', message)
+
+    // Giữ yêu cầu cũ: khi chuyển sang Đã xác nhận thì mở hộp thoại in.
+    if (newCode === 1 && currentCode !== 1) {
+      await new Promise(resolve => window.setTimeout(resolve, 150))
+      printInvoice()
+    }
   } catch (error) {
     const message = error?.response?.data?.message || error?.message || 'Không thể cập nhật trạng thái hóa đơn.'
     showLocalToast('error', 'Cập nhật thất bại', message)
@@ -430,6 +458,7 @@ async function saveStatus() {
     updatingStatus.value = false
   }
 }
+
 
 async function openHistoryModal() {
   if (loadingHistory.value || !invoice.value) return
@@ -575,17 +604,6 @@ onUnmounted(() => {
             </div>
 
             <div class="timeline-actions">
-              <!-- <button
-                v-if="canCancelOrder"
-                class="cancel-order-button btn btn-danger"
-                type="button"
-                :disabled="confirmSubmitting || updatingStatus"
-                @click="openCancelModal"
-              >
-                <i class="bi bi-x-circle"></i>
-                Hủy đơn hàng
-              </button> -->
-
               <button
                 class="soft-button btn btn-outline-primary btn-sm"
                 type="button"
@@ -627,8 +645,22 @@ onUnmounted(() => {
           <section class="panel card shadow-sm payment-panel">
             <h2><i class="bi bi-calendar2-check"></i> Tổng kết thanh toán</h2>
             <div class="amount-row"><span>Tổng tiền hàng</span><strong>{{ money(subtotal) }}</strong></div>
-            <div class="amount-row"><span>Giảm giá</span><strong class="discount">− {{ money(invoice.discount) }}</strong></div>
-            <div v-if="isDeliveryOrder" class="amount-row"><span>Phí vận chuyển</span><strong>+ {{ money(invoice.shippingFee) }}</strong></div>
+            <div class="amount-row discount-row">
+              <span>Giảm giá</span>
+              <div class="discount-value">
+                <strong class="discount">− {{ money(invoice.discount) }}</strong>
+                <span v-if="hasVoucher" class="voucher-code">{{ invoice.voucherCode }}</span>
+                <span v-if="voucherLabel" class="voucher-percent">{{ voucherLabel }}</span>
+              </div>
+            </div>
+            <div v-if="isDeliveryOrder" class="amount-row">
+              <span>Phí vận chuyển</span>
+              <strong class="shipping-fee-value">
+                + {{ money(invoice.shippingFee) }}
+                <span v-if="isGHN" class="ghn-badge" title="Giao Hàng Nhanh"><i class="bi bi-box-seam-fill"></i> GHN</span>
+                <span v-else-if="invoice.shippingCarrier" class="carrier-badge">{{ invoice.shippingCarrier }}</span>
+              </strong>
+            </div>
             <div class="grand-total"><span>TỔNG TIỀN</span><strong>{{ money(invoice.total) }}</strong></div>
           </section>
 
@@ -802,7 +834,13 @@ onUnmounted(() => {
             <div class="print-brand">SMASHSTEP</div>
             <div class="print-subtitle">SPORTS SHOES</div>
           </div>
-          <div class="print-title">HÓA ĐƠN BÁN HÀNG</div>
+          <div class="print-header-right">
+            <div class="print-title">HÓA ĐƠN BÁN HÀNG</div>
+            <div class="print-qr">
+              <img :src="qrCodeUrl" :alt="`Mã QR ${invoice.code}`" />
+              <span>Quét mã: {{ invoice.code }}</span>
+            </div>
+          </div>
         </div>
 
         <div class="print-meta-grid">
@@ -832,13 +870,18 @@ onUnmounted(() => {
 
         <div class="print-summary">
           <div><span>Tổng tiền hàng</span><strong>{{ money(subtotal) }}</strong></div>
-          <div><span>Giảm giá</span><strong>{{ money(invoice.discount) }}</strong></div>
-          <div><span>Phí vận chuyển</span><strong>{{ money(invoice.shippingFee) }}</strong></div>
+          <div>
+            <span>Giảm giá</span>
+            <strong>
+              {{ money(invoice.discount) }}
+              <small v-if="hasVoucher">({{ invoice.voucherCode }}<template v-if="voucherLabel"> · {{ voucherLabel }}</template>)</small>
+            </strong>
+          </div>
+          <div><span>Phí vận chuyển</span><strong>{{ money(invoice.shippingFee) }}<small v-if="isGHN"> · GHN</small></strong></div>
           <div class="print-grand-total"><span>TỔNG THANH TOÁN</span><strong>{{ money(invoice.total) }}</strong></div>
         </div>
 
         <div class="print-payment">
-          <div><span>Phương thức thanh toán:</span> {{ invoice.payment }}</div>
           <div><span>Trạng thái thanh toán:</span> {{ invoice.paymentStatus }}</div>
           <div v-if="invoice.paymentDate"><span>Ngày thanh toán:</span> {{ invoice.paymentDate }}</div>
         </div>
@@ -1133,7 +1176,7 @@ onUnmounted(() => {
 .shipping-panel .info-row:last-child{border-bottom:0}.shipping-fee-zero{color:#1689cf!important}
 
 .products-panel{padding:19px 0 0}.products-panel h2{padding:0 19px}.product-table-wrap{overflow-x:auto}.product-table{width:100%;border-collapse:collapse;min-width:650px}.product-table thead{background:#edf5fa}.product-table th{height:39px;padding:0 13px;text-align:left;font-size:10px;color:#607b8a;font-weight:700;white-space:nowrap}.product-table td{padding:12px 13px;border-bottom:1px solid #edf2f5;color:#5a707b;font-size:11px;white-space:nowrap}.product-name{display:flex;align-items:center;gap:9px}.product-name strong{color:#344e5a;font-size:11px}.product-thumb{width:46px;height:46px;border-radius:8px;background:#f3f8fb;color:#1689cf;display:grid;place-items:center;font-size:16px;overflow:hidden;border:1px solid #e3edf2}.product-thumb img{width:100%;height:100%;display:block;object-fit:cover}.product-total{color:#1681c3!important;font-weight:700}.empty-products{text-align:center!important;color:#91a0a8!important}
-.payment-panel h2,.payment-history h2,.invoice-meta h2{margin-bottom:18px}.amount-row{display:flex;justify-content:space-between;gap:12px;margin:0 0 13px;font-size:11px}.amount-row span{color:#7e909a}.amount-row strong{color:#334c58;font-weight:650;white-space:nowrap}.amount-row .discount{color:#16966f}.grand-total{border-top:1px solid #e5edf1;margin-top:17px;padding-top:15px;display:flex;justify-content:space-between;gap:10px;align-items:center}.grand-total span{font-size:12px;color:#55707d;font-weight:650}.grand-total strong{font-size:18px;color:#1689cf}
+.payment-panel h2,.payment-history h2,.invoice-meta h2{margin-bottom:18px}.amount-row{display:flex;justify-content:space-between;gap:12px;margin:0 0 13px;font-size:11px}.amount-row span{color:#7e909a}.amount-row strong{color:#334c58;font-weight:650;white-space:nowrap}.amount-row .discount{color:#16966f}.discount-row{align-items:center}.discount-value{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex-wrap:wrap}.voucher-code{display:inline-flex;align-items:center;padding:2px 6px;border-radius:4px;background:#fff0df;color:#c96a16;font-size:9px;font-weight:800;line-height:1.2}.voucher-percent{display:inline-flex;align-items:center;padding:2px 5px;border-radius:4px;background:#f07c22;color:#fff;font-size:9px;font-weight:800;line-height:1.2}.shipping-fee-value{display:inline-flex;align-items:center;gap:7px}.ghn-badge{display:inline-flex;align-items:center;gap:2px;color:#ef6c20;font-size:10px;font-weight:900;letter-spacing:.2px;white-space:nowrap}.ghn-badge i{font-size:10px;color:#1675c1}.carrier-badge{display:inline-flex;align-items:center;padding:2px 5px;border-radius:4px;background:#eef5f8;color:#486673;font-size:9px;font-weight:700;white-space:nowrap}.grand-total{border-top:1px solid #e5edf1;margin-top:17px;padding-top:15px;display:flex;justify-content:space-between;gap:10px;align-items:center}.grand-total span{font-size:12px;color:#55707d;font-weight:650}.grand-total strong{font-size:18px;color:#1689cf}
 .payment-history{min-height:245px;display:flex;flex-direction:column}.payment-method{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.payment-method strong{display:block;color:#3b5662;font-size:11px;font-weight:650;line-height:1.5}.payment-method small{display:block;color:#91a0a8;font-size:10px;margin-top:7px}.paid-tag{color:#168b68;font-size:10px;font-weight:650;white-space:nowrap}.paid-amount{text-align:right;color:#344e5a;font-size:13px;margin-top:10px}.payment-history-actions{display:flex;flex-direction:column;gap:8px;margin-top:auto}.payment-history-actions.single-action{display:flex;flex-direction:column}.payment-action-button{height:42px!important;width:100%!important;min-height:42px!important;box-sizing:border-box!important;display:flex!important;align-items:center!important;justify-content:center!important;padding:0 12px!important}.print-button{height:42px;width:100%;margin-top:0;border:1px solid #1689cf;border-radius:10px;background:#1689cf;color:#fff;font-size:12px;font-weight:700;cursor:pointer;--bs-btn-bg:#1689cf;--bs-btn-border-color:#1689cf;--bs-btn-hover-bg:#0d72b0;--bs-btn-hover-border-color:#0d72b0}.print-button:hover{background:#0d72b0;color:#fff}
 .edit-order-button{height:42px!important;width:100%!important;min-height:42px!important;margin-top:0;box-sizing:border-box!important;background:#1689cf;border-color:#1689cf;color:#fff;font-size:12px;font-weight:700;border-radius:10px}
 .edit-order-button:hover{background:#0d72b0;border-color:#0d72b0;color:#fff}.invoice-meta{padding-bottom:10px}.status-pill{display:inline-block;border-radius:13px;padding:5px 9px;background:#e7f3fc;color:#1679b5;font-size:10px}.status-pill.done,.status-pill.delivered{background:#e8f7ef;color:#168455}.status-pill.waiting{background:#fff4dd;color:#a86a08}.status-pill.cancel{background:#ffebed;color:#c64f5b}.status-pill.shipping{background:#e6f4ff;color:#1678b8}
@@ -1146,7 +1189,7 @@ onUnmounted(() => {
 .history-modal-dialog{max-width:760px}.history-modal{max-height:85vh}.history-body{overflow-y:auto;max-height:65vh}.history-loading,.history-empty{min-height:180px;display:flex;align-items:center;justify-content:center;color:#8798a1;font-size:12px}.history-empty{flex-direction:column;gap:8px}.history-empty i{font-size:30px;color:#c3d0d6}.history-empty p{margin:0}.history-timeline{position:relative;padding:5px 4px 5px 42px}.history-timeline:before{content:"";position:absolute;left:13px;top:12px;bottom:12px;width:2px;background:#dce9ef}.history-item{position:relative;padding-bottom:16px}.history-item:last-child{padding-bottom:0}.history-dot{position:absolute;left:-42px;top:2px;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:#e8f5fb;color:#1689cf;border:1px solid #cde8f5;z-index:1;font-size:12px}.history-card{border:1px solid #e5edf1;border-radius:11px;padding:13px 14px;background:#fff}.history-card-top{display:flex;align-items:center;justify-content:space-between;gap:12px}.history-card-top strong{font-size:12px;color:#334d59}.history-card-top span{font-size:10px;color:#93a1a8;white-space:nowrap}.history-meta{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:7px}.history-meta span{font-size:10px;color:#7c909a}.history-meta i{color:#1689cf;margin-right:3px}.history-card p{margin:8px 0 0;color:#526a76;font-size:11px;line-height:1.5}
 @media(max-width:1050px){.detail-layout{grid-template-columns:minmax(0,1.4fr) minmax(260px,.9fr)}.info-grid{grid-template-columns:1fr}.timeline{grid-template-columns:repeat(3,minmax(0,1fr));row-gap:20px}.timeline:before{display:none}}
 @media(max-width:760px){.page-title-actions{width:100%;justify-content:flex-end}.page-title-actions .back-list-button{flex:1}.invoice-toast{left:12px;right:12px;top:78px;min-width:0;max-width:none}.detail-page{padding:15px}.detail-layout{grid-template-columns:1fr}.info-grid{grid-template-columns:1fr}.panel{padding:16px}.timeline{grid-template-columns:repeat(3,minmax(0,1fr));row-gap:18px}.step-label{font-size:10px}.back-link{font-size:13px}.status-info-grid{grid-template-columns:1fr}.customer-fields{grid-template-columns:1fr}.history-modal-dialog{margin:10px}.history-body{max-height:65vh}.timeline-actions{align-items:center;justify-content:flex-end}.soft-button,.edit-order-button,.cancel-order-button{width:auto}.payment-history-actions{display:flex;flex-direction:column}}
-.cancel-order-button{min-width:0;height:34px;border-radius:8px;padding:0 11px;font-size:11px;font-weight:700;background:#dc3545;border-color:#dc3545}.cancel-order-button:hover{background:#bb2d3b;border-color:#bb2d3b}.cancel-confirm-icon{border-color:#dc3545;color:#dc3545}.cancel-warning{margin:8px 0 0;color:#c64f5b;font-size:11px}.cancel-confirm-button{min-width:120px}.print-invoice{display:none}.print-header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1689cf;padding-bottom:14px;margin-bottom:18px}.print-brand{font-size:22px;font-weight:800;letter-spacing:1px}.print-subtitle{font-size:9px;letter-spacing:2px;margin-top:3px}.print-title{font-size:18px;font-weight:800}.print-meta-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px 28px;margin-bottom:20px}.print-meta-grid div{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid #ddd;padding-bottom:5px;font-size:10px}.print-meta-grid span{color:#666}.print-product-table{width:100%;border-collapse:collapse;font-size:10px}.print-product-table th,.print-product-table td{border:1px solid #ccc;padding:7px 6px;text-align:left}.print-product-table th{font-weight:700;background:#f5f5f5}.print-summary{width:300px;margin:18px 0 0 auto;font-size:10px}.print-summary div{display:flex;justify-content:space-between;padding:5px 0}.print-grand-total{border-top:2px solid #222;margin-top:5px;padding-top:9px!important;font-size:13px;font-weight:800}.print-payment{margin-top:20px;padding-top:10px;border-top:1px solid #ddd;font-size:10px}.print-payment div{margin:4px 0}.print-payment span{font-weight:700}.print-shipping{margin-top:20px;padding-top:10px;border-top:1px solid #ddd;font-size:10px}.print-shipping h3{font-size:12px;margin:0 0 8px;font-weight:800}.print-shipping div{margin:4px 0}.print-shipping span{font-weight:700}.print-footer{text-align:center;margin-top:28px;font-size:10px;font-style:italic}
+.cancel-order-button{min-width:0;height:34px;border-radius:8px;padding:0 11px;font-size:11px;font-weight:700;background:#dc3545;border-color:#dc3545}.cancel-order-button:hover{background:#bb2d3b;border-color:#bb2d3b}.cancel-confirm-icon{border-color:#dc3545;color:#dc3545}.cancel-warning{margin:8px 0 0;color:#c64f5b;font-size:11px}.cancel-confirm-button{min-width:120px}.print-invoice{display:none}.print-header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1689cf;padding-bottom:14px;margin-bottom:18px}.print-brand{font-size:22px;font-weight:800;letter-spacing:1px}.print-subtitle{font-size:9px;letter-spacing:2px;margin-top:3px}.print-header-right{display:flex;align-items:flex-start;gap:18px}.print-title{font-size:18px;font-weight:800;padding-top:4px}.print-qr{display:flex;flex-direction:column;align-items:center;gap:3px}.print-qr img{width:82px;height:82px;display:block;object-fit:contain}.print-qr span{font-size:7px;color:#666;white-space:nowrap}.print-meta-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px 28px;margin-bottom:20px}.print-meta-grid div{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid #ddd;padding-bottom:5px;font-size:10px}.print-meta-grid span{color:#666}.print-product-table{width:100%;border-collapse:collapse;font-size:10px}.print-product-table th,.print-product-table td{border:1px solid #ccc;padding:7px 6px;text-align:left}.print-product-table th{font-weight:700;background:#f5f5f5}.print-summary{width:300px;margin:18px 0 0 auto;font-size:10px}.print-summary div{display:flex;justify-content:space-between;padding:5px 0}.print-grand-total{border-top:2px solid #222;margin-top:5px;padding-top:9px!important;font-size:13px;font-weight:800}.print-payment{margin-top:20px;padding-top:10px;border-top:1px solid #ddd;font-size:10px}.print-payment div{margin:4px 0}.print-payment span{font-weight:700}.print-shipping{margin-top:20px;padding-top:10px;border-top:1px solid #ddd;font-size:10px}.print-shipping h3{font-size:12px;margin:0 0 8px;font-weight:800}.print-shipping div{margin:4px 0}.print-shipping span{font-weight:700}.print-footer{text-align:center;margin-top:28px;font-size:10px;font-style:italic}
 .error-panel {
   display: flex;
   align-items: flex-start;
@@ -1172,6 +1215,10 @@ onUnmounted(() => {
 
 @media print{.detail-page{padding:0}.back-list-button,.timeline-actions,.print-button{display:none}.detail-layout{grid-template-columns:1fr 1fr}.panel{box-shadow:none;break-inside:avoid}}
 
+ .status-selector{display:flex;align-items:flex-end;gap:8px;margin-left:auto}
+.status-selector label{display:block;margin-bottom:6px;color:#718690;font-size:10px;font-weight:700;white-space:nowrap}
+.status-selector .form-select{width:190px;min-height:34px;border-color:#d7e5ec;border-radius:8px;font-size:11px;box-shadow:none}
+.status-selector .form-select:focus{border-color:#1689cf;box-shadow:0 0 0 .2rem rgba(22,137,207,.12)}
 .payment-status-row { display:flex; justify-content:space-between; gap:16px; align-items:center; padding:12px 0; border-top:1px solid #edf2f7; }
 .payment-status { display:inline-flex; align-items:center; gap:6px; }
 .payment-status.paid { color:#16a34a; }
