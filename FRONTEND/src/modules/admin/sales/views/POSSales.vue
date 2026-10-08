@@ -341,6 +341,10 @@ onBeforeUnmount(() => { ++quoteVersion; ++catalogVersion; ++customerVersion; cle
             <option :value="null">Khách lẻ</option>
             <option v-for="c in customers" :key="c.id" :value="c.id">{{ c.name || '—' }} · {{ c.phone || c.code }}</option>
           </select>
+          <div v-if="order" class="ss-hint" style="margin-top:8px">
+            <template v-if="order.customerId == null">Khách vãng lai → <b>Nhận tại quầy</b></template>
+            <template v-else>Đã chọn khách hàng → <b>Giao hàng</b></template>
+          </div>
           <label class="ss-label">Nhân viên bán hàng</label>
           <select class="ss-select" v-model="employeeId" :disabled="locked" aria-label="Nhân viên bán hàng">
             <option v-for="e in employees" :key="e.id" :value="e.id">{{ e.name || e.code }}</option>

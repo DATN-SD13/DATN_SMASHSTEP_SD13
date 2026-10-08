@@ -78,23 +78,36 @@ public class SalesService {
         }
         // Serialize request IDs without adding a table or relying on optional DB unique indexes.
         lockCheckout();
-        String invoiceCode = "POS-" + request.getRequestId().toLowerCase(Locale.ROOT);
-        List<HoaDon> existing = em.createQuery("select h from HoaDon h where h.maHoaDon = :code", HoaDon.class)
-                .setParameter("code", invoiceCode).setMaxResults(1).getResultList();
-        if (!existing.isEmpty()) {
-            HoaDon invoice = existing.get(0);
+
+        // requestId chỉ dùng để chống checkout trùng; không dùng làm mã hóa đơn.
+        // Mã hóa đơn nghiệp vụ luôn có dạng HD + 6 chữ số, ví dụ HD000080.
+        List<LichSuThanhToan> retryPayments = em.createQuery(
+                "select p from LichSuThanhToan p join fetch p.idHoaDon h where p.maGiaoDich = :requestId order by p.id desc",
+                LichSuThanhToan.class)
+                .setParameter("requestId", request.getRequestId()).setMaxResults(1).getResultList();
+        if (!retryPayments.isEmpty()) {
+            HoaDon invoice = retryPayments.get(0).getIdHoaDon();
             if (!Integer.valueOf(5).equals(invoice.getTrangThai())) throw AppException.conflict("Hóa đơn đã được xử lý");
             verifyRetry(invoice, request);
             BigDecimal discount = amount(invoice.getTongTien()).subtract(amount(invoice.getThanhTien())).max(ZERO);
-            return new Receipt(invoice.getId(), invoiceCode, invoice.getTongTien(), discount,
+            return new Receipt(invoice.getId(), invoice.getMaHoaDon(), invoice.getTongTien(), discount,
                     invoice.getThanhTien(), amount(request.getPaidAmount()).subtract(invoice.getThanhTien()).max(ZERO));
         }
+
+        String invoiceCode = nextInvoiceCode();
         Prepared data = prepare(request, true);
         BigDecimal paid = amount(request.getPaidAmount());
         if (paid.compareTo(data.quote().total()) < 0) throw AppException.badRequest("Số tiền thanh toán chưa đủ");
         LocalDateTime now = LocalDateTime.now();
         HoaDon invoice = new HoaDon();
-        invoice.setMaHoaDon(invoiceCode); invoice.setLoaiHoaDon(0); invoice.setTrangThai(5);
+        invoice.setMaHoaDon(invoiceCode);
+        invoice.setLoaiHoaDon(0);
+        // Nghiệp vụ bán tại quầy:
+        // - Không chọn khách hàng => khách vãng lai, nhận ngay tại quầy, hoàn thành ngay.
+        // - Có chọn khách hàng => tạo đơn giao hàng, chờ xác nhận rồi mới đi tiếp luồng giao hàng.
+        boolean walkInCustomer = data.customer() == null;
+        invoice.setHinhThucNhan(walkInCustomer ? 0 : 1);
+        invoice.setTrangThai(walkInCustomer ? 5 : 0);
         invoice.setIdKhachHang(data.customer()); invoice.setIdNhanVien(data.employee());
         invoice.setIdPhuongThucThanhToan(data.payment()); invoice.setIdPhieuGiamGia(data.voucher());
         invoice.setTongTien(data.quote().subtotal()); invoice.setPhiVanChuyen(ZERO);
@@ -116,13 +129,28 @@ public class SalesService {
         }
         LichSuThanhToan payment = new LichSuThanhToan(); payment.setIdHoaDon(invoice);
         payment.setIdPhuongThucThanhToan(data.payment()); payment.setSoTien(data.quote().total());
-        payment.setMaGiaoDich(invoiceCode); payment.setThoiGian(now); payment.setTrangThai(1);
+        payment.setMaGiaoDich(request.getRequestId()); payment.setThoiGian(now); payment.setTrangThai(1);
         payment.setMoTa("Thanh toán tại quầy - " + data.payment().getTenPhuongThuc()); em.persist(payment);
         LichSuHoaDon history = new LichSuHoaDon(); history.setIdHoaDon(invoice); history.setNguoiTao(data.employee().getId());
-        history.setTrangThai(5); history.setNgayTao(now); history.setGhiChu("Hoàn thành thanh toán tại quầy"); em.persist(history);
+        history.setTrangThai(walkInCustomer ? 5 : 0);
+        history.setNgayTao(now);
+        history.setGhiChu(walkInCustomer
+                ? "Khách vãng lai - nhận hàng tại quầy"
+                : "Khách hàng đã chọn - tạo đơn giao hàng tại quầy");
+        em.persist(history);
         em.flush();
         return new Receipt(invoice.getId(), invoiceCode, data.quote().subtotal(), data.quote().discount(),
                 data.quote().total(), paid.subtract(data.quote().total()));
+    }
+
+    private String nextInvoiceCode() {
+        Number maxNumber = (Number) em.createNativeQuery(
+                "select max(try_convert(bigint, substring(ma_hoa_don, 3, len(ma_hoa_don) - 2))) "
+                        + "from hoa_don where ma_hoa_don like 'HD%' and len(ma_hoa_don) = 8")
+                .getSingleResult();
+        long next = maxNumber == null ? 1L : maxNumber.longValue() + 1L;
+        if (next > 999999L) throw AppException.conflict("Đã vượt giới hạn mã hóa đơn HD999999");
+        return String.format(Locale.ROOT, "HD%06d", next);
     }
 
     private Prepared prepare(SalesRequest request, boolean lock) {
@@ -249,7 +277,7 @@ public class SalesService {
                 && Objects.equals(invoice.getIdNhanVien().getId(), request.getEmployeeId())
                 && Objects.equals(invoice.getIdPhuongThucThanhToan().getId(), request.getPaymentMethodId())
                 && Objects.equals(invoice.getIdPhieuGiamGia() == null ? "" : invoice.getIdPhieuGiamGia().getMaPhieuGiamGia().toLowerCase(Locale.ROOT),
-                    request.getVoucherCode() == null ? "" : request.getVoucherCode().trim().toLowerCase(Locale.ROOT))
+                request.getVoucherCode() == null ? "" : request.getVoucherCode().trim().toLowerCase(Locale.ROOT))
                 && Objects.equals(invoice.getGhiChu(), request.getNote()) && details.size() == request.getItems().size()
                 && request.getItems().stream().map(SalesRequest.Item::getVariantId).distinct().count() == details.size();
         for (SalesRequest.Item item : request.getItems()) {

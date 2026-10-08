@@ -1395,6 +1395,8 @@ BEGIN TRY
 
     IF COL_LENGTH(N'dbo.hoa_don', N'trang_thai') IS NULL
         EXEC sys.sp_executesql N'ALTER TABLE dbo.[hoa_don] ADD [trang_thai] INT NULL;';
+    IF COL_LENGTH(N'dbo.hoa_don', N'hinh_thuc_nhan') IS NULL
+        EXEC sys.sp_executesql N'ALTER TABLE dbo.[hoa_don] ADD [hinh_thuc_nhan] TINYINT NULL;';
 
     IF EXISTS (SELECT 1 FROM sys.columns c WHERE c.object_id=OBJECT_ID(N'dbo.hoa_don') AND c.name=N'id' AND (TYPE_NAME(c.user_type_id) <> N'bigint' OR c.is_identity <> 1))
         THROW 51002, N'Incompatible type: hoa_don.id. No automatic data conversion.', 1;
@@ -1455,6 +1457,8 @@ BEGIN TRY
 
     IF EXISTS (SELECT 1 FROM sys.columns c WHERE c.object_id=OBJECT_ID(N'dbo.hoa_don') AND c.name=N'trang_thai' AND (TYPE_NAME(c.user_type_id) <> N'int'))
         THROW 51002, N'Incompatible type: hoa_don.trang_thai. No automatic data conversion.', 1;
+    IF EXISTS (SELECT 1 FROM sys.columns c WHERE c.object_id=OBJECT_ID(N'dbo.hoa_don') AND c.name=N'hinh_thuc_nhan' AND (TYPE_NAME(c.user_type_id) <> N'tinyint'))
+        THROW 51002, N'Incompatible type: hoa_don.hinh_thuc_nhan. No automatic data conversion.', 1;
 
     IF NOT EXISTS (SELECT 1 FROM sys.key_constraints WHERE parent_object_id=OBJECT_ID(N'dbo.hoa_don') AND type='PK')
         EXEC sys.sp_executesql N'ALTER TABLE dbo.[hoa_don] ADD CONSTRAINT [PK_hoa_don] PRIMARY KEY ([id]);';
@@ -3217,34 +3221,47 @@ WHERE NOT EXISTS (SELECT 1 FROM khach_hang k WHERE k.ma_khach_hang = v.ma OR k.t
 
 DECLARE @hd TABLE (
     ma VARCHAR(50), ma_kh VARCHAR(50), ma_nv VARCHAR(50), ma_pt VARCHAR(50),
-    loai INT, tong DECIMAL(18,2), giam DECIMAL(18,2), ship DECIMAL(18,2), trang_thai INT,
+    loai INT, hinh_nhan TINYINT, tong DECIMAL(18,2), giam DECIMAL(18,2), ship DECIMAL(18,2), trang_thai INT,
     nguoi_nhan NVARCHAR(255), sdt VARCHAR(20), dia_chi NVARCHAR(500), ngay DATETIME2
 );
 
 INSERT INTO @hd VALUES
-    ('HD000081', 'KH001', 'NV002', 'TIEN_MAT', 0, 2200000, 0, 0, 5, N'Trần Minh Bảo Hoàng', '0909899999', N'123 Nguyễn Trãi, Thanh Xuân, Hà Nội', '2026-09-26T09:15:00'),
-    ('HD000080', 'KH002', 'NV001', 'CHUYEN_KHOAN', 1, 2370000, 100000, 30000, 5, N'Nguyễn Thị An', '0911111111', N'Hai Bà Trưng, Hà Nội', '2026-09-26T10:40:00'),
-    ('HD000079', 'KH003', 'NV001', 'COD', 2, 2070000, 0, 30000, 3, N'Lê Quốc Hưng', '0911111111', N'Cầu Giấy, Hà Nội', '2026-09-25T14:05:00'),
-    ('HD000078', 'KH004', 'NV002', 'CHUYEN_KHOAN', 1, 1920000, 100000, 30000, 4, N'Phạm Thanh Tú', '0983214567', N'Nam Từ Liêm, Hà Nội', '2026-09-25T16:20:00'),
-    ('HD000077', 'KH005', 'NV003', 'TIEN_MAT', 0, 3420000, 0, 0, 0, N'Võ Gia Hân', '0905882114', N'Hà Nội', '2026-09-24T08:30:00'),
-    ('HD000076', 'KH006', 'NV002', 'CHUYEN_KHOAN', 1, 1260000, 0, 30000, 6, N'Đặng Hoài Nam', '0934625881', N'Hà Nội', '2026-09-24T11:10:00'),
-    ('HD000075', 'KH007', 'NV003', 'COD', 2, 2620000, 0, 30000, 4, N'Bùi Mỹ Linh', '0972230456', N'Thanh Xuân, Hà Nội', '2026-09-23T15:45:00'),
-    ('HD000074', 'KH008', 'NV001', 'THE', 0, 1760000, 0, 0, 5, N'Ngô Đức Anh', '0902718663', N'Hà Nội', '2026-09-23T09:50:00'),
-    ('HD000073', 'KH009', 'NV003', 'CHUYEN_KHOAN', 1, 2950000, 0, 30000, 0, N'Đỗ Phương Vy', '0968440127', N'Hà Nội', '2026-09-22T13:25:00'),
-    ('HD000072', 'KH010', 'NV002', 'COD', 2, 4120000, 0, 30000, 3, N'Mai Tiến Thành', '0918305902', N'Hoàng Mai, Hà Nội', '2026-09-22T17:00:00'),
-    ('HD000071', 'KH001', 'NV001', 'TIEN_MAT', 0, 1590000, 0, 0, 5, N'Trần Minh Bảo Hoàng', '0909899999', N'123 Nguyễn Trãi, Thanh Xuân, Hà Nội', '2026-09-21T10:00:00'),
-    ('HD000070', 'KH003', 'NV002', 'CHUYEN_KHOAN', 1, 2890000, 150000, 30000, 5, N'Lê Quốc Hưng', '0911111111', N'Cầu Giấy, Hà Nội', '2026-09-21T15:30:00'),
-    ('HD000069', 'KH005', 'NV003', 'COD', 2, 1980000, 0, 30000, 6, N'Võ Gia Hân', '0905882114', N'Hà Nội', '2026-09-20T09:10:00'),
-    ('HD000068', 'KH007', 'NV001', 'THE', 0, 3150000, 0, 0, 5, N'Bùi Mỹ Linh', '0972230456', N'Thanh Xuân, Hà Nội', '2026-09-20T12:45:00'),
-    ('HD000067', 'KH009', 'NV002', 'CHUYEN_KHOAN', 1, 2240000, 0, 30000, 5, N'Đỗ Phương Vy', '0968440127', N'Hà Nội', '2026-09-19T16:15:00');
+    ('HD000081', 'KH001', 'NV002', 'TIEN_MAT', 0, 0, 2200000, 0, 0, 5, N'Trần Minh Bảo Hoàng', '0909899999', N'123 Nguyễn Trãi, Thanh Xuân, Hà Nội', '2026-09-26T09:15:00'),
+    ('HD000080', 'KH002', 'NV001', 'CHUYEN_KHOAN', 1, 1, 2370000, 100000, 30000, 5, N'Nguyễn Thị An', '0911111111', N'Hai Bà Trưng, Hà Nội', '2026-09-26T10:40:00'),
+    ('HD000079', 'KH003', 'NV001', 'COD', 0, 1, 2070000, 0, 30000, 3, N'Lê Quốc Hưng', '0911111111', N'Cầu Giấy, Hà Nội', '2026-09-25T14:05:00'),
+    ('HD000078', 'KH004', 'NV002', 'CHUYEN_KHOAN', 1, 1, 1920000, 100000, 30000, 4, N'Phạm Thanh Tú', '0983214567', N'Nam Từ Liêm, Hà Nội', '2026-09-25T16:20:00'),
+    ('HD000077', 'KH005', 'NV003', 'TIEN_MAT', 0, 0, 3420000, 0, 0, 0, N'Võ Gia Hân', '0905882114', N'Hà Nội', '2026-09-24T08:30:00'),
+    ('HD000076', 'KH006', 'NV002', 'CHUYEN_KHOAN', 1, 1, 1260000, 0, 30000, 6, N'Đặng Hoài Nam', '0934625881', N'Hà Nội', '2026-09-24T11:10:00'),
+    ('HD000075', 'KH007', 'NV003', 'COD', 0, 1, 2620000, 0, 30000, 4, N'Bùi Mỹ Linh', '0972230456', N'Thanh Xuân, Hà Nội', '2026-09-23T15:45:00'),
+    ('HD000074', 'KH008', 'NV001', 'THE', 0, 0, 1760000, 0, 0, 5, N'Ngô Đức Anh', '0902718663', N'Hà Nội', '2026-09-23T09:50:00'),
+    ('HD000073', 'KH009', 'NV003', 'CHUYEN_KHOAN', 1, 1, 2950000, 0, 30000, 0, N'Đỗ Phương Vy', '0968440127', N'Hà Nội', '2026-09-22T13:25:00'),
+    ('HD000072', 'KH010', 'NV002', 'COD', 0, 1, 4120000, 0, 30000, 3, N'Mai Tiến Thành', '0918305902', N'Hoàng Mai, Hà Nội', '2026-09-22T17:00:00'),
+    ('HD000071', 'KH001', 'NV001', 'TIEN_MAT', 0, 0, 1590000, 0, 0, 5, N'Trần Minh Bảo Hoàng', '0909899999', N'123 Nguyễn Trãi, Thanh Xuân, Hà Nội', '2026-09-21T10:00:00'),
+    ('HD000070', 'KH003', 'NV002', 'CHUYEN_KHOAN', 1, 1, 2890000, 150000, 30000, 5, N'Lê Quốc Hưng', '0911111111', N'Cầu Giấy, Hà Nội', '2026-09-21T15:30:00'),
+    ('HD000069', 'KH005', 'NV003', 'COD', 0, 1, 1980000, 0, 30000, 6, N'Võ Gia Hân', '0905882114', N'Hà Nội', '2026-09-20T09:10:00'),
+    ('HD000068', 'KH007', 'NV001', 'THE', 0, 0, 3150000, 0, 0, 5, N'Bùi Mỹ Linh', '0972230456', N'Thanh Xuân, Hà Nội', '2026-09-20T12:45:00'),
+    ('HD000067', 'KH009', 'NV002', 'CHUYEN_KHOAN', 1, 1, 2240000, 0, 30000, 5, N'Đỗ Phương Vy', '0968440127', N'Hà Nội', '2026-09-19T16:15:00');
+
+-- Chuẩn hóa dữ liệu hóa đơn cũ: chỉ còn 0=Tại quầy, 1=Trực tuyến.
+-- Mọi giá trị loại đơn cũ ngoài 0/1 được đưa về Tại quầy + Giao hàng.
+UPDATE dbo.hoa_don
+SET loai_hoa_don = 0, hinh_thuc_nhan = 1, ngay_cap_nhat = COALESCE(ngay_cap_nhat, SYSDATETIME())
+WHERE loai_hoa_don IS NOT NULL AND loai_hoa_don NOT IN (0, 1);
+
+UPDATE dbo.hoa_don
+SET hinh_thuc_nhan = CASE WHEN loai_hoa_don = 0 THEN 0 WHEN loai_hoa_don = 1 THEN 1 ELSE 0 END
+WHERE hinh_thuc_nhan IS NULL OR hinh_thuc_nhan NOT IN (0, 1);
+
+IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_hoa_don_hinh_thuc_nhan')
+    ALTER TABLE dbo.hoa_don WITH CHECK ADD CONSTRAINT CK_hoa_don_hinh_thuc_nhan CHECK (hinh_thuc_nhan IN (0, 1));
 
 DECLARE @NewInvoices TABLE (id BIGINT PRIMARY KEY);
-INSERT INTO hoa_don (id_khach_hang, id_nhan_vien, id_phuong_thuc_thanh_toan, ma_hoa_don, loai_hoa_don,
+INSERT INTO hoa_don (id_khach_hang, id_nhan_vien, id_phuong_thuc_thanh_toan, ma_hoa_don, loai_hoa_don, hinh_thuc_nhan,
                      tong_tien, phi_van_chuyen, tien_giam_gia, thanh_tien,
                      ho_ten_nguoi_nhan, so_dien_thoai_nguoi_nhan, dia_chi_giao_hang,
                      ngay_thanh_toan, ngay_tao, ngay_cap_nhat, trang_thai)
 OUTPUT inserted.id INTO @NewInvoices
-SELECT kh.id, nv.id, pt.id, h.ma, h.loai,
+SELECT kh.id, nv.id, pt.id, h.ma, h.loai, h.hinh_nhan,
        tot.tong, h.ship, h.giam, tot.tong - h.giam + h.ship,
        h.nguoi_nhan, h.sdt, h.dia_chi,
        CASE WHEN h.trang_thai = 5 THEN h.ngay ELSE NULL END, h.ngay, h.ngay, h.trang_thai
@@ -3309,203 +3326,14 @@ GO
 SELECT name AS canonical_table FROM sys.tables WHERE is_ms_shipped=0 ORDER BY name;
 GO
 
-/*
-  FIX NGHIỆP VỤ HÓA ĐƠN
-
-  loai_hoa_don:
-    0 = Tại quầy
-    1 = Trực tuyến
-
-  hinh_thuc_nhan:
-    0 = Nhận tại quầy
-    1 = Giao hàng
-
-  Dữ liệu cũ:
-    loai_hoa_don = 2 (Giao hàng)
-  sẽ được chuẩn hóa thành:
-    loai_hoa_don = 0 (Tại quầy)
-    hinh_thuc_nhan = 1 (Giao hàng)
-
-  Chạy sau khi backup DB.
-  SQL Server.
-*/
-
-------------------------------------------------------------
--- 1. Thêm cột hinh_thuc_nhan nếu chưa có
-------------------------------------------------------------
-
-IF COL_LENGTH('hoa_don', 'hinh_thuc_nhan') IS NULL
-BEGIN
-    ALTER TABLE hoa_don
-    ADD hinh_thuc_nhan TINYINT NULL;
-END;
+/* ============================================================
+   KIỂM TRA NGHIỆP VỤ HÓA ĐƠN
+   loai_hoa_don: 0=Tại quầy, 1=Trực tuyến
+   hinh_thuc_nhan: 0=Nhận tại quầy, 1=Giao hàng
+   Không còn loại đơn thứ 3.
+   ============================================================ */
+SELECT loai_hoa_don, hinh_thuc_nhan, COUNT(*) AS so_luong
+FROM dbo.hoa_don
+GROUP BY loai_hoa_don, hinh_thuc_nhan
+ORDER BY loai_hoa_don, hinh_thuc_nhan;
 GO
-
-
-------------------------------------------------------------
--- 2. Chuẩn hóa dữ liệu cũ
-------------------------------------------------------------
-
-/*
-    Quy tắc:
-
-    loai_hoa_don = 2
-        -> Tại quầy + Giao hàng
-
-    loai_hoa_don = 0
-        -> Nếu có địa chỉ giao hàng hoặc phí vận chuyển
-           => Giao hàng
-        -> Ngược lại
-           => Nhận tại quầy
-
-    loai_hoa_don = 1
-        -> Trực tuyến + Giao hàng
-*/
-
-UPDATE hoa_don
-SET
-    hinh_thuc_nhan =
-        CASE
-            -- Dữ liệu cũ "Giao hàng"
-            WHEN loai_hoa_don = 2 THEN 1
-
-            -- Tại quầy nhưng có thông tin giao hàng
-            WHEN loai_hoa_don = 0
-                 AND (
-                     NULLIF(
-                         LTRIM(RTRIM(ISNULL(dia_chi_giao_hang, N''))),
-                         N''
-                     ) IS NOT NULL
-                     OR ISNULL(phi_van_chuyen, 0) > 0
-                 )
-            THEN 1
-
-            -- Trực tuyến
-            WHEN loai_hoa_don = 1 THEN 1
-
-            -- Tại quầy, nhận tại quầy
-            ELSE 0
-        END,
-
-    -- Chuyển loại đơn cũ = 2 thành Tại quầy
-    loai_hoa_don =
-        CASE
-            WHEN loai_hoa_don = 2 THEN 0
-            ELSE loai_hoa_don
-        END
-
-WHERE loai_hoa_don IN (0, 1, 2)
-   OR hinh_thuc_nhan IS NULL;
-GO
-
-
-------------------------------------------------------------
--- 3. Các bản ghi còn thiếu hình thức nhận
-------------------------------------------------------------
-
-UPDATE hoa_don
-SET hinh_thuc_nhan =
-    CASE
-        WHEN loai_hoa_don = 0 THEN 0
-        WHEN loai_hoa_don = 1 THEN 1
-        ELSE 0
-    END
-WHERE hinh_thuc_nhan IS NULL;
-GO
-
-
-------------------------------------------------------------
--- 4. Thêm CHECK constraint
-------------------------------------------------------------
-
-IF NOT EXISTS (
-    SELECT 1
-    FROM sys.check_constraints
-    WHERE name = 'CK_hoa_don_hinh_thuc_nhan'
-)
-BEGIN
-    ALTER TABLE hoa_don
-    ADD CONSTRAINT CK_hoa_don_hinh_thuc_nhan
-    CHECK (hinh_thuc_nhan IN (0, 1));
-END;
-GO
-
-
-------------------------------------------------------------
--- 5. Kiểm tra dữ liệu sau khi sửa
-------------------------------------------------------------
-
-SELECT
-    loai_hoa_don,
-    hinh_thuc_nhan,
-    COUNT(*) AS so_luong
-FROM hoa_don
-GROUP BY
-    loai_hoa_don,
-    hinh_thuc_nhan
-ORDER BY
-    loai_hoa_don,
-    hinh_thuc_nhan;
-GO
-
-
-------------------------------------------------------------
--- 6. Kiểm tra trực tiếp các hóa đơn
-------------------------------------------------------------
-
-SELECT
-    id,
-    ma_hoa_don,
-    loai_hoa_don,
-    hinh_thuc_nhan,
-    dia_chi_giao_hang,
-    phi_van_chuyen
-FROM hoa_don
-ORDER BY id;
-GO
-
-------------------------------------------------------------
--- TẠO DỮ LIỆU DEMO CHO LUỒNG:
--- Tại quầy + Nhận tại quầy
-------------------------------------------------------------
-
--- Lấy 1 hóa đơn hiện có làm hóa đơn Tại quầy + Nhận tại quầy
-UPDATE hoa_don
-SET
-    loai_hoa_don = 0,
-    hinh_thuc_nhan = 0,
-    dia_chi_giao_hang = NULL,
-    phi_van_chuyen = 0,
-    don_vi_van_chuyen = NULL,
-    ngay_cap_nhat = GETDATE()
-WHERE id = (
-    SELECT MIN(id)
-    FROM hoa_don
-    WHERE trang_thai IN (0, 1, 5)
-);
-GO
-
-UPDATE hoa_don
-SET
-    loai_hoa_don = 0,
-    hinh_thuc_nhan = 1,
-    ngay_cap_nhat = GETDATE()
-WHERE id = (
-    SELECT MIN(id)
-    FROM hoa_don
-    WHERE id <> (
-        SELECT MIN(id)
-        FROM hoa_don
-        WHERE trang_thai IN (0, 1, 5)
-    )
-);
-GO
-
-SELECT
-    id,
-    ma_hoa_don,
-    loai_hoa_don,
-    hinh_thuc_nhan,
-    trang_thai
-FROM hoa_don
-ORDER BY id;
