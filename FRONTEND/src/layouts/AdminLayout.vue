@@ -19,15 +19,15 @@ const nav = [
       { label: 'Thiết lập biến thể sản phẩm', to: '/thuoc-tinh' }
     ]
   },
-  { label: 'Quản lý khách hàng', icon: 'bi-people', to: '/khach-hang' },
-  { label: 'Quản lý nhân viên', icon: 'bi-person-badge', to: '/nhan-vien' },
   {
     key: 'promo', label: 'Quản lý giảm giá', icon: 'bi-tags',
     children: [
       { label: 'Phiếu giảm giá', to: '/giam-gia' },
       { label: 'Đợt giảm giá', to: '/dot-giam-gia' }
     ]
-  }
+  },
+  { label: 'Quản lý khách hàng', icon: 'bi-people', to: '/khach-hang' },
+  { label: 'Quản lý nhân viên', icon: 'bi-person-badge', to: '/nhan-vien' }
 ]
 
 const isOn = (to) => route.path === to || route.path.startsWith(to + '/')
