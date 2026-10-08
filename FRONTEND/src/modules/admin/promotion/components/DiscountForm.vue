@@ -47,6 +47,7 @@ const customerError = ref('')
 /* so kh da chon */
 const selectedCustomerCount = computed(() => {
   return props.form.customerIds?.length || 0
+
 })
 
 /* dsach sau khi tiem kiem */
@@ -120,6 +121,9 @@ function toggleCustomer(id) {
 
     props.form.customerIds.push(id)
 
+  }
+  if (props.form.form === 2) {
+    props.form.quantity = props.form.customerIds.length
   }
 }
 
@@ -349,9 +353,12 @@ watch(
           >
             <i class="bi bi-arrow-clockwise"></i>
           </button>
-
+          
         </div>
-
+        <span class="ss-hint warn">
+            <i class="bi bi-exclamation-triangle"></i>
+            Nếu không giới hạn, để trống hoặc 0.
+        </span>
       </div>
 
       <div class="ss-field">
@@ -454,40 +461,47 @@ watch(
       </div>
 
       <div class="ss-field">
+  <label class="ss-label">
+    Số lượng
+    <span class="req">*</span>
+  </label>
 
-        <label class="ss-label">
-          Số lượng
-          <span
-            v-if="!form.unlimited"
-            class="req"
-          >*</span>
-        </label>
+  <!-- hien thi so kh da chon -->
+  <input
+    v-if="form.form === 2"
+    class="ss-input"
+    type="number"
+    :value="selectedCustomerCount"
+    readonly
+  />
 
-        <input
-          v-if="!form.unlimited"
-          class="ss-input"
-          type="number"
-          min="1"
-          v-model.number="form.quantity"
-        />
+  <!-- Công khai -->
+  <template v-else>
+    <input
+      v-if="!form.unlimited"
+      class="ss-input"
+      type="number"
+      min="1"
+      v-model.number="form.quantity"
+    />
 
-        <div
-          v-else
-          class="ss-input"
-          style="background: #f5f5f5;"
-        >
-          Không giới hạn
-        </div>
+    <div
+      v-else
+      class="ss-input"
+      style="background: #f5f5f5;"
+    >
+      Không giới hạn
+    </div>
 
-        <label style="margin-top: 8px;">
-          <input
-            type="checkbox"
-            v-model="form.unlimited"
-          />
-          Không giới hạn số lượng
-        </label>
-
-      </div>
+    <label style="margin-top: 8px;">
+      <input
+        type="checkbox"
+        v-model="form.unlimited"
+      />
+      Không giới hạn số lượng
+    </label>
+  </template>
+</div>
 
       <div class="ss-field">
 

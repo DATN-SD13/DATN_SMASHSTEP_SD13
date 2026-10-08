@@ -46,8 +46,7 @@ const saving = ref(false)
 const confirmAction = ref('')
 const selectedVoucher = ref(null)
 
-/* =========================
-  tbao popup*/
+/*tbao popup*/
 
 const toast = ref({
   visible: false,
@@ -100,15 +99,23 @@ function statusToValue(status) {
 
 /*  format  */
 
-function formatDate(value) {
+function formatDateTime(value) {
   if (!value) return '-'
 
-  const date = String(value).substring(0, 10)
-  const [y, m, d] = date.split('-')
+  const [datePart, timePart = ''] =
+    String(value).split('T')
 
-  return y && m && d
-    ? `${d}/${m}/${y}`
-    : date
+  const [y, m, d] =
+    datePart.split('-')
+
+  if (!y || !m || !d) {
+    return value
+  }
+
+  const time =
+    timePart.substring(0, 5)
+
+  return `${d}/${m}/${y} ${time}`
 }
 
 function formatDiscount(item) {
@@ -124,16 +131,14 @@ function formatDiscount(item) {
 function mapRow(item) {
   return {
     ...item,
-
     type: item.formLabel,
-
     value: formatDiscount(item),
 
-    start: formatDate(item.startDate),
+    start: formatDateTime(item.startDate),
+    end: formatDateTime(item.endDate),
 
-    end: formatDate(item.endDate),
-
-    statusLabel: item.statusLabel
+    timeStatus: item.timeStatus,
+    timeStatusLabel: item.timeStatusLabel
   }
 }
 

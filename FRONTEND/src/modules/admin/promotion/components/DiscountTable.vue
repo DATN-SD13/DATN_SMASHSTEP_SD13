@@ -26,6 +26,32 @@ const emit = defineEmits([
 function isActive(x) {
   return x.status === 1
 }
+
+function canToggle(x) {
+  return x.timeStatus !== 3
+}
+
+function timeStatusClass(x) {
+// ket thuc
+  if (x.timeStatus === 3) {
+    return 'danger'
+  }
+// tat hdong
+  if (x.status === 0) {
+    return 'danger'
+  }
+// sap dien ra
+  if (x.timeStatus === 1) {
+    return 'warning'
+  }
+
+// dang dien ra
+  if (x.timeStatus === 2) {
+    return 'success'
+  }
+
+  return ''
+}
 </script>
 
 <template>
@@ -82,9 +108,9 @@ function isActive(x) {
       <td>
         <span
           class="ss-pill dot"
-          :class="isActive(x) ? 'success' : 'danger'"
+          :class="timeStatusClass(x)"
         >
-          {{ x.statusLabel }}
+          {{ x.timeStatusLabel }}
         </span>
       </td>
 
@@ -117,12 +143,15 @@ function isActive(x) {
             type="button"
             class="ss-icon-btn"
             :class="{ danger: isActive(x) }"
+            :disabled="x.timeStatus === 3"
             :title="
-              isActive(x)
-                ? 'Ngừng hoạt động'
-                : 'Bật hoạt động'
+              x.timeStatus === 3
+                ? 'Phiếu đã kết thúc'
+                : isActive(x)
+                  ? 'Ngừng hoạt động'
+                  : 'Bật hoạt động'
             "
-            @click="emit('toggle', x)"
+            @click="x.timeStatus !== 3 && emit('toggle', x)"
           >
             <i
               class="bi"
@@ -162,3 +191,10 @@ function isActive(x) {
 
   </tbody>
 </template>
+
+<style scoped>
+.ss-icon-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+</style>
