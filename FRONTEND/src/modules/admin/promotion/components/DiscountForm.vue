@@ -310,6 +310,46 @@ watch(
     immediate: true
   }
 )
+
+const minOrderDisplay = computed({
+  get() {
+    const value = props.form.minOrderValue
+    if (value == null || value === '') return ''
+    return Number(value) / 1000
+  },
+  set(value) {
+    if (value === '' || value == null) {
+      props.form.minOrderValue = ''
+      return
+    }
+
+    const number = Number(value)
+    if (Number.isFinite(number)) {
+      props.form.minOrderValue = number * 1000
+    }
+  }
+})
+
+const maxDiscountDisplay = computed({
+  get() {
+    const value = props.form.maxDiscount
+    if (value == null || value === '') return ''
+    return Number(value) / 1000
+  },
+  set(value) {
+    if (value === '' || value == null) {
+      props.form.maxDiscount = ''
+      return
+    }
+
+    const number = Number(value)
+    if (Number.isFinite(number)) {
+      props.form.maxDiscount = number * 1000
+    }
+  }
+})
+
+
 </script>
 
 <template>
@@ -355,9 +395,9 @@ watch(
           </button>
           
         </div>
-        <span class="ss-hint warn">
-            <i class="bi bi-exclamation-triangle"></i>
-            Nếu không giới hạn, để trống hoặc 0.
+        <span class="ss-hint">
+          <i class="bi bi-info-circle"></i>
+          Mã phiếu giảm giá được hệ thống tự động tạo và không thể chỉnh sửa.
         </span>
       </div>
 
@@ -435,7 +475,8 @@ watch(
           class="ss-input"
           type="number"
           min="0"
-          v-model.number="form.minOrderValue"
+          step="1"
+          v-model.number="minOrderDisplay"
         />
 
       </div>
@@ -450,7 +491,8 @@ watch(
           class="ss-input"
           type="number"
           min="0"
-          v-model.number="form.maxDiscount"
+          step="1"
+          v-model.number="maxDiscountDisplay"
         />
 
         <span class="ss-hint warn">

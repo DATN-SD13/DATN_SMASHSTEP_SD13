@@ -41,7 +41,7 @@ public class PhieuGiamGiaRequest {
             message = "Ngày giờ kết thúc không đúng định dạng"
     )
     private String endDate;
-    
+
 
     private Integer quantity;
 
