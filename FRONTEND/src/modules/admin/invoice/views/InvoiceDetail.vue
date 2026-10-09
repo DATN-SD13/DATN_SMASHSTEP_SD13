@@ -5,6 +5,7 @@ import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import { invoiceService } from '../services/invoiceService'
 import api from '../../../../utils/api'
 import { imageUrl } from '../../product/services/imageUtils'
+import Select2Field from '../components/Select2Field.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -116,6 +117,28 @@ const productSizes = computed(() => {
   const values = (invoice.value?.items || []).map(item => item.size).filter(Boolean)
   return [...new Set(values)].sort((a, b) => a.localeCompare(b, 'vi', { numeric: true }))
 })
+
+const productCategoryOptions = computed(() => [
+  { value: '', label: 'Tất cả loại' },
+  ...productCategories.value.map(value => ({ value, label: value }))
+])
+
+const productColorOptions = computed(() => [
+  { value: '', label: 'Tất cả màu sắc' },
+  ...productColors.value.map(value => ({ value, label: value }))
+])
+
+const productSizeOptions = computed(() => [
+  { value: '', label: 'Tất cả kích cỡ' },
+  ...productSizes.value.map(value => ({ value, label: value }))
+])
+
+const productSortOptions = [
+  { value: 'default', label: 'Mặc định' },
+  { value: 'name-asc', label: 'Tên A → Z' },
+  { value: 'price-asc', label: 'Giá thấp → cao' },
+  { value: 'price-desc', label: 'Giá cao → thấp' }
+]
 
 const filteredItems = computed(() => {
   let items = [...(invoice.value?.items || [])]
@@ -742,33 +765,39 @@ onUnmounted(() => {
           </div>
           <div class="product-filter-field">
             <label>Loại sản phẩm</label>
-            <select v-model="productCategory">
-              <option value="">Tất cả loại</option>
-              <option v-for="category in productCategories" :key="category" :value="category">{{ category }}</option>
-            </select>
+            <Select2Field
+              v-model="productCategory"
+              :options="productCategoryOptions"
+              placeholder="Tất cả loại"
+              :allow-clear="false"
+            />
           </div>
           <div class="product-filter-field">
             <label>Màu sắc</label>
-            <select v-model="productColor">
-              <option value="">Tất cả màu sắc</option>
-              <option v-for="color in productColors" :key="color" :value="color">{{ color }}</option>
-            </select>
+            <Select2Field
+              v-model="productColor"
+              :options="productColorOptions"
+              placeholder="Tất cả màu sắc"
+              :allow-clear="false"
+            />
           </div>
           <div class="product-filter-field">
             <label>Kích cỡ</label>
-            <select v-model="productSize">
-              <option value="">Tất cả kích cỡ</option>
-              <option v-for="size in productSizes" :key="size" :value="size">{{ size }}</option>
-            </select>
+            <Select2Field
+              v-model="productSize"
+              :options="productSizeOptions"
+              placeholder="Tất cả kích cỡ"
+              :allow-clear="false"
+            />
           </div>
           <div class="product-filter-field product-sort-field">
             <label>Sắp xếp</label>
-            <select v-model="productSort">
-              <option value="default">Mặc định</option>
-              <option value="name-asc">Tên A → Z</option>
-              <option value="price-asc">Giá thấp → cao</option>
-              <option value="price-desc">Giá cao → thấp</option>
-            </select>
+            <Select2Field
+              v-model="productSort"
+              :options="productSortOptions"
+              placeholder="Sắp xếp"
+              :allow-clear="false"
+            />
           </div>
           <button v-if="productFilterActive" type="button" class="product-reset-button" @click="resetProductFilters">
             <i class="bi bi-arrow-counterclockwise"></i> Đặt lại
@@ -1021,19 +1050,16 @@ onUnmounted(() => {
                 </div>
 
                 <label class="form-label mt-3 mb-2">Trạng thái</label>
-                <select
+                <Select2Field
                   v-model="selectedStatus"
-                  class="form-select"
+                  :options="editableStatusOptions.map(option => ({
+                    value: option.value,
+                    label: option.label + (option.value === Number(invoice.statusCode) ? ' (hiện tại)' : '')
+                  }))"
+                  placeholder="Chọn trạng thái"
                   :disabled="updatingStatus || !canUpdateStatus"
-                >
-                  <option
-                    v-for="option in editableStatusOptions"
-                    :key="option.value"
-                    :value="option.value"
-                  >
-                    {{ option.label }}{{ option.value === Number(invoice.statusCode) ? ' (hiện tại)' : '' }}
-                  </option>
-                </select>
+                  :allow-clear="false"
+                />
                 <div class="form-text">
                   Chỉ được chuyển sang trạng thái kế tiếp theo đúng quy trình của đơn hàng.
                 </div>
