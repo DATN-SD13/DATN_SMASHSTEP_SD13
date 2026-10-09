@@ -61,7 +61,7 @@ class PosPriceSynchronizationTest {
         var invoice=invoices.chiTiet(receipt.invoiceCode()); assertEquals(employee.getId(),invoice.getIdNhanVien()); assertEquals(employee.getMaNhanVien(),receipt.employeeCode());
         assertEquals(employee.getTenNhanVien(),receipt.employeeName()); assertEquals(customer.getId(),invoice.getIdKhachHang()); assertEquals(customer.getMaKhachHang(),receipt.customerCode());
         assertEquals(receipt.customerName(),invoice.getTenKhachHang()); assertEquals(receipt.customerPhone(),invoice.getSoDienThoai());
-        assertEquals(0,invoice.getMaLoaiHoaDon()); assertEquals(5,invoice.getMaTrangThai()); assertEquals(receipt.paymentMethodName(),invoice.getPhuongThucThanhToan());
+        assertEquals(0,invoice.getMaLoaiHoaDon()); assertEquals(0,invoice.getMaTrangThai()); assertEquals(receipt.paymentMethodName(),invoice.getPhuongThucThanhToan());
         assertEquals(request.getPaymentMethodId(),invoice.getIdPhuongThucThanhToan()); assertEquals(receipt.paymentMethodCode(),invoice.getMaPhuongThucThanhToan());
         amount("1800000",invoice.getChiTietHoaDon().get(0).getDonGia()); amount("1800000",invoice.getTongTien());
         assertEquals("POS-REQ-"+request.getRequestId(),invoice.getLichSuThanhToan().get(0).getMaGiaoDich());

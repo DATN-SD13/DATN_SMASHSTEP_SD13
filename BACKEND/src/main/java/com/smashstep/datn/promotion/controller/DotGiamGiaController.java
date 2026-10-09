@@ -13,6 +13,7 @@ import com.smashstep.datn.promotion.response.SanPhamChiTietGiamGiaResponse;
 import com.smashstep.datn.promotion.request.DotGiamGiaStatusRequest;
 import java.util.List;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
 @RestController
@@ -21,6 +22,17 @@ import java.util.Map;
 public class DotGiamGiaController {
 
     private final DotGiamGiaService dotGiamGiaService;
+    private final jakarta.validation.Validator validator;
+    private final tools.jackson.databind.json.JsonMapper mapper = tools.jackson.databind.json.JsonMapper.builder().build();
+
+    private <T> T validated(java.util.Map<String, Object> body, Class<T> type) {
+        T request;
+        try { request = mapper.convertValue(body, type); }
+        catch (Exception ex) { throw com.smashstep.datn.common.exception.AppException.badRequest("Dữ liệu gửi lên sai định dạng"); }
+        var violations = validator.validate(request);
+        if (!violations.isEmpty()) throw new jakarta.validation.ConstraintViolationException(violations);
+        return request;
+    }
 
     @GetMapping("/capabilities")
     public ResponseEntity<Map<String, Object>> getCapabilities() {
@@ -97,7 +109,7 @@ public class DotGiamGiaController {
      * VD:
      * GET /api/dot-giam-gia/DGG001
      */
-    @GetMapping("/{ma}")
+    @GetMapping("/{ma:.*[^0-9].*}")
     public ResponseEntity<Map<String, Object>> getByMa(
             @PathVariable String ma
     ) {
@@ -118,11 +130,14 @@ public class DotGiamGiaController {
     }
     @PostMapping
     public ResponseEntity<Map<String, Object>> create(
-            @Valid @RequestBody DotGiamGiaRequest request
+            @RequestBody java.util.Map<String, Object> body
     ) {
-
-        DotGiamGiaResponse data =
-                dotGiamGiaService.create(request);
+        if (body.containsKey("chiTiet") || body.containsKey("tenDotGiamGia")) {
+            var request = validated(body, com.smashstep.datn.promotion.dto.DotGiamGiaRequest.class);
+            var created = dotGiamGiaService.create(request);
+            return ResponseEntity.ok(Map.of("success", true, "data", dotGiamGiaService.getDetail(created.getId())));
+        }
+        DotGiamGiaResponse data = dotGiamGiaService.create(validated(body, DotGiamGiaRequest.class));
 
         Map<String, Object> response = new LinkedHashMap<>();
 
@@ -157,7 +172,7 @@ public class DotGiamGiaController {
 
         return ResponseEntity.ok(response);
     }
-    @PutMapping("/{ma}")
+    @PutMapping("/{ma:.*[^0-9].*}")
     public ResponseEntity<Map<String, Object>> update(
             @PathVariable String ma,
             @Valid @RequestBody DotGiamGiaRequest request
@@ -178,7 +193,7 @@ public class DotGiamGiaController {
 
         return ResponseEntity.ok(response);
     }
-    @DeleteMapping("/{ma}")
+    @DeleteMapping("/{ma:.*[^0-9].*}")
     public ResponseEntity<Map<String, Object>> delete(
             @PathVariable String ma
     ) {
@@ -222,5 +237,30 @@ public class DotGiamGiaController {
         response.put("data", data);
 
         return ResponseEntity.ok(response);
+    }
+    @GetMapping("/{id:[0-9]+}")
+    public ResponseEntity<Map<String, Object>> getById(@PathVariable Long id) {
+        return ResponseEntity.ok(Map.of("success", true, "data", dotGiamGiaService.getDetail(id)));
+    }
+
+    @PutMapping("/{id:[0-9]+}")
+    public ResponseEntity<Map<String, Object>> updateById(@PathVariable Long id,
+            @Valid @RequestBody com.smashstep.datn.promotion.dto.DotGiamGiaRequest request) {
+        dotGiamGiaService.update(id, request);
+        return ResponseEntity.ok(Map.of("success", true, "data", dotGiamGiaService.getDetail(id)));
+    }
+
+    @DeleteMapping("/{id:[0-9]+}")
+    public ResponseEntity<Map<String, Object>> deleteById(@PathVariable Long id) {
+        dotGiamGiaService.delete(id);
+        return ResponseEntity.ok(Map.of("success", true, "message", "Ngừng hoạt động đợt giảm giá thành công"));
+    }
+
+    @GetMapping("/search")
+    public ResponseEntity<Map<String, Object>> searchTeam(@RequestParam(required = false) String ma,
+            @RequestParam(required = false) String ten, @RequestParam(required = false) Integer trangThai,
+            @RequestParam(required = false) LocalDateTime tuNgay, @RequestParam(required = false) LocalDateTime denNgay,
+            @RequestParam(defaultValue = "1") int page, @RequestParam(defaultValue = "10") int size) {
+        return ResponseEntity.ok(Map.of("success", true, "data", dotGiamGiaService.search(ma, ten, trangThai, tuNgay, denNgay, page, size)));
     }
 }

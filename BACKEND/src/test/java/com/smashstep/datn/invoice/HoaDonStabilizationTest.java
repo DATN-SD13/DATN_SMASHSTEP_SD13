@@ -37,6 +37,7 @@ class HoaDonStabilizationTest {
         invoice.setId(42L);
         invoice.setMaHoaDon("HD042");
         invoice.setTrangThai(status);
+        when(invoices.findById(42L)).thenReturn(Optional.of(invoice));
         when(invoices.findByMaHoaDonForUpdate("HD042")).thenReturn(Optional.of(invoice));
         when(invoices.findByMaHoaDon("HD042")).thenReturn(Optional.of(invoice));
         when(items.findByIdHoaDonIdOrderByIdAsc(42L)).thenReturn(List.of());
@@ -140,5 +141,18 @@ class HoaDonStabilizationTest {
         assertEquals("Đã thanh toán", LichSuThanhToanDto.from(payment).getTrangThai());
         payment.setIdHoaDon(null);
         assertEquals("Chưa cập nhật", LichSuThanhToanDto.from(payment).getPhuongThucThanhToan());
+    }
+
+    @Test void pendingCheckoutAdvancesDirectlyToCompleted() {
+        invoice(8);
+        assertEquals(5, service.capNhatTrangThai("HD042", request(5)).getMaTrangThai());
+    }
+    @Test void invoiceDetailPreservesSnapshotPhoneAndCustomerEmail() {
+        var invoice = invoice(0); var customer = new com.smashstep.datn.customer.entity.KhachHang();
+        customer.setEmail("fixture@example.invalid"); customer.setSoDienThoai("0900000001");
+        invoice.setIdKhachHang(customer); invoice.setSoDienThoaiNguoiNhan("0900000002");
+        var detail = HoaDonDetailDto.from(invoice, List.of());
+        assertEquals("fixture@example.invalid", detail.getEmail());
+        assertEquals("0900000002", detail.getSoDienThoai());
     }
 }

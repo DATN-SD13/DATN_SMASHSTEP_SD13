@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class CanonicalSchemaMappingTest {
-    @Test void everyEntityColumnExistsInCanonicalSqlWithoutUnlimitedColumn() throws Exception {
+    @Test void everyEntityColumnExistsInCanonicalSqlWithDocumentedAdditiveMigrations() throws Exception {
         String sql = Files.readString(Path.of("../Database/01_sqlSD13.sql"));
         Map<String, Set<String>> tables = new HashMap<>();
         var blocks = Pattern.compile("CREATE TABLE (\\w+) \\(([\\s\\S]*?)\\n\\);", Pattern.CASE_INSENSITIVE).matcher(sql);
@@ -30,6 +30,11 @@ class CanonicalSchemaMappingTest {
             tables.put(blocks.group(1), columns);
         }
         assertEquals(25, tables.size());
+        String migrations = Files.readString(Path.of("../Database/FULL_DB.sql"));
+        assertTrue(migrations.contains("ADD [hinh_thuc_nhan] TINYINT NULL"));
+        assertTrue(migrations.contains("vo_han"));
+        tables.get("hoa_don").add("hinh_thuc_nhan");
+        tables.get("phieu_giam_gia").add("vo_han");
         try (var sources = Files.walk(Path.of("src/main/java"))) {
             for (Path source : sources.filter(p -> p.toString().endsWith(".java")).toList()) {
                 String name = Path.of("src/main/java").relativize(source).toString().replace('\\', '.').replace('/', '.').replace(".java", "");
@@ -44,8 +49,8 @@ class CanonicalSchemaMappingTest {
                 }
             }
         }
-        assertFalse(tables.get("phieu_giam_gia").contains("vo_han"));
-        assertThrows(NoSuchFieldException.class, () -> PhieuGiamGia.class.getDeclaredField("voHan"));
+        assertTrue(tables.get("phieu_giam_gia").contains("vo_han"));
+        assertEquals(Boolean.class, PhieuGiamGia.class.getDeclaredField("voHan").getType());
     }
 
     @Test void canonicalDatabaseKeepsEveryCanonicalMappingDespiteOldLocalOverride() {

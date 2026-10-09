@@ -63,7 +63,7 @@ function showLocalToast(type, title, message) {
 
 function toDate(value) {
   return value
-    ? String(value).substring(0, 10)
+    ? String(value).substring(0, 16)
     : ''
 }
 
@@ -111,6 +111,9 @@ async function loadDetail() {
 }
 
 function validate() {
+  if (Number(form.value.discountType) === 1 && Number(form.value.maxDiscount) <= 0) return 'Giảm theo phần trăm phải có mức giảm tối đa lớn hơn 0!'
+  if (Number(form.value.form) === 2 && Number(form.value.quantity) !== new Set(form.value.customerIds || []).size) return 'Số lượng phiếu phải bằng số khách hàng được chọn!'
+
   if (![1, 2].includes(Number(form.value.form)) || ![1, 2].includes(Number(form.value.discountType))) return 'Hình thức hoặc loại giảm không hợp lệ!'
   for (const field of ['discountValue', 'minOrderValue', 'maxDiscount']) {
     const value = form.value[field]
@@ -153,7 +156,7 @@ function validate() {
   }
 
   if (
-    form.value.endDate <
+    form.value.endDate <=
     form.value.startDate
   ) {
     return 'Ngày kết thúc phải sau ngày bắt đầu!'

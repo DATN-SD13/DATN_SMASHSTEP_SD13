@@ -75,7 +75,7 @@ class SalesTichHopTest {
         assertEquals(oldStock - 1, em.find(SanPhamChiTiet.class, request.getItems().get(0).getVariantId()).getSoLuong());
         assertEquals(request.getVoucherCode() == null ? 0 : 1, em.find(PhieuGiamGia.class, voucher.getId()).getSoLuongDaDung());
         HoaDon invoice = em.createQuery("select h from HoaDon h where h.maHoaDon = :code", HoaDon.class).setParameter("code", invoiceCode).getSingleResult();
-        assertEquals(5, invoice.getTrangThai()); assertEquals(0, quote.total().compareTo(invoice.getThanhTien()));
+        assertEquals(8, invoice.getTrangThai()); assertEquals(0, quote.total().compareTo(invoice.getThanhTien()));
         assertEquals(invoiceBefore + 1, count("HoaDon")); assertEquals(itemsBefore + 1, count("HoaDonChiTiet"));
         assertEquals(paymentBefore + 1, count("LichSuThanhToan")); assertEquals(historyBefore + 1, count("LichSuHoaDon"));
         mvc.perform(post("/api/sales/checkout").contentType(MediaType.APPLICATION_JSON).content(json()))

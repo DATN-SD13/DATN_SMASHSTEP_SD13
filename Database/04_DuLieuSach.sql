@@ -1,7 +1,7 @@
 ﻿/*
-=============================================================
+ * =============================================================
 SMASHSTEP SD13 - RESET DATABASE DEV/TEST VE TRANG THAI SACH
-=============================================================
+ * =============================================================
 MUC DICH:
 - XOA TOAN BO database SmashStep HIEN TAI (du lieu cu + schema cu).
 - TAO LAI database tu dau.
@@ -16,7 +16,7 @@ SAU KHI CHAY:
 - Database SmashStep duoc tao lai tu dau.
 - Seed canonical trong FULL_DB duoc nap lai.
 - Identity bat dau lai tu 1.
-=============================================================
+ * =============================================================
 */
 USE [master];
 GO

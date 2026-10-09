@@ -57,4 +57,5 @@ public interface ChiTietDotGiamGiaRepository
     void deleteByDotGiamGiaId(
             @Param("idDotGiamGia") Long idDotGiamGia
     );
+    List<ChiTietDotGiamGia> findByIdDotGiamGiaIdAndTrangThai(Long idDotGiamGia, Integer trangThai);
 }

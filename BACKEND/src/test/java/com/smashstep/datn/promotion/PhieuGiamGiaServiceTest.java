@@ -51,7 +51,7 @@ class PhieuGiamGiaServiceTest {
     private final PhieuGiamGiaKhachHangRepository assignments = mock(PhieuGiamGiaKhachHangRepository.class);
     private final KhachHangRepository customers = mock(KhachHangRepository.class);
     private final com.smashstep.datn.common.config.DatabaseCapabilities database = mock(com.smashstep.datn.common.config.DatabaseCapabilities.class);
-    private final PhieuGiamGiaService service = new PhieuGiamGiaService(vouchers, assignments, customers, database);
+    private final PhieuGiamGiaService service = new PhieuGiamGiaService(vouchers, assignments, customers, database, mock(com.smashstep.datn.promotion.service.EmailService.class));
     private final List<PhieuGiamGiaKhachHang> links = new ArrayList<>();
 
     @BeforeEach
@@ -82,8 +82,10 @@ class PhieuGiamGiaServiceTest {
         request.setDiscountType(1);
         request.setDiscountValue(BigDecimal.TEN);
         request.setQuantity(10);
-        request.setStartDate("2026-10-01");
-        request.setEndDate("2026-10-31");
+        request.setStartDate("2097-10-01T08:00");
+        request.setMinOrderValue(BigDecimal.ZERO);
+        request.setMaxDiscount(new BigDecimal("100000"));
+        request.setEndDate("2097-10-31T23:59");
         return request;
     }
 
@@ -115,6 +117,7 @@ class PhieuGiamGiaServiceTest {
         var request = request();
         request.setForm(2);
         request.setCustomerIds(List.of(10L, 10L));
+        request.setQuantity(1);
         var response = service.create(request);
         assertEquals(2, response.getForm());
         assertEquals(List.of(10L), response.getCustomerIds());
@@ -182,5 +185,20 @@ class PhieuGiamGiaServiceTest {
         assertEquals(3, voucher.getSoLuongDaDung());
         verify(vouchers, times(4)).findByIdForUpdate(2L);
         verify(vouchers, never()).findById(anyLong());
+    }
+
+    @Test void latestValidationRejectsMissingMinimumAndPercentCap() {
+        var request = request(); request.setMinOrderValue(null);
+        assertEquals(HttpStatus.BAD_REQUEST, assertThrows(AppException.class, () -> service.create(request)).getStatus());
+        request.setMinOrderValue(BigDecimal.ZERO); request.setMaxDiscount(null);
+        assertEquals(HttpStatus.BAD_REQUEST, assertThrows(AppException.class, () -> service.create(request)).getStatus());
+        verify(vouchers, never()).save(any());
+    }
+    @Test void latestValidationRejectsEqualDateTimeAndWrongPrivateQuantity() {
+        var request = request(); request.setEndDate(request.getStartDate());
+        assertEquals(HttpStatus.BAD_REQUEST, assertThrows(AppException.class, () -> service.create(request)).getStatus());
+        var privateRequest = request(); privateRequest.setForm(2); privateRequest.setCustomerIds(List.of(10L));
+        assertEquals(HttpStatus.BAD_REQUEST, assertThrows(AppException.class, () -> service.create(privateRequest)).getStatus());
+        verify(vouchers, never()).save(any());
     }
 }
