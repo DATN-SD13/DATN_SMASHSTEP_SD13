@@ -5,6 +5,7 @@ import com.smashstep.datn.employee.entity.NhanVien;
 import com.smashstep.datn.invoice.entity.HoaDon;
 import com.smashstep.datn.invoice.enums.LoaiHoaDon;
 import com.smashstep.datn.invoice.enums.HinhThucNhan;
+import com.smashstep.datn.invoice.rules.HoaDonRules;
 import com.smashstep.datn.invoice.enums.TrangThaiHoaDon;
 import com.smashstep.datn.payment.entity.PhuongThucThanhToan;
 import lombok.Builder;
@@ -47,8 +48,7 @@ public class HoaDonListDto {
         PhuongThucThanhToan pt = h.getIdPhuongThucThanhToan();
         TrangThaiHoaDon tt = TrangThaiHoaDon.tuMa(h.getTrangThai());
         LoaiHoaDon loai = LoaiHoaDon.tuMa(h.getLoaiHoaDon());
-        HinhThucNhan htn = HinhThucNhan.tuMa(h.getHinhThucNhan());
-        if (htn == null) htn = h.getLoaiHoaDon() != null && h.getLoaiHoaDon() == 0 ? HinhThucNhan.NHAN_TAI_QUAY : HinhThucNhan.GIAO_HANG;
+        HinhThucNhan htn = HoaDonRules.resolveHinhThucNhan(h);
 
         return HoaDonListDto.builder()
                 .id(h.getId())

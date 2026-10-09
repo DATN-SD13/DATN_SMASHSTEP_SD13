@@ -43,9 +43,6 @@ public class HoaDon {
     @Column(name = "loai_hoa_don")
     private Integer loaiHoaDon;
 
-    @Column(name = "hinh_thuc_nhan")
-    private Integer hinhThucNhan;
-
     @Column(name = "tong_tien")
     private BigDecimal tongTien;
 

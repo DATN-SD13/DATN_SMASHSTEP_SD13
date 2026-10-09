@@ -182,7 +182,7 @@ public class PhieuGiamGiaService {
         );
 
         response.setUnlimited(
-                p.getVoHan() == null ? p.getSoLuong() == null : Boolean.TRUE.equals(p.getVoHan())
+                p.getSoLuong() == null
         );
 
         response.setUsedQuantity(
@@ -308,10 +308,8 @@ public class PhieuGiamGiaService {
         );
 
         if (Boolean.TRUE.equals(request.getUnlimited())) {
-            p.setVoHan(true);
             p.setSoLuong(null);
         } else {
-            p.setVoHan(false);
             p.setSoLuong(request.getQuantity());
         }
 
@@ -384,10 +382,8 @@ public class PhieuGiamGiaService {
         );
 
         if (Boolean.TRUE.equals(request.getUnlimited())) {
-            p.setVoHan(true);
             p.setSoLuong(null);
         } else {
-            p.setVoHan(false);
             p.setSoLuong(request.getQuantity());
         }
 

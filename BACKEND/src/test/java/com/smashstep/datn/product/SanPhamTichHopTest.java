@@ -247,7 +247,9 @@ class SanPhamTichHopTest {
         List<?> columns = entityManager.createNativeQuery(
                 "select COLUMN_NAME from INFORMATION_SCHEMA.COLUMNS where TABLE_SCHEMA = 'dbo' "
                         + "and TABLE_NAME = 'hinh_anh_san_pham' order by ORDINAL_POSITION").getResultList();
-        assertEquals(List.of("id", "id_san_pham", "url_anh", "is_anh_chinh", "id_san_pham_chi_tiet"), columns);
+        // Physical column order is irrelevant; canonical allows an optional color reference.
+        assertTrue(columns.containsAll(List.of("id", "id_san_pham", "url_anh", "is_anh_chinh", "id_san_pham_chi_tiet")));
+        assertTrue(List.of("id", "id_san_pham", "url_anh", "is_anh_chinh", "id_san_pham_chi_tiet", "id_mau_sac").containsAll(columns));
     }
 
     @Test

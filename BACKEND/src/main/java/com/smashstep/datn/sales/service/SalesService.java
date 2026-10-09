@@ -95,7 +95,6 @@ public class SalesService {
         HoaDon invoice = new HoaDon();
         boolean walkInCustomer = data.customer() == null;
         invoice.setMaHoaDon(invoiceCode); invoice.setLoaiHoaDon(0);
-        invoice.setHinhThucNhan(walkInCustomer ? 0 : 1);
         invoice.setTrangThai(walkInCustomer ? 8 : 0);
         invoice.setIdKhachHang(data.customer()); invoice.setIdNhanVien(data.employee());
         invoice.setIdPhuongThucThanhToan(data.payment()); invoice.setIdPhieuGiamGia(data.voucher());

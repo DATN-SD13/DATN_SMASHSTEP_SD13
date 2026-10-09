@@ -4,6 +4,7 @@ import com.smashstep.datn.customer.entity.KhachHang;
 import com.smashstep.datn.employee.entity.NhanVien;
 import com.smashstep.datn.invoice.entity.HoaDon;
 import com.smashstep.datn.invoice.enums.HinhThucNhan;
+import com.smashstep.datn.invoice.rules.HoaDonRules;
 import com.smashstep.datn.invoice.enums.LoaiHoaDon;
 import com.smashstep.datn.invoice.enums.TrangThaiHoaDon;
 import com.smashstep.datn.payment.entity.PhuongThucThanhToan;
@@ -122,22 +123,7 @@ public class HoaDonDetailDto {
         TrangThaiHoaDon trangThai =
                 TrangThaiHoaDon.tuMa(hoaDon.getTrangThai());
 
-        HinhThucNhan hinhThucNhan =
-                HinhThucNhan.tuMa(hoaDon.getHinhThucNhan());
-
-        /*
-         * Dữ liệu cũ có thể chưa có hinhThucNhan.
-         *
-         * loaiHoaDon = 0 -> nhận tại quầy
-         * còn lại      -> giao hàng
-         */
-        if (hinhThucNhan == null) {
-            hinhThucNhan =
-                    hoaDon.getLoaiHoaDon() != null
-                            && hoaDon.getLoaiHoaDon() == 0
-                            ? HinhThucNhan.NHAN_TAI_QUAY
-                            : HinhThucNhan.GIAO_HANG;
-        }
+        HinhThucNhan hinhThucNhan = HoaDonRules.resolveHinhThucNhan(hoaDon);
 
         TrangThaiHoaDon trangThaiTiepTheo =
                 TrangThaiHoaDon.trangThaiTiepTheo(
