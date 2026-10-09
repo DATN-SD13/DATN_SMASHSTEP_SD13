@@ -23,7 +23,7 @@ class ThuocTinhSanPhamServiceTest {
     private final KieuDangRepository styles = mock(KieuDangRepository.class);
     private final MauSacRepository colors = mock(MauSacRepository.class);
     private final KichThuocRepository sizes = mock(KichThuocRepository.class);
-    private final ThuocTinhSanPhamService service = new ThuocTinhSanPhamService(categories, brands,
+    private final ThuocTinhSanPhamService service = new ThuocTinhSanPhamService(mock(KhoaGhiSanPham.class), categories, brands,
             materials, origins, collars, styles, colors, sizes);
 
     private void codes(String type, List<String> codes) {

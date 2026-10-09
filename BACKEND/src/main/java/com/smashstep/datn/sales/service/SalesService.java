@@ -13,7 +13,6 @@ import com.smashstep.datn.sales.dto.SalesResponse.*;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import lombok.RequiredArgsConstructor;
-import org.hibernate.Session;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
@@ -26,6 +25,8 @@ import java.util.*;
 @Transactional(readOnly = true)
 public class SalesService {
     private final EntityManager em;
+    private final com.smashstep.datn.common.pricing.CurrentPriceService currentPrices;
+    private final com.smashstep.datn.invoice.service.InvoiceCodeService invoiceCodes;
     private static final BigDecimal ZERO = new BigDecimal("0.00");
     private static final String SELLABLE = " where v.trangThai = 1 and v.kichHoat = true and v.soLuong > 0"
             + " and v.giaBan > 0 and v.idSanPham.trangThai = 1";
@@ -43,11 +44,8 @@ public class SalesService {
                 + " left join fetch v.idMauSac left join fetch v.idKichThuoc" + filter + " order by v.id", SanPhamChiTiet.class)
                 .setParameter("keyword", search).setFirstResult(page * size).setMaxResults(size).getResultList();
         LocalDateTime now = LocalDateTime.now();
-        List<CatalogItem> content = rows.stream().map(v -> new CatalogItem(v.getId(), v.getMaChiTietSanPham(),
-                v.getIdSanPham().getMaSanPham(), v.getIdSanPham().getTenSanPham(),
-                v.getIdMauSac() == null ? "—" : v.getIdMauSac().getTenMauSac(),
-                v.getIdKichThuoc() == null ? "—" : v.getIdKichThuoc().getGiaTri(),
-                sellingPrice(v, now), v.getGiaBan(), v.getSoLuong())).toList();
+        var prices = currentPrices.getPrices(rows, now);
+        List<CatalogItem> content = rows.stream().map(v -> catalogResponse(v, prices.get(v.getId()))).toList();
         return new PageResponse<>(content, page, size, count, (int) ((count + size - 1) / size));
     }
 
@@ -64,12 +62,10 @@ public class SalesService {
                 || !Integer.valueOf(1).equals(v.getIdSanPham().getTrangThai()) || amount(v.getGiaBan()).signum() <= 0) {
             throw AppException.conflict("Biến thể không còn được bán. Hãy bỏ sản phẩm này khỏi giỏ hàng");
         }
-        return new CatalogItem(v.getId(), v.getMaChiTietSanPham(), v.getIdSanPham().getMaSanPham(),
-                v.getIdSanPham().getTenSanPham(), v.getIdMauSac() == null ? "—" : v.getIdMauSac().getTenMauSac(),
-                v.getIdKichThuoc() == null ? "—" : v.getIdKichThuoc().getGiaTri(), sellingPrice(v, LocalDateTime.now()), v.getGiaBan(), v.getSoLuong());
+        return catalogResponse(v, currentPrices.getPrice(v, LocalDateTime.now()));
     }
 
-    public Quote quote(SalesRequest request) { return prepare(request, false).quote(); }
+    public Quote quote(SalesRequest request) { return prepare(request, false, LocalDateTime.now()).quote(); }
 
     @Transactional
     public Receipt checkout(SalesRequest request) {
@@ -78,34 +74,40 @@ public class SalesService {
         }
         // Serialize request IDs without adding a table or relying on optional DB unique indexes.
         lockCheckout();
-        String invoiceCode = "POS-" + request.getRequestId().toLowerCase(Locale.ROOT);
-        List<HoaDon> existing = em.createQuery("select h from HoaDon h where h.maHoaDon = :code", HoaDon.class)
-                .setParameter("code", invoiceCode).setMaxResults(1).getResultList();
+        String transactionCode = "POS-REQ-" + request.getRequestId().toLowerCase(Locale.ROOT);
+        List<LichSuThanhToan> existing = em.createQuery("select p from LichSuThanhToan p join fetch p.idHoaDon where p.maGiaoDich = :code", LichSuThanhToan.class)
+                .setParameter("code", transactionCode).setMaxResults(1).getResultList();
         if (!existing.isEmpty()) {
-            HoaDon invoice = existing.get(0);
+            HoaDon invoice = existing.get(0).getIdHoaDon();
             if (!Integer.valueOf(5).equals(invoice.getTrangThai())) throw AppException.conflict("Hóa đơn đã được xử lý");
             verifyRetry(invoice, request);
-            BigDecimal discount = amount(invoice.getTongTien()).subtract(amount(invoice.getThanhTien())).max(ZERO);
-            return new Receipt(invoice.getId(), invoiceCode, invoice.getTongTien(), discount,
-                    invoice.getThanhTien(), amount(request.getPaidAmount()).subtract(invoice.getThanhTien()).max(ZERO));
+            // Existing payment description stores tendered cash without changing the database schema.
+            String paidMarker = " | Khách đưa: " + amount(request.getPaidAmount()).toPlainString();
+            if (existing.get(0).getMoTa() == null || !existing.get(0).getMoTa().endsWith(paidMarker))
+                throw AppException.conflict("Phiên thanh toán đã dùng với số tiền khách đưa khác");
+            return receipt(invoice, amount(request.getPaidAmount()));
         }
-        Prepared data = prepare(request, true);
+        LocalDateTime now = LocalDateTime.now();
+        Prepared data = prepare(request, true, now);
         BigDecimal paid = amount(request.getPaidAmount());
         if (paid.compareTo(data.quote().total()) < 0) throw AppException.badRequest("Số tiền thanh toán chưa đủ");
-        LocalDateTime now = LocalDateTime.now();
+        String invoiceCode = invoiceCodes.generateNextInvoiceCode();
         HoaDon invoice = new HoaDon();
         invoice.setMaHoaDon(invoiceCode); invoice.setLoaiHoaDon(0); invoice.setTrangThai(5);
         invoice.setIdKhachHang(data.customer()); invoice.setIdNhanVien(data.employee());
         invoice.setIdPhuongThucThanhToan(data.payment()); invoice.setIdPhieuGiamGia(data.voucher());
         invoice.setTongTien(data.quote().subtotal()); invoice.setPhiVanChuyen(ZERO);
         invoice.setTienGiamGia(data.quote().discount()); invoice.setThanhTien(data.quote().total());
+        invoice.setHoTenNguoiNhan(data.customer() == null ? "Khách lẻ" : data.customer().getTenKhachHang());
+        invoice.setSoDienThoaiNguoiNhan(data.customer() == null ? null : data.customer().getSoDienThoai());
         invoice.setGhiChu(request.getNote()); invoice.setNgayTao(now); invoice.setNgayCapNhat(now); invoice.setNgayThanhToan(now);
         em.persist(invoice);
         for (SalesRequest.Item item : request.getItems()) {
             SanPhamChiTiet variant = data.variants().get(item.getVariantId());
             HoaDonChiTiet detail = new HoaDonChiTiet();
             detail.setIdHoaDon(invoice); detail.setIdSanPhamChiTiet(variant); detail.setSoLuong(item.getQuantity());
-            detail.setDonGia(item.getUnitPrice()); detail.setThanhTien(item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity())));
+            BigDecimal soldPrice = data.prices().get(item.getVariantId()).getEffectivePrice();
+            detail.setDonGia(soldPrice); detail.setThanhTien(soldPrice.multiply(BigDecimal.valueOf(item.getQuantity())));
             detail.setTrangThai(1); em.persist(detail);
             variant.setSoLuong(variant.getSoLuong() - item.getQuantity()); variant.setNgayCapNhat(now);
         }
@@ -116,16 +118,15 @@ public class SalesService {
         }
         LichSuThanhToan payment = new LichSuThanhToan(); payment.setIdHoaDon(invoice);
         payment.setIdPhuongThucThanhToan(data.payment()); payment.setSoTien(data.quote().total());
-        payment.setMaGiaoDich(invoiceCode); payment.setThoiGian(now); payment.setTrangThai(1);
-        payment.setMoTa("Thanh toán tại quầy - " + data.payment().getTenPhuongThuc()); em.persist(payment);
+        payment.setMaGiaoDich(transactionCode); payment.setThoiGian(now); payment.setTrangThai(1);
+        payment.setMoTa("Thanh toán tại quầy - " + data.payment().getTenPhuongThuc() + " | Khách đưa: " + paid.toPlainString()); em.persist(payment);
         LichSuHoaDon history = new LichSuHoaDon(); history.setIdHoaDon(invoice); history.setNguoiTao(data.employee().getId());
         history.setTrangThai(5); history.setNgayTao(now); history.setGhiChu("Hoàn thành thanh toán tại quầy"); em.persist(history);
         em.flush();
-        return new Receipt(invoice.getId(), invoiceCode, data.quote().subtotal(), data.quote().discount(),
-                data.quote().total(), paid.subtract(data.quote().total()));
+        return receipt(invoice, paid);
     }
 
-    private Prepared prepare(SalesRequest request, boolean lock) {
+    private Prepared prepare(SalesRequest request, boolean lock, LocalDateTime now) {
         NhanVien employee = em.find(NhanVien.class, request.getEmployeeId());
         if (employee == null || !Integer.valueOf(1).equals(employee.getTrangThai())) throw AppException.badRequest("Nhân viên không hoạt động");
         KhachHang customer = request.getCustomerId() == null ? null : em.find(KhachHang.class, request.getCustomerId());
@@ -139,7 +140,6 @@ public class SalesService {
         }
         Map<Long, SanPhamChiTiet> variants = new LinkedHashMap<>();
         BigDecimal subtotal = ZERO;
-        LocalDateTime now = LocalDateTime.now();
         for (SalesRequest.Item item : request.getItems().stream().sorted(Comparator.comparing(SalesRequest.Item::getVariantId)).toList()) {
             if (variants.containsKey(item.getVariantId())) throw AppException.badRequest("Biến thể bị trùng trong giỏ hàng");
             SanPhamChiTiet variant = em.find(SanPhamChiTiet.class, item.getVariantId());
@@ -155,11 +155,13 @@ public class SalesService {
                 throw AppException.badRequest("Biến thể không còn được bán");
             }
             if (variant.getSoLuong() == null || variant.getSoLuong() < item.getQuantity()) throw AppException.conflict("Tồn kho không đủ");
-            BigDecimal price = sellingPrice(variant, now);
-            if (amount(variant.getGiaBan()).signum() <= 0 || price.compareTo(item.getUnitPrice()) != 0) {
-                throw AppException.conflict("Giá bán đã thay đổi. Hãy tải lại sản phẩm và xác nhận giá mới");
-            }
             variants.put(variant.getId(), variant);
+        }
+        var prices = currentPrices.getPrices(variants.values(), now);
+        for (SalesRequest.Item item : request.getItems()) {
+            BigDecimal price = prices.get(item.getVariantId()).getEffectivePrice();
+            if (amount(variants.get(item.getVariantId()).getGiaBan()).signum() <= 0 || price.compareTo(item.getUnitPrice()) != 0)
+                throw AppException.conflict("Giá bán đã thay đổi. Hãy tải lại sản phẩm và xác nhận giá mới.");
             subtotal = subtotal.add(price.multiply(BigDecimal.valueOf(item.getQuantity())));
         }
         PhieuGiamGia voucher = null;
@@ -209,38 +211,26 @@ public class SalesService {
             else throw AppException.badRequest("Loại giảm giá không hợp lệ");
             discount = discount.min(subtotal).setScale(2, RoundingMode.HALF_UP);
         }
-        return new Prepared(customer, employee, payment, voucher, assignment, variants, new Quote(subtotal, discount, subtotal.subtract(discount)));
+        return new Prepared(customer, employee, payment, voucher, assignment, variants, prices, new Quote(subtotal, discount, subtotal.subtract(discount)));
     }
 
-    private BigDecimal sellingPrice(SanPhamChiTiet variant, LocalDateTime now) {
-        BigDecimal original = amount(variant.getGiaBan());
-        List<BigDecimal> discounts = em.createQuery("select coalesce(c.phanTramGiamBienThe,c.idDotGiamGia.phanTramGiamDot) from ChiTietDotGiamGia c"
-                + " where c.idSanPhamChiTiet.id = :id and c.trangThai = 1 and c.idDotGiamGia.trangThai = 1"
-                + " and c.idDotGiamGia.kichHoat = true and c.idDotGiamGia.ngayBatDau <= :now and c.idDotGiamGia.ngayKetThuc >= :now", BigDecimal.class)
-                .setParameter("id", variant.getId()).setParameter("now", now).getResultList();
-        BigDecimal percent = discounts.stream().filter(Objects::nonNull).max(BigDecimal::compareTo).orElse(BigDecimal.ZERO)
-                .max(BigDecimal.ZERO).min(new BigDecimal("100"));
-        return original.multiply(BigDecimal.ONE.subtract(percent.divide(new BigDecimal("100"))))
-                .setScale(2, RoundingMode.HALF_UP);
+    private CatalogItem catalogResponse(SanPhamChiTiet v, com.smashstep.datn.common.pricing.CurrentPrice price) {
+        return new CatalogItem(v.getId(), v.getMaChiTietSanPham(), v.getIdSanPham().getMaSanPham(),
+                v.getIdSanPham().getTenSanPham(), v.getIdMauSac() == null ? "—" : v.getIdMauSac().getTenMauSac(),
+                v.getIdKichThuoc() == null ? "—" : v.getIdKichThuoc().getGiaTri(), price.getEffectivePrice(), price.getOriginalPrice(),
+                v.getSoLuong(), price.isDiscounted(), price.getDiscountPercent(), price.getCampaignCode(), price.getCampaignName());
     }
 
-    private void lockCheckout() {
-        int result = em.unwrap(Session.class).doReturningWork(connection -> {
-            if (connection.getAutoCommit()) throw new java.sql.SQLException("Checkout requires a managed transaction");
-            // JDBC disables autocommit through SQL Server's implicit transaction mode.
-            // EXEC alone does not start that transaction, so read a system table first.
-            // Spring commits/rolls back the same connection and releases the application lock.
-            try (var start = connection.prepareStatement("SELECT TOP (1) object_id FROM sys.objects");
-                 var ignored = start.executeQuery()) {
-                // No business row is changed or locked by this metadata read.
-            }
-            try (var statement = connection.prepareStatement("DECLARE @result int; EXEC @result = sys.sp_getapplock "
-                    + "@Resource=N'smashstep:pos:checkout', @LockMode='Exclusive', @LockOwner='Transaction', @LockTimeout=10000; SELECT @result")) {
-                try (var rows = statement.executeQuery()) { rows.next(); return rows.getInt(1); }
-            }
-        });
-        if (result < 0) throw AppException.conflict("Đang xử lý thanh toán khác, hãy thử lại");
+    private Receipt receipt(HoaDon invoice, BigDecimal paid) {
+        var employee = invoice.getIdNhanVien(); var customer = invoice.getIdKhachHang(); var method = invoice.getIdPhuongThucThanhToan();
+        return new Receipt(invoice.getId(), invoice.getMaHoaDon(), invoice.getTongTien(), invoice.getTienGiamGia(), invoice.getThanhTien(),
+                paid.subtract(invoice.getThanhTien()), employee.getId(), employee.getMaNhanVien(), employee.getTenNhanVien(),
+                customer == null ? null : customer.getId(), customer == null ? null : customer.getMaKhachHang(),
+                invoice.getHoTenNguoiNhan(), invoice.getSoDienThoaiNguoiNhan(), method.getMaPhuongThuc(), method.getTenPhuongThuc(),
+                invoice.getIdPhieuGiamGia() == null ? null : invoice.getIdPhieuGiamGia().getMaPhieuGiamGia(), invoice.getNgayTao(), paid);
     }
+
+    private void lockCheckout() { invoiceCodes.lockInvoiceCreation(); }
 
     private void verifyRetry(HoaDon invoice, SalesRequest request) {
         List<HoaDonChiTiet> details = em.createQuery("select d from HoaDonChiTiet d where d.idHoaDon.id = :id", HoaDonChiTiet.class)
@@ -270,15 +260,17 @@ public class SalesService {
         private final PhieuGiamGia voucher;
         private final PhieuGiamGiaKhachHang assignment;
         private final Map<Long, SanPhamChiTiet> variants;
+        private final Map<Long, com.smashstep.datn.common.pricing.CurrentPrice> prices;
         private final Quote quote;
 
-        private Prepared(KhachHang customer, NhanVien employee, PhuongThucThanhToan payment, PhieuGiamGia voucher, PhieuGiamGiaKhachHang assignment, Map<Long, SanPhamChiTiet> variants, Quote quote) {
+        private Prepared(KhachHang customer, NhanVien employee, PhuongThucThanhToan payment, PhieuGiamGia voucher, PhieuGiamGiaKhachHang assignment, Map<Long, SanPhamChiTiet> variants, Map<Long, com.smashstep.datn.common.pricing.CurrentPrice> prices, Quote quote) {
             this.customer = customer;
             this.employee = employee;
             this.payment = payment;
             this.voucher = voucher;
             this.assignment = assignment;
             this.variants = variants;
+            this.prices = prices;
             this.quote = quote;
         }
 
@@ -288,6 +280,7 @@ public class SalesService {
         public PhieuGiamGia voucher() { return voucher; }
         public PhieuGiamGiaKhachHang assignment() { return assignment; }
         public Map<Long, SanPhamChiTiet> variants() { return variants; }
+        public Map<Long, com.smashstep.datn.common.pricing.CurrentPrice> prices() { return prices; }
         public Quote quote() { return quote; }
 
         @Override

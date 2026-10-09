@@ -52,3 +52,21 @@
 .product-page .p-image-help{display:block;margin:10px 0}
 @media(max-width:1100px){.product-page .p-filter-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.product-page .p-info{grid-template-columns:1fr 1fr}}
 @media(max-width:700px){.product-page{padding:17px 14px}.product-page h1{font-size:22px}.product-page .p-heading{align-items:flex-start;flex-direction:column}.product-page .p-filter-grid,.product-page .p-form-grid,.product-page .p-info{grid-template-columns:1fr}.product-page .p-card{padding:17px}.product-page .p-pagination{align-items:flex-start;flex-direction:column}.product-page .p-dialog{max-height:85vh}}
+
+/* Select2 uses the existing product input colors, spacing and radius. */
+.product-page .select2-container{min-width:0;font-size:12px;font-weight:400}
+.product-page .select2-container .select2-selection{border:1px solid #ccdbe2;border-radius:9px;min-height:38px;background:#fff;color:#17303b}
+.product-page .select2-container .select2-selection--single{height:38px}
+.product-page .select2-container .select2-selection--single .select2-selection__rendered{line-height:36px;padding-left:11px;padding-right:28px;color:#17303b}
+.product-page .select2-container .select2-selection--single .select2-selection__arrow{height:36px;right:6px}
+.product-page .select2-container--focus .select2-selection,.product-page .select2-container--open .select2-selection{outline:2px solid #c1e7f7;border-color:#087fb8}
+.product-page .select2-container--disabled .select2-selection{background:#f2f7f9;opacity:.7;cursor:not-allowed}
+.product-page .select2-container .select2-selection--multiple{padding:3px 7px;min-height:38px}
+.product-page .select2-container .select2-selection__choice{background:#e0f1f8;border:1px solid #cbe5ef;border-radius:6px;color:#17586f}
+.product-page .select2-dropdown{border-color:#b9d5e1;border-radius:9px;box-shadow:0 5px 18px rgba(21,54,70,.12);font-size:12px;color:#17303b;z-index:2050}
+.product-page .select2-container--default .select2-results__option--highlighted[aria-selected]{background:#087fb8}
+.product-page .select2-search input.select2-search__field{outline:none;min-height:26px;padding:4px;box-sizing:border-box}
+.product-page .select2-selection--multiple .select2-search__field{border:0;border-radius:0;width:auto}
+.product-page .p-pagination .select2-container{width:105px!important}
+.product-page .p-dialog .p-card{margin-top:20px;margin-bottom:0}
+.product-page .p-variant-images td{background:#f5fafc;padding:16px}

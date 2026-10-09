@@ -20,6 +20,9 @@ public class HoaDonListDto {
     private final String maHoaDon;
     private final String tenNhanVien;
     private final String maNhanVien;
+    private final Long idKhachHang;
+    private final String maKhachHang;
+    private final Long idNhanVien;
     private final String tenKhachHang;
     private final String soDienThoai;
     private final String ngayTao;
@@ -47,7 +50,10 @@ public class HoaDonListDto {
                 .maHoaDon(h.getMaHoaDon())
                 .tenNhanVien(nv != null ? nv.getTenNhanVien() : null)
                 .maNhanVien(nv != null ? nv.getMaNhanVien() : null)
-                .tenKhachHang(firstNotBlank(kh != null ? kh.getTenKhachHang() : null, h.getHoTenNguoiNhan(), "Khách lẻ"))
+                .idKhachHang(kh != null ? kh.getId() : null)
+                .maKhachHang(kh != null ? kh.getMaKhachHang() : null)
+                .idNhanVien(nv != null ? nv.getId() : null)
+                .tenKhachHang(firstNotBlank(h.getHoTenNguoiNhan(), kh != null ? kh.getTenKhachHang() : null, "Khách lẻ"))
                 .soDienThoai(firstNotBlank(h.getSoDienThoaiNguoiNhan(), kh != null ? kh.getSoDienThoai() : null, ""))
                 .ngayTao(h.getNgayTao() != null ? h.getNgayTao().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss")) : null)
                 .tongTien(nz(h.getTongTien()))

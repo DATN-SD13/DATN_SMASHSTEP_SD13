@@ -69,9 +69,7 @@ async function openCreate() {
   error.value = ''
   try {
     const code = await productService.nextCode()
-    askConfirmation({ title: 'Tạo sản phẩm mới',
-      message: 'Bạn có chắc muốn tạo một sản phẩm mới?\nMã này được hệ thống tự động tạo theo thứ tự hiện tại.',
-      details: [{ label: 'Mã sản phẩm dự kiến', value: code }] }, () => router.push({ path: '/san-pham/them', query: { code } }))
+    await router.push({ path: '/san-pham/them', query: { code } })
   } catch (e) { error.value = errorMessage(e) }
   finally { codeBusy.value = false }
 }

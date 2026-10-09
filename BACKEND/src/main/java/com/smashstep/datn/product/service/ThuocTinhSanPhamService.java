@@ -3,6 +3,10 @@ package com.smashstep.datn.product.service;
 import com.smashstep.datn.common.response.PageResponse;
 import com.smashstep.datn.common.exception.AppException;
 import com.smashstep.datn.product.dto.DuLieuSanPham.*;
+import com.smashstep.datn.product.dto.KiemTraTrungResponse;
+import com.smashstep.datn.product.dto.ThuocTinhTrungRequest;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import java.util.function.Function;
 import com.smashstep.datn.product.entity.*;
 import com.smashstep.datn.product.repository.*;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +23,7 @@ import java.util.*;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class ThuocTinhSanPhamService {
+    private final KhoaGhiSanPham khoaGhi;
     private final DanhMucRepository danhMucRepository;
     private final ThuongHieuRepository thuongHieuRepository;
     private final ChatLieuRepository chatLieuRepository;
@@ -158,20 +163,63 @@ public class ThuocTinhSanPhamService {
         return maMoi;
     }
 
-    private <T> Specification<T> kiemTraTrung(Long id, String truongMa, String truongTen, String ma, String ten) {
-        return (bang, truyVan, tieuChi) -> {
-            Predicate trungTen = tieuChi.equal(tieuChi.lower(bang.get(truongTen)),
-                    QuyTacSanPham.boKhoangTrang(ten).toLowerCase(Locale.ROOT));
-            Predicate trung = truongMa == null ? trungTen : tieuChi.or(trungTen,
-                    tieuChi.equal(tieuChi.lower(bang.get(truongMa)),
-                            QuyTacSanPham.boKhoangTrang(ma).toLowerCase(Locale.ROOT)));
-            return tieuChi.and(tieuChi.notEqual(bang.get("id"), id == null ? 0L : id), trung);
+    public KiemTraTrungResponse.Attribute kiemTraTrung(String loai, ThuocTinhTrungRequest request) {
+        if (request.getExcludeId() != null) layChiTiet(loai, request.getExcludeId());
+        if ("sizes".equals(loai) && QuyTacSanPham.boKhoangTrang(request.getTen()).length() > 50)
+            throw AppException.badRequest("Giá trị kích thước tối đa 50 ký tự");
+        if ("colors".equals(loai) && !QuyTacSanPham.boKhoangTrang(request.getMaMauHex()).matches("^#[0-9a-fA-F]{6}$"))
+            throw AppException.badRequest("Mã HEX phải có dạng #RRGGBB");
+        return switch (loai) {
+            case "categories" -> timThuocTinhTrung(danhMucRepository, "tenDanhMuc", request, false, this::chuyenSangResponse);
+            case "brands" -> timThuocTinhTrung(thuongHieuRepository, "tenThuongHieu", request, false, this::chuyenSangResponse);
+            case "materials" -> timThuocTinhTrung(chatLieuRepository, "tenChatLieu", request, false, this::chuyenSangResponse);
+            case "styles" -> timThuocTinhTrung(kieuDangRepository, "tenKieuDang", request, false, this::chuyenSangResponse);
+            case "collars" -> timThuocTinhTrung(coGiayRepository, "tenCoGiay", request, false, this::chuyenSangResponse);
+            case "origins" -> timThuocTinhTrung(xuatXuRepository, "tenXuatXu", request, false, this::chuyenSangResponse);
+            case "colors" -> timThuocTinhTrung(mauSacRepository, "tenMauSac", request, true, this::chuyenSangResponse);
+            case "sizes" -> timThuocTinhTrung(kichThuocRepository, "giaTri", request, false, this::chuyenSangResponse);
+            default -> throw AppException.badRequest("Loại thuộc tính không hợp lệ");
         };
+    }
+
+    private <T> KiemTraTrungResponse.Attribute timThuocTinhTrung(JpaSpecificationExecutor<T> repository,
+            String nameField, ThuocTinhTrungRequest request, boolean color, Function<T, ThuocTinhResponse> mapper) {
+        Specification<T> candidates = (root, query, cb) -> {
+            Predicate name = cb.like(cb.lower(root.get(nameField)), QuyTacSanPham.businessNamePattern(request.getTen()), '\\');
+            Predicate match = color ? cb.or(name, cb.equal(cb.lower(cb.trim(root.get("maMauHex"))),
+                    QuyTacSanPham.boKhoangTrang(request.getMaMauHex()).toLowerCase(Locale.ROOT))) : name;
+            return request.getExcludeId() == null ? match : cb.and(match, cb.notEqual(root.get("id"), request.getExcludeId()));
+        };
+        String name = QuyTacSanPham.normalizeBusinessName(request.getTen());
+        String hex = QuyTacSanPham.boKhoangTrang(request.getMaMauHex());
+        return repository.findAll(candidates).stream().map(mapper).sorted(Comparator.comparing(ThuocTinhResponse::getId))
+                .filter(item -> name.equals(QuyTacSanPham.normalizeBusinessName(item.getTen()))
+                        || color && hex.equalsIgnoreCase(QuyTacSanPham.boKhoangTrang(item.getMaMauHex())))
+                .map(item -> {
+                    boolean sameName = name.equals(QuyTacSanPham.normalizeBusinessName(item.getTen()));
+                    boolean sameHex = color && hex.equalsIgnoreCase(QuyTacSanPham.boKhoangTrang(item.getMaMauHex()));
+                    return new KiemTraTrungResponse.Attribute(true, item,
+                            sameName && sameHex ? "NAME_AND_HEX" : sameName ? "NAME" : "HEX");
+                }).findFirst().orElseGet(() -> new KiemTraTrungResponse.Attribute(false, null, null));
+    }
+
+    private <T> Specification<T> kiemTraTrung(Long id, String truongMa, String truongTen, String ma, String ten) {
+        // Technical code uniqueness is independent from normalized business identity.
+        return (root, query, cb) -> truongMa == null ? cb.disjunction() : cb.and(
+                cb.notEqual(root.get("id"), id == null ? 0L : id),
+                cb.equal(cb.lower(root.get(truongMa)), QuyTacSanPham.boKhoangTrang(ma).toLowerCase(Locale.ROOT)));
     }
 
     @Transactional
     public ThuocTinhResponse luuThuocTinh(String loai, Long id, ThuocTinhRequest yeuCau) {
+        khoaGhi.khoa("attributes:" + loai);
         QuyTacSanPham.kiemTraTrangThai(yeuCau.getTrangThai());
+        var duplicate = kiemTraTrung(loai, new ThuocTinhTrungRequest(yeuCau.getTen(), yeuCau.getMaMauHex(), id));
+        if (duplicate.isDuplicate()) {
+            var existing = duplicate.getAttribute();
+            throw AppException.conflict("Thuộc tính đã tồn tại: " + (existing.getMa() == null ? "" : existing.getMa() + " - ")
+                    + existing.getTen() + ("HEX".equals(duplicate.getReason()) ? " (trùng mã HEX)." : "."));
+        }
         if ("sizes".equals(loai) && QuyTacSanPham.boKhoangTrang(yeuCau.getTen()).length() > 50)
             throw AppException.badRequest("Giá trị kích thước tối đa 50 ký tự");
         if ("colors".equals(loai) && !QuyTacSanPham.boKhoangTrang(yeuCau.getMaMauHex()).matches("^#[0-9a-fA-F]{6}$"))
@@ -352,7 +400,7 @@ public class ThuocTinhSanPhamService {
             throw AppException.conflict("Mã hoặc tên màu sắc đã tồn tại");
         }
         thuocTinh.setTenMauSac(QuyTacSanPham.boKhoangTrang(yeuCau.getTen()));
-        thuocTinh.setMaMauHex(QuyTacSanPham.boKhoangTrang(yeuCau.getMaMauHex()));
+        thuocTinh.setMaMauHex(QuyTacSanPham.boKhoangTrang(yeuCau.getMaMauHex()).toUpperCase(Locale.ROOT));
         thuocTinh.setTrangThai(yeuCau.getTrangThai());
         if (id == null) {
             thuocTinh.setNgayTao(LocalDateTime.now());

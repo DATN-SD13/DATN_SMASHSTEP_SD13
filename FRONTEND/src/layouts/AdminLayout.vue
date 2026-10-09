@@ -15,8 +15,20 @@ const nav = [
     key: 'product', label: 'Quản lý sản phẩm', icon: 'bi-box-seam',
     children: [
       { label: 'Sản phẩm', to: '/san-pham' },
-      { label: 'Biến thể sản phẩm', to: '/bien-the-san-pham' },
-      { label: 'Thiết lập biến thể sản phẩm', to: '/thuoc-tinh' }
+      { label: 'Biến thể sản phẩm', to: '/bien-the-san-pham' }
+    ]
+  },
+  {
+    key: 'attributes', label: 'Thuộc tính', icon: 'bi-sliders',
+    children: [
+      { label: 'Thương hiệu', to: '/thuoc-tinh/thuong-hieu' },
+      { label: 'Danh mục', to: '/thuoc-tinh/danh-muc' },
+      { label: 'Chất liệu', to: '/thuoc-tinh/chat-lieu' },
+      { label: 'Kiểu dáng', to: '/thuoc-tinh/kieu-dang' },
+      { label: 'Cổ giày', to: '/thuoc-tinh/co-giay' },
+      { label: 'Xuất xứ', to: '/thuoc-tinh/xuat-xu' },
+      { label: 'Màu sắc', to: '/thuoc-tinh/mau-sac' },
+      { label: 'Kích thước', to: '/thuoc-tinh/kich-thuoc' }
     ]
   },
   { label: 'Quản lý khách hàng', icon: 'bi-people', to: '/khach-hang' },
@@ -32,7 +44,7 @@ const nav = [
 
 const isOn = (to) => route.path === to || route.path.startsWith(to + '/')
 const groupActive = (item) => item.children ? item.children.some(c => isOn(c.to)) : isOn(item.to)
-const open = reactive({ product: true, promo: true })
+const open = reactive({ product: true, attributes: true, promo: true })
 
 const crumbs = computed(() => ({
   parent: route.meta?.parent || null,

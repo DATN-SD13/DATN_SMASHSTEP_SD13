@@ -38,6 +38,10 @@ public class HoaDonDetailDto {
     private Integer maTrangThaiTiepTheo;
     private String trangThaiTiepTheo;
     private String phuongThucThanhToan;
+    private Long idPhuongThucThanhToan;
+    private String maPhuongThucThanhToan;
+    private Long idPhieuGiamGia;
+    private String maPhieuGiamGia;
     private String trangThaiThanhToan;
     private Integer maTrangThaiThanhToan;
     private String ngayThanhToan;
@@ -79,9 +83,9 @@ public class HoaDonDetailDto {
                 .ngayTao(formatDateTime(hoaDon.getNgayTao()))
                 .ngayCapNhat(formatDateTime(hoaDon.getNgayCapNhat()))
                 .idKhachHang(khachHang != null ? khachHang.getId() : null)
-                .tenKhachHang(khachHang != null ? khachHang.getTenKhachHang() : hoaDon.getHoTenNguoiNhan())
+                .tenKhachHang(firstNotBlank(hoaDon.getHoTenNguoiNhan(), khachHang != null ? khachHang.getTenKhachHang() : null, "Khách lẻ"))
                 .maKhachHang(khachHang != null ? khachHang.getMaKhachHang() : null)
-                .soDienThoai(khachHang != null ? khachHang.getSoDienThoai() : hoaDon.getSoDienThoaiNguoiNhan())
+                .soDienThoai(firstNotBlank(hoaDon.getSoDienThoaiNguoiNhan(), khachHang != null ? khachHang.getSoDienThoai() : null))
                 .diaChi(hoaDon.getDiaChiGiaoHang())
                 .idNhanVien(nhanVien != null ? nhanVien.getId() : null)
                 .tenNhanVien(nhanVien != null ? nhanVien.getTenNhanVien() : null)
@@ -93,6 +97,10 @@ public class HoaDonDetailDto {
                 .maTrangThaiTiepTheo(trangThaiTiepTheo != null ? trangThaiTiepTheo.getMa() : null)
                 .trangThaiTiepTheo(trangThaiTiepTheo != null ? trangThaiTiepTheo.getNhan() : null)
                 .phuongThucThanhToan(phuongThuc != null ? phuongThuc.getTenPhuongThuc() : null)
+                .idPhuongThucThanhToan(phuongThuc != null ? phuongThuc.getId() : null)
+                .maPhuongThucThanhToan(phuongThuc != null ? phuongThuc.getMaPhuongThuc() : null)
+                .idPhieuGiamGia(hoaDon.getIdPhieuGiamGia() != null ? hoaDon.getIdPhieuGiamGia().getId() : null)
+                .maPhieuGiamGia(hoaDon.getIdPhieuGiamGia() != null ? hoaDon.getIdPhieuGiamGia().getMaPhieuGiamGia() : null)
                 .trangThaiThanhToan(hoaDon.getNgayThanhToan() != null ? "Đã thanh toán" : "Chưa thanh toán")
                 .maTrangThaiThanhToan(hoaDon.getNgayThanhToan() != null ? 1 : 0)
                 .ngayThanhToan(formatDateTime(hoaDon.getNgayThanhToan()))
@@ -109,6 +117,11 @@ public class HoaDonDetailDto {
                 .lichSuThanhToan(lichSuThanhToan == null ? List.of() : lichSuThanhToan)
                 .lichSuHoaDon(lichSuHoaDon == null ? List.of() : lichSuHoaDon)
                 .build();
+    }
+
+    private static String firstNotBlank(String... values) {
+        for (String value : values) if (value != null && !value.isBlank()) return value;
+        return null;
     }
 
     private static String formatDateTime(java.time.LocalDateTime value) {

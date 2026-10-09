@@ -59,7 +59,7 @@ watch(() => route.params.id, () => load(true), { immediate: true })
       <section class="p-card"><h2><i class="bi bi-layers"></i> Biến thể của sản phẩm ({{ detail.variants.length }})</h2><VariantTable :rows="detail.variants" :busy="busy" @edit="editing = $event" @status="variantStatus" /></section>
       <VariantCreate :key="product.id" :product="product" :existing="detail.variants" :options="options" @created="success = 'Đã tạo biến thể.'; load()" />
       <ProductImages :key="'images-' + product.id" :product-id="product.id" :product-code="product.maSanPham" :images="detail.images" @changed="load()" />
-      <VariantEditModal v-if="editing" :key="editing.id" :variant="editing" :options="options" @close="editing = null" @saved="variantSaved" />
+      <VariantEditModal v-if="editing" :key="editing.id" :variant="editing" :options="options" @close="editing = null" @saved="variantSaved" @images-changed="load()" />
     </template>
     <div v-else class="p-card p-empty">{{ error ? 'Không tải được sản phẩm.' : 'Đang tải...' }} <button v-if="error" class="p-btn" @click="load(true)">Thử lại</button></div>
     <ConfirmModal v-bind="confirmation || {}" :show="!!confirmation" :loading="confirming" :error="confirmError" @confirm="confirmAction" @cancel="cancelConfirmation" />

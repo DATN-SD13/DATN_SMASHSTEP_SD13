@@ -4,6 +4,9 @@ import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { money } from '../../../../utils/paging'
 import { confirmAction, showSuccess } from '../../../../utils/feedback'
 import salesService from '../services/salesService'
+import { useRouter } from 'vue-router'
+const router = useRouter()
+const completedReceipt = ref(null)
 import api from '../../../../utils/api'
 import customerService from '../../customer/services/customerService'
 import employeeService from '../../employee/services/employeeService'
@@ -147,7 +150,8 @@ const quoteInput = computed(() => order.value ? {
   paymentMethodId: order.value.paymentMethodId, voucherCode: order.value.voucherCode.trim(),
   items: order.value.items.map(i => ({ variantId: i.id, quantity: i.qty, unitPrice: i.price }))
 } : null)
-const signature = computed(() => JSON.stringify(quoteInput.value))
+const signature = computed(() => JSON.stringify({ payload: quoteInput.value,
+  prices: order.value?.items.map(i => [i.id, i.originalPrice, i.price, i.discountPercent, i.campaignCode]) }))
 const quoteReady = computed(() => order.value?.quote && order.value.quotedSignature === signature.value)
 const payable = computed(() => quoteReady.value ? Number(order.value.quote.total) : total.value)
 const change = computed(() => Math.max(0, paidNum.value - payable.value))
@@ -190,6 +194,7 @@ async function performPayment(target, payload) {
     }
     try {
       const receipt = await salesService.checkout(payload)
+      completedReceipt.value = { ...receipt, paidAmount: receipt.paidAmount ?? payload.paidAmount }
       clearPendingCheckout(payload.requestId)
       orders.value = orders.value.filter(o => o.id !== target.id)
       activeId.value = orders.value[0]?.id ?? null
@@ -216,12 +221,13 @@ async function retryPayment() {
 async function refreshCart() {
   if (!order.value?.items.length || locked.value) return
   const target = order.value
+  target.quote = null; target.quotedSignature = ''; ++quoteVersion
   paying.value = true; error.value = ''
   try {
     const fresh = await Promise.all(target.items.map(i => salesService.catalogItem(i.id)))
     for (const item of target.items) {
       const current = fresh.find(v => v.id === item.id)
-      item.price = current.price; item.stock = current.stock; item.qty = Math.min(item.qty, current.stock)
+      Object.assign(item, current, { qty: Math.min(item.qty, current.stock) })
     }
     await calculateQuote()
   } catch (e) { error.value = message(e) }
@@ -253,7 +259,13 @@ async function loadCustomers() {
   const version = ++customerVersion
   try {
     const result = await customerService.getCustomers({ page: 1, size: 20, trangThai: 1, tuKhoa: customerSearch.value.trim() })
-    if (version === customerVersion) customers.value = result.content || []
+    if (version === customerVersion) {
+      const found = result.content || []
+      const selectedIds = new Set(orders.value.map(current => current.customerId).filter(Boolean))
+      // Keep selected customers visible when searching for customers of another pending order.
+      customers.value = [...customers.value.filter(customer => selectedIds.has(customer.id)
+        && !found.some(match => match.id === customer.id)), ...found]
+    }
   } catch (e) { if (version === customerVersion) error.value = message(e) }
 }
 watch(q, () => { catalogPage.value = 0; ++catalogVersion; clearTimeout(searchTimer); searchTimer = setTimeout(loadCatalog, 250) })
@@ -320,7 +332,7 @@ onBeforeUnmount(() => { ++quoteVersion; ++catalogVersion; ++customerVersion; cle
                   <td>{{ i.color }}</td>
                   <td class="c">{{ i.size }}</td>
                   <td class="c"><div class="qty"><button :disabled="locked" @click="setQty(i, i.qty - 1)">−</button><input :disabled="locked" :value="i.qty" @change="setQty(i, $event.target.value)" /><button :disabled="locked" @click="setQty(i, i.qty + 1)">+</button></div></td>
-                  <td class="r nowrap">{{ money(i.price) }}</td>
+                  <td class="r nowrap" :title="i.campaignName || ''"><del v-if="i.discounted" class="pos-price-old">{{ money(i.originalPrice) }}</del><strong>{{ money(i.price) }}</strong><span v-if="i.discounted" class="pos-discount">-{{ Number(i.discountPercent) }}%</span></td>
                   <td class="c"><button class="ss-icon-btn danger" :disabled="locked" title="Xóa" @click="removeItem(i.code)"><i class="bi bi-trash3"></i></button></td>
                 </tr>
               </tbody>
@@ -339,11 +351,11 @@ onBeforeUnmount(() => { ++quoteVersion; ++catalogVersion; ++customerVersion; cle
           </div>
           <select v-if="order" class="ss-select" v-model="order.customerId" :disabled="locked" aria-label="Khách hàng">
             <option :value="null">Khách lẻ</option>
-            <option v-for="c in customers" :key="c.id" :value="c.id">{{ c.name || '—' }} · {{ c.phone || c.code }}</option>
+            <option v-for="c in customers" :key="c.id" :value="c.id">{{ c.code || '—' }} · {{ c.name || '—' }} · {{ c.phone || '—' }}</option>
           </select>
           <label class="ss-label">Nhân viên bán hàng</label>
           <select class="ss-select" v-model="employeeId" :disabled="locked" aria-label="Nhân viên bán hàng">
-            <option v-for="e in employees" :key="e.id" :value="e.id">{{ e.name || e.code }}</option>
+            <option v-for="e in employees" :key="e.id" :value="e.id">{{ e.code || '—' }} · {{ e.name || '—' }}</option>
           </select>
         </section>
 
@@ -392,7 +404,7 @@ onBeforeUnmount(() => { ++quoteVersion; ++catalogVersion; ++customerVersion; cle
             <tbody>
               <tr v-for="v in shown" :key="v.code">
                 <td><span class="ss-code">{{ v.code }}</span></td><td class="ss-strong">{{ v.name }}</td><td>{{ v.color }}</td><td class="c">{{ v.size }}</td>
-                <td class="r">{{ v.stock }}</td><td class="r nowrap">{{ money(v.price) }}</td>
+                <td class="r">{{ v.stock }}</td><td class="r nowrap" :title="[v.campaignCode, v.campaignName].filter(Boolean).join(' · ')"><del v-if="v.discounted" class="pos-price-old">{{ money(v.originalPrice) }}</del><strong>{{ money(v.price) }}</strong><span v-if="v.discounted" class="pos-discount">-{{ Number(v.discountPercent) }}%</span></td>
                 <td class="c"><button class="ss-btn sm" @click="addItem(v)"><i class="bi bi-plus-lg"></i> Thêm</button></td>
               </tr>
               <tr v-if="loading"><td colspan="7" class="ss-empty">Đang tải sản phẩm...</td></tr>
@@ -409,10 +421,35 @@ onBeforeUnmount(() => { ++quoteVersion; ++catalogVersion; ++customerVersion; cle
       </div>
     </div>
 
+    <div v-if="completedReceipt" class="ss-modal-bg" @click.self="completedReceipt = null">
+      <section class="ss-modal pos-receipt" role="dialog" aria-modal="true" aria-labelledby="receipt-title">
+        <div class="ss-head"><h2 id="receipt-title">Thanh toán thành công</h2><span class="ss-spacer"></span><button class="ss-icon-btn" aria-label="Đóng biên nhận" @click="completedReceipt = null">×</button></div>
+        <dl class="receipt-details">
+          <dt>Mã HĐ</dt><dd>{{ completedReceipt.invoiceCode }}</dd>
+          <dt>Mã NV</dt><dd>{{ completedReceipt.employeeCode }}</dd>
+          <dt>Nhân viên</dt><dd>{{ completedReceipt.employeeName }}</dd>
+          <dt>Mã KH</dt><dd>{{ completedReceipt.customerCode || '—' }}</dd>
+          <dt>Khách hàng</dt><dd>{{ completedReceipt.customerName || 'Khách lẻ' }}</dd>
+          <dt>SĐT</dt><dd>{{ completedReceipt.customerPhone || '—' }}</dd>
+          <dt>Phương thức</dt><dd>{{ completedReceipt.paymentMethodName }}</dd>
+          <dt>Phiếu giảm giá</dt><dd>{{ completedReceipt.voucherCode || '—' }}</dd>
+          <dt>Tổng tiền hàng</dt><dd>{{ money(completedReceipt.subtotal) }}</dd>
+          <dt>Giảm phiếu</dt><dd>{{ money(completedReceipt.discount) }}</dd>
+          <dt>Thanh toán</dt><dd>{{ money(completedReceipt.total) }}</dd>
+          <dt>Khách đưa</dt><dd>{{ money(completedReceipt.paidAmount) }}</dd>
+          <dt>Tiền thừa</dt><dd>{{ money(completedReceipt.change) }}</dd>
+          <dt>Ngày tạo</dt><dd>{{ new Date(completedReceipt.createdAt).toLocaleString('vi-VN') }}</dd>
+        </dl>
+        <div class="ss-actions"><button class="ss-btn" @click="completedReceipt = null">Tiếp tục bán hàng</button><button class="ss-btn primary" @click="router.push('/hoa-don/' + encodeURIComponent(completedReceipt.invoiceCode))">Xem hóa đơn</button></div>
+      </section>
+    </div>
   </AdminLayout>
 </template>
 
 <style scoped>
+.pos-price-old{display:block;opacity:.6;font-size:10px}.pos-discount{display:inline-block;margin-left:5px;padding:2px 5px;border-radius:5px;background:#e7f5ff;color:#147fb4;font-size:10px;font-weight:700}
+.pos-receipt{max-width:570px;overflow-y:auto}.pos-receipt>.ss-head,.pos-receipt>.ss-actions{flex-shrink:0}.receipt-details{display:grid;grid-template-columns:minmax(95px,140px) minmax(0,1fr);gap:8px 16px;margin:20px 0;flex-shrink:0}.receipt-details dt{font-weight:500;color:var(--ss-muted)}.receipt-details dd{margin:0;overflow-wrap:anywhere;font-weight:600}
+
 .pos { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
 .grow { min-height: 520px; }
 .ss-count.strong { font-weight: 600; color: var(--ss-muted); }

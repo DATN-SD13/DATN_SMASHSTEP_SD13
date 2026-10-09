@@ -67,7 +67,7 @@ class SanPhamTichHopTest {
         code = "TEST-" + UUID.randomUUID().toString().substring(0, 12);
         for (String type : List.of("categories", "brands", "materials", "styles", "collars", "origins", "colors", "sizes")) {
             var request = new ThuocTinhRequest(code, code + "-" + type, "Ghi chú kiểm thử",
-                    type.equals("colors") ? "#123456" : null, 1);
+                    type.equals("colors") ? String.format("#%06X", UUID.randomUUID().hashCode() & 0xFFFFFF) : null, 1);
             ids.put(type, attributes.luuThuocTinh(type, null, request).getId());
         }
         mvc = MockMvcBuilders.webAppContextSetup(context).build();
@@ -247,7 +247,7 @@ class SanPhamTichHopTest {
         List<?> columns = entityManager.createNativeQuery(
                 "select COLUMN_NAME from INFORMATION_SCHEMA.COLUMNS where TABLE_SCHEMA = 'dbo' "
                         + "and TABLE_NAME = 'hinh_anh_san_pham' order by ORDINAL_POSITION").getResultList();
-        assertEquals(List.of("id", "id_san_pham", "url_anh", "is_anh_chinh"), columns);
+        assertEquals(List.of("id", "id_san_pham", "url_anh", "is_anh_chinh", "id_san_pham_chi_tiet"), columns);
     }
 
     @Test
@@ -256,7 +256,7 @@ class SanPhamTichHopTest {
         String attributeCode = code + "-HTTP";
         for (String type : ids.keySet()) {
             ThuocTinhRequest request = new ThuocTinhRequest(attributeCode, attributeCode + "-" + type,
-                    "Ghi chú qua HTTP", type.equals("colors") ? "#123456" : null, 1);
+                    "Ghi chú qua HTTP", type.equals("colors") ? String.format("#%06X", UUID.randomUUID().hashCode() & 0xFFFFFF) : null, 1);
             String body = mvc.perform(post("/api/product-attributes/" + type).contentType(MediaType.APPLICATION_JSON)
                             .content(mapper.writeValueAsString(request)))
                     .andExpect(status().isCreated()).andExpect(jsonPath("$.trangThai").value(1))
@@ -488,4 +488,94 @@ class SanPhamTichHopTest {
                 .andExpect(status().isNotFound()).andExpect(jsonPath("$.message").value("Không tìm thấy sản phẩm"));
         assertTrue(variants.layTheoSanPham(sanPham.getId()).isEmpty());
     }
+    @Test
+    void exactVariantImagesPersistAndMainSelectionNeverCrossesScopes() throws Exception {
+        var product = products.themSanPham(productRequest());
+        var size2 = attributes.luuThuocTinh("sizes", null, new ThuocTinhRequest(null, code + "-second-size", "", null, 1));
+        var a = variants.themSanPhamChiTiet(variantRequest(product.getId(), ids.get("sizes"), 2, "1000000"));
+        var b = variants.themSanPhamChiTiet(variantRequest(product.getId(), size2.getId(), 3, "1200000"));
+        var common = images.themAnh(product.getId(), new HinhAnhSanPhamRequest("https://example.com/common.png", true));
+        var output = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(new java.awt.image.BufferedImage(2, 2, java.awt.image.BufferedImage.TYPE_INT_RGB), "png", output);
+        var file = new org.springframework.mock.web.MockMultipartFile("file", "variant.png", "image/png", output.toByteArray());
+        var a1 = images.taiAnhBienThe(a.getId(), file, false);
+        var a2 = images.taiAnhBienThe(a.getId(), file, true);
+        var b1 = images.taiAnhBienThe(b.getId(), file, false);
+        entityManager.flush(); entityManager.clear();
+        assertEquals(a.getId(), a1.getSanPhamChiTietId());
+        assertEquals(product.getId(), a1.getSanPhamId());
+        assertNotEquals(a2.getUrlAnh(), b1.getUrlAnh());
+        assertEquals(1, images.layDanhSachAnh(product.getId()).size());
+        assertEquals(common.getUrlAnh(), products.layChiTietSanPham(product.getId()).getProduct().getAnhChinh());
+        assertEquals(a2.getUrlAnh(), variants.layChiTiet(a.getId()).getAnhChinh());
+        assertEquals(b1.getUrlAnh(), variants.layChiTiet(b.getId()).getAnhChinh());
+        mvc.perform(get("/api/product-details/" + a.getId() + "/images"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(2));
+        mvc.perform(put("/api/product-details/" + b.getId() + "/images/" + a1.getId())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"urlAnh\":\"" + a1.getUrlAnh() + "\",\"isAnhChinh\":true}"))
+                .andExpect(status().isNotFound());
+        images.suaAnhTheoId(a1.getId(), new HinhAnhSanPhamRequest(a1.getUrlAnh(), true));
+        entityManager.flush(); entityManager.clear();
+        assertEquals(a1.getUrlAnh(), variants.layChiTiet(a.getId()).getAnhChinh());
+        assertEquals(b1.getUrlAnh(), variants.layChiTiet(b.getId()).getAnhChinh());
+        assertEquals(common.getUrlAnh(), images.layDanhSachAnh(product.getId()).get(0).getUrlAnh());
+        var detail = products.layChiTietSanPham(product.getId());
+        assertEquals(a1.getUrlAnh(), detail.getVariants().stream().filter(v -> v.getId().equals(a.getId())).findFirst().orElseThrow().getAnhChinh());
+        var page = variants.layDanhSach(0, 10, code, null, product.getId(), null, null);
+        assertEquals(b1.getUrlAnh(), page.getContent().stream().filter(v -> v.getId().equals(b.getId())).findFirst().orElseThrow().getAnhChinh());
+        images.xoaAnhBienThe(a.getId(), a1.getId());
+        entityManager.flush(); entityManager.clear();
+        assertEquals(a2.getUrlAnh(), variants.layChiTiet(a.getId()).getAnhChinh());
+        images.xoaAnhTheoId(a2.getId());
+        entityManager.flush(); entityManager.clear();
+        assertEquals(common.getUrlAnh(), variants.layChiTiet(a.getId()).getAnhChinh());
+        assertEquals(b1.getUrlAnh(), variants.layChiTiet(b.getId()).getAnhChinh());
+        mvc.perform(multipart("/api/product-details/" + b.getId() + "/images/upload").file(file)
+                        .param("sanPhamId", "999999").param("isAnhChinh", "false"))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.sanPhamId").value(product.getId()))
+                .andExpect(jsonPath("$.sanPhamChiTietId").value(b.getId()));
+        assertThrows(com.smashstep.datn.common.exception.AppException.class,
+                () -> images.xoaAnh(product.getId(), b1.getId()));
+    }
+
+    @Test
+    void allSixInactiveProductAttributesRejectNewAssignmentsButKeepHistoricalEdits() throws Exception {
+        var original = products.themSanPham(productRequest());
+        var mapper = JsonMapper.builder().build();
+        for (String type : List.of("categories", "brands", "materials", "styles", "collars", "origins")) {
+            attributes.doiTrangThai(type, ids.get(type), 0);
+            var request = productRequest(); request.setMaSanPham(code + "-new"); request.setTenSanPham("New " + code + type);
+            mvc.perform(post("/api/products").contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(request)))
+                    .andExpect(status().isBadRequest());
+            var edit = new SanPhamSuaRequest(original.getMaSanPham(), "Giữ thuộc tính cũ", ids.get("categories"), ids.get("brands"),
+                    ids.get("materials"), ids.get("styles"), ids.get("collars"), ids.get("origins"), "", 1);
+            mvc.perform(put("/api/products/" + original.getId()).contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(edit)))
+                    .andExpect(status().isOk());
+            attributes.doiTrangThai(type, ids.get(type), 1);
+        }
+    }
+
+    @Test
+    void inactiveColorsAndSizesRejectNewVariantsButAllowUnchangedHistoricalEdit() throws Exception {
+        var product = products.themSanPham(productRequest());
+        var existing = variants.themSanPhamChiTiet(variantRequest(product.getId(), ids.get("sizes"), 2, "1000000"));
+        var request2 = productRequest(); request2.setMaSanPham(code + "-new-parent"); request2.setTenSanPham("Other parent " + code);
+        var product2 = products.themSanPham(request2);
+        var mapper = JsonMapper.builder().build();
+        for (String type : List.of("colors", "sizes")) {
+            attributes.doiTrangThai(type, ids.get(type), 0);
+            var newVariant = variantRequest(product2.getId(), ids.get("sizes"), 1, "1000000");
+            newVariant.setMaChiTietSanPham(code + "-new-" + type);
+            newVariant.setSku(code + "-new-" + type);
+            mvc.perform(post("/api/product-details").contentType(MediaType.APPLICATION_JSON)
+                            .content(mapper.writeValueAsString(newVariant)))
+                    .andExpect(status().isBadRequest());
+            var edit = new SanPhamChiTietSuaRequest(product.getId(), existing.getMaChiTietSanPham(), existing.getSku(),
+                    ids.get("colors"), ids.get("sizes"), 5, new BigDecimal("1100000"), true, 1);
+            mvc.perform(put("/api/product-details/" + existing.getId()).contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(edit)))
+                    .andExpect(status().isOk());
+            attributes.doiTrangThai(type, ids.get(type), 1);
+        }
+    }
+
 }

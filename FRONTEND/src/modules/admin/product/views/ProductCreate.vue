@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ProductShell from '../components/ProductShell.vue'
 import ProductForm from '../components/ProductForm.vue'
@@ -8,11 +8,16 @@ import ConfirmModal from '../components/ConfirmModal.vue'
 import { useConfirmation } from '../composables/useConfirmation'
 import { productService, productSummary, errorMessage } from '../services/productService'
 import { productAttributeService } from '../services/productAttributeService'
+import { productDuplicatePrompt } from '../services/duplicateConfirmation'
 import { validateImageFile } from '../services/imageUtils'
 const router = useRouter()
 const route = useRoute()
 const options = ref({}), ready = ref(false), error = ref(''), code = ref('')
-const { confirmation, confirming: saving, confirmError, askConfirmation, cancelConfirmation, confirmAction } = useConfirmation()
+const { confirmation, confirming: saving, confirmError, askConfirmation, replaceConfirmation, cancelConfirmation, confirmAction } = useConfirmation()
+const duplicateBusy = ref(false)
+const formBusy = computed(() => duplicateBusy.value || saving.value || !!confirmation.value)
+let active = true
+onBeforeUnmount(() => { active = false })
 const product = ref(null), success = ref('')
 const images = ref([]), newImages = ref([]), progress = ref('')
 async function load() {
@@ -23,22 +28,45 @@ async function load() {
     options.value = attributes; code.value = nextCode; ready.value = true
   } catch (e) { error.value = errorMessage(e) }
 }
-function save(data) {
-  if (saving.value || product.value) return
+async function save(data) {
+  if (formBusy.value || product.value) return
+  error.value = ''
   const payload = { ...data }
   const selection = newImages.value.map(image => ({ ...image }))
   for (const image of selection) {
     const message = validateImageFile(image.file)
     if (message) { error.value = message; return }
   }
-  askConfirmation({ title: 'Xác nhận thêm sản phẩm', message: 'Bạn có chắc muốn thêm sản phẩm này?',
-    confirmText: 'Xác nhận thêm', details: [...productSummary(payload, options.value),
-      { label: 'Ảnh đã chọn', value: selection.length },
-      ...(selection.length ? [{ label: 'Tệp ảnh', value: selection.map(image => image.file.name).join('\n') }] : [])] }, async () => {
-    error.value = ''
-    if (!product.value) product.value = await productService.create(payload)
-    await completeCreation(selection)
-  })
+  duplicateBusy.value = true
+  try {
+    const result = await productService.checkDuplicate(payload)
+    if (!active) return
+    if (result.duplicate) {
+      askConfirmation(productDuplicatePrompt(result.product), () => router.push(`/san-pham/${result.product.id}/sua`))
+      return
+    }
+    askConfirmation({ title: 'Xác nhận tạo sản phẩm', message: 'Bạn có chắc muốn tạo sản phẩm này không?',
+      confirmText: 'Xác nhận tạo', details: [...productSummary(payload, options.value),
+        { label: 'Ảnh đã chọn', value: selection.length },
+        ...(selection.length ? [{ label: 'Tệp ảnh', value: selection.map(image => image.file.name).join('\n') }] : [])] }, async () => {
+      error.value = ''
+      if (!product.value) {
+        try { product.value = await productService.create(payload) }
+        catch (e) {
+          if (e?.response?.status !== 409) throw e
+          let duplicate
+          try { duplicate = await productService.checkDuplicate(payload) }
+          catch { error.value = 'Không thể kiểm tra sản phẩm trùng. Vui lòng thử lại.'; throw e }
+          if (!duplicate.duplicate) throw e
+          replaceConfirmation(productDuplicatePrompt(duplicate.product, true),
+            () => router.push(`/san-pham/${duplicate.product.id}/sua`))
+          return
+        }
+      }
+      await completeCreation(selection)
+    })
+  } catch { if (active) error.value = 'Không thể kiểm tra sản phẩm trùng. Vui lòng thử lại.' }
+  finally { duplicateBusy.value = false }
 }
 async function completeCreation(selection) {
   const remaining = selection.filter(image => newImages.value.some(item => item.key === image.key))
@@ -91,9 +119,9 @@ async function refreshImages() {
         <RouterLink :to="'/san-pham/' + product.id" class="p-btn">Hoàn tất / Xem sản phẩm</RouterLink>
       </section>
     </template>
-    <ProductForm v-else-if="ready" :code="code" :options="options" :saving="saving" @save="save" />
+    <ProductForm v-else-if="ready" :code="code" :options="options" :saving="formBusy" @save="save" />
     <div v-else class="p-card p-empty">Đang chờ dữ liệu thuộc tính. <button v-if="error" class="p-btn" @click="load">Thử lại</button></div>
-    <ProductImages v-if="ready" v-model="newImages" :product-id="product?.id" :product-code="product?.maSanPham || code" :images="images" deferred :loading="saving" @changed="refreshImages().catch(e => error = errorMessage(e))" />
+    <ProductImages v-if="ready" v-model="newImages" :product-id="product?.id" :product-code="product?.maSanPham || code" :images="images" deferred :loading="formBusy" @changed="refreshImages().catch(e => error = errorMessage(e))" />
     <ConfirmModal v-bind="confirmation || {}" :show="!!confirmation" :loading="saving" :error="product && error ? error : confirmError" @confirm="confirmAction" @cancel="cancelConfirmation">
       <p v-if="progress" role="status">{{ progress }}</p>
     </ConfirmModal>

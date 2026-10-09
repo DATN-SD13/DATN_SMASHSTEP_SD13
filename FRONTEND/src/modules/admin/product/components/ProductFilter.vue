@@ -1,4 +1,5 @@
 <script setup>
+import Select2Control from './Select2Control.vue'
 import { reactive } from 'vue'
 import { attributeTypes } from '../services/productAttributeService'
 
@@ -29,17 +30,17 @@ function reset() {
       <label>Mã / tên sản phẩm<input v-model="filters.keyword" :disabled="busy" placeholder="Tìm kiếm sản phẩm..." /></label>
       <label v-for="type in types" :key="type.key">
         {{ type.label }}
-        <select v-model="filters[type.filter]" :disabled="busy || optionsBusy" @change="search">
+        <Select2Control v-model="filters[type.filter]" :disabled="busy || optionsBusy" @change="search">
           <option value="">Tất cả</option>
           <option v-for="a in options[type.key] || []" :key="a.id" :value="a.id">{{ a.ten }}{{ a.trangThai === 1 ? '' : ' (ngừng hoạt động)' }}</option>
-        </select>
+        </Select2Control>
       </label>
       <label>Trạng thái
-        <select v-model="filters.status" :disabled="busy" @change="search">
+        <Select2Control v-model="filters.status" :disabled="busy" @change="search">
           <option value="">Tất cả trạng thái</option>
           <option :value="1">Hoạt động</option>
           <option :value="0">Ngừng hoạt động</option>
-        </select>
+        </Select2Control>
       </label>
     </div>
     <small v-if="optionsBusy" role="status">Đang tải bộ lọc...</small>

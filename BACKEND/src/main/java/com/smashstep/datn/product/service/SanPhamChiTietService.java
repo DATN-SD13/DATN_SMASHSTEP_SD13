@@ -17,6 +17,7 @@ import java.util.*;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class SanPhamChiTietService {
+    private final com.smashstep.datn.common.pricing.CurrentPriceService currentPrices;
     private final SanPhamChiTietRepository sanPhamChiTietRepository;
     private final SanPhamRepository sanPhamRepository;
     private final MauSacRepository mauSacRepository;
@@ -60,20 +61,21 @@ public class SanPhamChiTietService {
         };
         var ketQua = sanPhamChiTietRepository.findAll(boLoc,
                 QuyTacSanPham.taoPhanTrang(trang, kichThuocTrang));
-        List<Long> danhSachSanPhamId = ketQua.getContent().stream()
-                .map(chiTiet -> chiTiet.getIdSanPham().getId()).distinct().toList();
-        Map<Long, String> anhChinh = HinhAnhSanPhamService.layAnhChinh(hinhAnhRepository, danhSachSanPhamId);
+        Map<Long, String> anhChinh = HinhAnhSanPhamService.layAnhChinhBienThe(hinhAnhRepository, ketQua.getContent());
+        var prices = currentPrices.getPrices(ketQua.getContent(), LocalDateTime.now());
         return PageResponse.from(ketQua.map(chiTiet ->
-                chuyenSangResponse(chiTiet, anhChinh.get(chiTiet.getIdSanPham().getId()))));
+                chuyenSangResponse(chiTiet, anhChinh.get(chiTiet.getId()), prices.get(chiTiet.getId()))));
     }
 
     public List<BienTheResponse> layTheoSanPham(Long sanPhamId) {
         sanPhamRepository.findById(sanPhamId)
                 .orElseThrow(() -> AppException.notFound("Không tìm thấy sản phẩm"));
-        String anhChinh = HinhAnhSanPhamService.layAnhChinh(hinhAnhRepository, List.of(sanPhamId)).get(sanPhamId);
         List<BienTheResponse> ketQua = new ArrayList<>();
-        for (SanPhamChiTiet chiTiet : sanPhamChiTietRepository.findByIdSanPham_IdOrderByIdAsc(sanPhamId)) {
-            ketQua.add(chuyenSangResponse(chiTiet, anhChinh));
+        var rows = sanPhamChiTietRepository.findByIdSanPham_IdOrderByIdAsc(sanPhamId);
+        var anhChinh = HinhAnhSanPhamService.layAnhChinhBienThe(hinhAnhRepository, rows);
+        var prices = currentPrices.getPrices(rows, LocalDateTime.now());
+        for (SanPhamChiTiet chiTiet : rows) {
+            ketQua.add(chuyenSangResponse(chiTiet, anhChinh.get(chiTiet.getId()), prices.get(chiTiet.getId())));
         }
         return ketQua;
     }
@@ -81,8 +83,8 @@ public class SanPhamChiTietService {
     public BienTheResponse layChiTiet(Long id) {
         SanPhamChiTiet chiTiet = timChiTiet(id);
         Long sanPhamId = chiTiet.getIdSanPham().getId();
-        String anhChinh = HinhAnhSanPhamService.layAnhChinh(hinhAnhRepository, List.of(sanPhamId)).get(sanPhamId);
-        return chuyenSangResponse(chiTiet, anhChinh);
+        String anhChinh = HinhAnhSanPhamService.layAnhChinhBienThe(hinhAnhRepository, List.of(chiTiet)).get(id);
+        return chuyenSangResponse(chiTiet, anhChinh, currentPrices.getPrice(chiTiet, LocalDateTime.now()));
     }
 
     @Transactional
@@ -210,6 +212,13 @@ public class SanPhamChiTietService {
     private SanPhamChiTiet timChiTiet(Long id) {
         return sanPhamChiTietRepository.findById(id)
                 .orElseThrow(() -> AppException.notFound("Không tìm thấy biến thể"));
+    }
+
+    static BienTheResponse chuyenSangResponse(SanPhamChiTiet variant, String image, com.smashstep.datn.common.pricing.CurrentPrice price) {
+        BienTheResponse response = chuyenSangResponse(variant, image);
+        response.setGiaSauGiam(price.getEffectivePrice()); response.setPhanTramGiamHienTai(price.getDiscountPercent());
+        response.setDangGiamGia(price.isDiscounted()); response.setMaDotGiamGia(price.getCampaignCode()); response.setTenDotGiamGia(price.getCampaignName());
+        return response;
     }
 
     static BienTheResponse chuyenSangResponse(SanPhamChiTiet chiTiet, String anhChinh) {

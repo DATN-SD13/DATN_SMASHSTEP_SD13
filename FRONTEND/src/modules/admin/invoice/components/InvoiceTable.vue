@@ -92,7 +92,7 @@ function money(value) { return `${Number(value || 0).toLocaleString('vi-VN')} đ
         <tbody>
           <tr v-for="(invoice, index) in invoices" :key="invoice.code">
             <td class="stt">{{ (page - 1) * pageSize + index + 1 }}</td>
-            <td><strong class="code">{{ invoice.code }}</strong></td>
+            <td><strong class="code" :title="invoice.code">{{ invoice.code }}</strong></td>
             <td>{{ invoice.employeeCode || '—' }}</td>
             <td class="customer">{{ invoice.customer }}</td>
             <td>{{ invoice.phone }}</td>
@@ -135,7 +135,7 @@ function money(value) { return `${Number(value || 0).toLocaleString('vi-VN')} đ
 .status-tabs{display:flex;gap:8px;overflow-x:auto;padding:18px 0 15px}.status-tabs::-webkit-scrollbar{height:4px}.status-tabs::-webkit-scrollbar-thumb{background:#dce8ef;border-radius:5px}
 .status-tabs button{flex:0 0 auto;border:1px solid #dfe6eb;background:#fff;color:#697d87;border-radius:9px;padding:8px 13px;white-space:nowrap;font-size:11px;font-weight:600;cursor:pointer;transition:.15s}.status-tabs button b{font-size:10px;margin-left:3px;font-weight:700}.status-tabs button:hover{border-color:#8fc5e7;color:#0878bd;background:#f5fbff}.status-tabs button.active{background:#1689cf;border-color:#1689cf;color:#fff;box-shadow:0 3px 9px rgba(22,137,207,.15)}
 .table-wrap{overflow-x:auto}table{width:100%;min-width:1080px;border-collapse:separate;border-spacing:0;table-layout:fixed}.col-stt{width:52px}.col-code{width:96px}.col-employee{width:78px}.col-customer{width:150px}.col-phone{width:108px}.col-total{width:126px}.col-type{width:100px}.col-date{width:112px}.col-status{width:124px}.col-action{width:86px}thead{background:#eaf4fa}th{height:46px;padding:0 12px!important;text-align:left;color:#536c7b!important;font-size:11px;font-weight:700!important;white-space:nowrap;border-bottom:1px solid #dce7ee!important;background:#eaf4fa!important}td{height:52px;padding:0 12px!important;color:#4f626d;font-size:11px;white-space:nowrap;border-bottom:1px solid #edf1f4}tbody tr{transition:background .12s}tbody tr:hover>*{background:#f5faff!important}
-.stt{text-align:center;color:#72838c}.code{color:#293e49;font-size:11px;font-weight:700}.customer{max-width:180px;overflow:hidden;text-overflow:ellipsis}.money{white-space:nowrap;color:#1681c3;font-size:11px;font-weight:750}
+.stt{text-align:center;color:#72838c}.code{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;color:#293e49;font-size:11px;font-weight:700}.customer{max-width:180px;overflow:hidden;text-overflow:ellipsis}.money{white-space:nowrap;color:#1681c3;font-size:11px;font-weight:750}
 .type-tag{display:inline-block;padding:6px 10px;border-radius:7px;font-size:10px;font-weight:700}.type-tag.online{background:#e6f4ff;color:#147bb8}.type-tag.store{background:#edf0ff;color:#5b68b4}
 .status{display:inline-flex;align-items:center;border-radius:7px;padding:7px 10px;font-size:10px;font-weight:700;background:#e8f3ff;color:#1675bd}.status.done,.status.delivered{background:#e8f7ef;color:#168455}.status.shipping,.status.confirmed,.status.ready{background:#e6f4ff;color:#1678b8}.status.waiting{background:#fff5df;color:#a86a08}.status.cancel{background:#ffebed;color:#c64f5b}.status.refund{background:#f1eaff;color:#7b55b5}
 .view{width:32px;height:32px;border:1px solid #dcebf4;background:#f3faff;color:#1689cf;border-radius:9px;cursor:pointer;font-size:14px;transition:.15s}.view:hover{background:#1689cf;color:#fff;border-color:#1689cf}.action{text-align:center}.action .view{display:inline-grid;place-items:center}

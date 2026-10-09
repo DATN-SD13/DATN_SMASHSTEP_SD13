@@ -1,4 +1,5 @@
 import api from '../../../../utils/api'
+import { attributeTypes } from './productAttributeService'
 
 export const productService = {
   list: params => api.get('/products', { params: cleanParams(params) }).then(r => r.data),
@@ -19,6 +20,7 @@ export const productService = {
     return code
   },
   get: id => api.get(`/products/${id}`).then(r => r.data),
+  checkDuplicate: data => api.post('/products/check-duplicate', data).then(r => r.data),
   create: data => api.post('/products', data).then(r => r.data),
   update: (id, data) => api.put(`/products/${id}`, data).then(r => r.data),
   status: (id, trangThai) => api.patch(`/products/${id}/status`, { trangThai }).then(r => r.data),
@@ -37,6 +39,17 @@ export const productService = {
 }
 
 export const variantService = {
+  images: id => api.get(`/product-details/${id}/images`).then(r => r.data),
+  uploadImage: (id, image) => {
+    const form = new FormData()
+    form.append('file', image.file)
+    form.append('isAnhChinh', String(image.isAnhChinh))
+    return api.post(`/product-details/${id}/images/upload`, form, {
+      headers: { 'Content-Type': undefined }, timeout: 30000
+    }).then(r => r.data)
+  },
+  updateImage: (id, imageId, data) => api.put(`/product-details/${id}/images/${imageId}`, data).then(r => r.data),
+  removeImage: (id, imageId) => api.delete(`/product-details/${id}/images/${imageId}`),
   list: params => api.get('/product-details', { params }).then(r => r.data),
   update: (id, data) => api.put(`/product-details/${id}`, data).then(r => r.data),
   status: (id, trangThai) => api.patch(`/product-details/${id}/status`, { trangThai }).then(r => r.data)
@@ -51,8 +64,9 @@ export function productSummary(data, options) {
   return [
     { label: 'Mã sản phẩm', value: data.maSanPham },
     { label: 'Tên sản phẩm', value: data.tenSanPham },
-    { label: 'Danh mục', value: options.categories?.find(item => item.id === data.danhMucId)?.ten || '—' },
-    { label: 'Thương hiệu', value: options.brands?.find(item => item.id === data.thuongHieuId)?.ten || '—' },
+    ...attributeTypes.filter(type => type.field).map(type => ({ label: type.label,
+      value: data['ten' + type.field[0].toUpperCase() + type.field.slice(1, -2)]
+        || options?.[type.key]?.find(item => item.id === data[type.field])?.ten || '—' })),
     { label: 'Trạng thái', value: data.trangThai === 1 ? 'Hoạt động' : 'Ngừng hoạt động' }
   ]
 }
@@ -69,7 +83,9 @@ export function validateVariant(row) {
   if (![0, 1].includes(Number(row.trangThai)) || typeof row.kichHoat !== 'boolean') return 'Trạng thái hoặc kích hoạt không hợp lệ.'
   return ''
 }
-const currencyFormatter = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' })
+const currencyFormatter = new Intl.NumberFormat('vi-VN', {
+  style: 'currency', currency: 'VND', minimumFractionDigits: 0, maximumFractionDigits: 2
+})
 export function money(value) {
   if (value == null || !Number.isFinite(Number(value))) return 'Chưa có giá'
   return currencyFormatter.format(Number(value))

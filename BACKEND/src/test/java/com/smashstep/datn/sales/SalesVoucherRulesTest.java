@@ -24,7 +24,7 @@ import static org.mockito.Mockito.*;
 @SuppressWarnings("unchecked")
 class SalesVoucherRulesTest {
     private final EntityManager em = mock(EntityManager.class);
-    private final SalesService service = new SalesService(em);
+    private final SalesService service = new SalesService(em, new com.smashstep.datn.common.pricing.CurrentPriceService(em), new com.smashstep.datn.invoice.service.InvoiceCodeService(em));
     private final PhieuGiamGia voucher = new PhieuGiamGia();
     private final PhieuGiamGiaKhachHang link = new PhieuGiamGiaKhachHang();
     private SalesRequest request;
@@ -35,7 +35,7 @@ class SalesVoucherRulesTest {
         var product = new SanPham(); product.setTrangThai(1);
         var variant = new SanPhamChiTiet(); variant.setId(3L); variant.setIdSanPham(product); variant.setTrangThai(1);
         variant.setKichHoat(true); variant.setSoLuong(5); variant.setGiaBan(new BigDecimal("1000")); when(em.find(SanPhamChiTiet.class, 3L)).thenReturn(variant);
-        TypedQuery<BigDecimal> campaign = mock(TypedQuery.class, RETURNS_SELF); when(campaign.getResultList()).thenReturn(List.of()); when(em.createQuery(anyString(), eq(BigDecimal.class))).thenReturn(campaign);
+        TypedQuery<com.smashstep.datn.promotion.entity.ChiTietDotGiamGia> campaign = mock(TypedQuery.class, RETURNS_SELF); when(campaign.getResultList()).thenReturn(List.of()); when(em.createQuery(anyString(), eq(com.smashstep.datn.promotion.entity.ChiTietDotGiamGia.class))).thenReturn(campaign);
         voucher.setId(4L); voucher.setTrangThai(1); voucher.setHinhThucPhieu(1); voucher.setLoaiGiamGia(1); voucher.setGiaTriGiam(BigDecimal.TEN);
         voucher.setSoLuong(null); voucher.setSoLuongDaDung(100); voucher.setNgayBatDau(LocalDateTime.now().minusDays(1)); voucher.setNgayKetThuc(LocalDateTime.now().plusDays(1));
         TypedQuery<PhieuGiamGia> vouchers = mock(TypedQuery.class, RETURNS_SELF); when(vouchers.getResultList()).thenReturn(List.of(voucher)); when(em.createQuery(anyString(), eq(PhieuGiamGia.class))).thenReturn(vouchers);
