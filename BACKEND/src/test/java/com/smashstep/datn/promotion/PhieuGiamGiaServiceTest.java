@@ -8,9 +8,11 @@ import com.smashstep.datn.promotion.entity.PhieuGiamGiaKhachHang;
 import com.smashstep.datn.promotion.repository.PhieuGiamGiaKhachHangRepository;
 import com.smashstep.datn.promotion.repository.PhieuGiamGiaRepository;
 import com.smashstep.datn.promotion.response.PhieuGiamGiaRequest;
+import com.smashstep.datn.promotion.service.EmailService;
 import com.smashstep.datn.promotion.service.PhieuGiamGiaService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 import org.springframework.http.HttpStatus;
 
 import java.math.BigDecimal;
@@ -21,6 +23,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+
 
 class PhieuGiamGiaServiceTest {
     @Test void zeroDiscountAndPercentOver100AreRejected() {
@@ -51,7 +54,8 @@ class PhieuGiamGiaServiceTest {
     private final PhieuGiamGiaKhachHangRepository assignments = mock(PhieuGiamGiaKhachHangRepository.class);
     private final KhachHangRepository customers = mock(KhachHangRepository.class);
     private final com.smashstep.datn.common.config.DatabaseCapabilities database = mock(com.smashstep.datn.common.config.DatabaseCapabilities.class);
-    private final PhieuGiamGiaService service = new PhieuGiamGiaService(vouchers, assignments, customers, database);
+    EmailService emailService = Mockito.mock(EmailService.class);
+    private final PhieuGiamGiaService service = new PhieuGiamGiaService(vouchers, assignments, customers, database, emailService);
     private final List<PhieuGiamGiaKhachHang> links = new ArrayList<>();
 
     @BeforeEach
