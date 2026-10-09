@@ -1,4 +1,34 @@
-﻿/* CANONICAL FULL DATABASE - RUN THIS FILE
+﻿/*
+=============================================================
+SMASHSTEP SD13 - RESET DATABASE DEV/TEST VE TRANG THAI SACH
+=============================================================
+MUC DICH:
+- XOA TOAN BO database SmashStep HIEN TAI (du lieu cu + schema cu).
+- TAO LAI database tu dau.
+- CHAY FULL_DB.sql de nhom de tao schema + seed data sach.
+
+CANH BAO:
+- DAY LA SCRIPT DESTRUCTIVE: MAT TOAN BO DU LIEU HIEN TAI TRONG SmashStep.
+- CHI CHAY TREN DB DEV/TEST. KHONG CHAY TREN DB CO DU LIEU CAN GIU.
+- Nen backup database truoc neu day la DB chung cua nhom.
+
+SAU KHI CHAY:
+- Database SmashStep duoc tao lai tu dau.
+- Seed canonical trong FULL_DB duoc nap lai.
+- Identity bat dau lai tu 1.
+=============================================================
+*/
+USE [master];
+GO
+
+IF DB_ID(N'SmashStep') IS NOT NULL
+BEGIN
+    ALTER DATABASE [SmashStep] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+    DROP DATABASE [SmashStep];
+END;
+GO
+
+/* CANONICAL FULL DATABASE - RUN THIS FILE
    SMASHSTEP SD-013 | SQL Server 2019+ | UTF-8 | SSMS: Execute the entire file.
    Source of truth: current backend (25 entities), then 01_sqlSD13.sql.
    Includes all six seed sources; 03 contains the safe superset of 02 product attributes.
@@ -1395,8 +1425,6 @@ BEGIN TRY
 
     IF COL_LENGTH(N'dbo.hoa_don', N'trang_thai') IS NULL
         EXEC sys.sp_executesql N'ALTER TABLE dbo.[hoa_don] ADD [trang_thai] INT NULL;';
-    IF COL_LENGTH(N'dbo.hoa_don', N'hinh_thuc_nhan') IS NULL
-        EXEC sys.sp_executesql N'ALTER TABLE dbo.[hoa_don] ADD [hinh_thuc_nhan] TINYINT NULL;';
 
     IF EXISTS (SELECT 1 FROM sys.columns c WHERE c.object_id=OBJECT_ID(N'dbo.hoa_don') AND c.name=N'id' AND (TYPE_NAME(c.user_type_id) <> N'bigint' OR c.is_identity <> 1))
         THROW 51002, N'Incompatible type: hoa_don.id. No automatic data conversion.', 1;
@@ -1457,8 +1485,6 @@ BEGIN TRY
 
     IF EXISTS (SELECT 1 FROM sys.columns c WHERE c.object_id=OBJECT_ID(N'dbo.hoa_don') AND c.name=N'trang_thai' AND (TYPE_NAME(c.user_type_id) <> N'int'))
         THROW 51002, N'Incompatible type: hoa_don.trang_thai. No automatic data conversion.', 1;
-    IF EXISTS (SELECT 1 FROM sys.columns c WHERE c.object_id=OBJECT_ID(N'dbo.hoa_don') AND c.name=N'hinh_thuc_nhan' AND (TYPE_NAME(c.user_type_id) <> N'tinyint'))
-        THROW 51002, N'Incompatible type: hoa_don.hinh_thuc_nhan. No automatic data conversion.', 1;
 
     IF NOT EXISTS (SELECT 1 FROM sys.key_constraints WHERE parent_object_id=OBJECT_ID(N'dbo.hoa_don') AND type='PK')
         EXEC sys.sp_executesql N'ALTER TABLE dbo.[hoa_don] ADD CONSTRAINT [PK_hoa_don] PRIMARY KEY ([id]);';
@@ -3260,24 +3286,6 @@ INSERT INTO @hd VALUES
     ('HD000068', 'KH007', 'NV001', 'THE', 0, 0, 3150000, 0, 0, 5, N'Bùi Mỹ Linh', '0972230456', N'Thanh Xuân, Hà Nội', '2026-09-20T12:45:00'),
     ('HD000067', 'KH009', 'NV002', 'CHUYEN_KHOAN', 1, 1, 2240000, 0, 30000, 5, N'Đỗ Phương Vy', '0968440127', N'Hà Nội', '2026-09-19T16:15:00');
 
--- Chuẩn hóa dữ liệu hóa đơn cũ: chỉ còn 0=Tại quầy, 1=Trực tuyến.
--- Dữ liệu legacy loại 2 được coi là đơn tại quầy nhưng giao hàng, nên giữ hinh_thuc_nhan=1.
-UPDATE dbo.hoa_don
-SET loai_hoa_don = 0, hinh_thuc_nhan = 1, ngay_cap_nhat = COALESCE(ngay_cap_nhat, SYSDATETIME())
-WHERE loai_hoa_don IS NOT NULL AND loai_hoa_don NOT IN (0, 1);
-
-UPDATE dbo.hoa_don
-SET hinh_thuc_nhan = CASE
-    WHEN loai_hoa_don = 0 AND hinh_thuc_nhan = 1 THEN 1
-    WHEN loai_hoa_don = 0 THEN 0
-    WHEN loai_hoa_don = 1 THEN 1
-    ELSE 0
-END
-WHERE hinh_thuc_nhan IS NULL OR hinh_thuc_nhan NOT IN (0, 1);
-
-IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_hoa_don_hinh_thuc_nhan')
-    ALTER TABLE dbo.hoa_don WITH CHECK ADD CONSTRAINT CK_hoa_don_hinh_thuc_nhan CHECK (hinh_thuc_nhan IN (0, 1));
-
 DECLARE @NewInvoices TABLE (id BIGINT PRIMARY KEY);
 INSERT INTO hoa_don (id_khach_hang, id_nhan_vien, id_phuong_thuc_thanh_toan, ma_hoa_don, loai_hoa_don, hinh_thuc_nhan,
                      tong_tien, phi_van_chuyen, tien_giam_gia, thanh_tien,
@@ -3445,13 +3453,32 @@ SELECT name AS canonical_table FROM sys.tables WHERE is_ms_shipped=0 ORDER BY na
 GO
 
 /* ============================================================
-   KIỂM TRA NGHIỆP VỤ HÓA ĐƠN
-   loai_hoa_don: 0=Tại quầy, 1=Trực tuyến
-   hinh_thuc_nhan: 0=Nhận tại quầy, 1=Giao hàng
-   Không còn loại đơn thứ 3.
+   KIEM TRA NHANH SAU KHI RESET
    ============================================================ */
-SELECT loai_hoa_don, hinh_thuc_nhan, COUNT(*) AS so_luong
+USE [SmashStep];
+GO
+
+SELECT 'vai_tro' AS bang, COUNT_BIG(*) AS so_luong FROM dbo.vai_tro
+UNION ALL SELECT 'nhan_vien', COUNT_BIG(*) FROM dbo.nhan_vien
+UNION ALL SELECT 'khach_hang', COUNT_BIG(*) FROM dbo.khach_hang
+UNION ALL SELECT 'san_pham', COUNT_BIG(*) FROM dbo.san_pham
+UNION ALL SELECT 'san_pham_chi_tiet', COUNT_BIG(*) FROM dbo.san_pham_chi_tiet
+UNION ALL SELECT 'phieu_giam_gia', COUNT_BIG(*) FROM dbo.phieu_giam_gia
+UNION ALL SELECT 'hoa_don', COUNT_BIG(*) FROM dbo.hoa_don
+UNION ALL SELECT 'hoa_don_chi_tiet', COUNT_BIG(*) FROM dbo.hoa_don_chi_tiet
+UNION ALL SELECT 'lich_su_hoa_don', COUNT_BIG(*) FROM dbo.lich_su_hoa_don
+UNION ALL SELECT 'lich_su_thanh_toan', COUNT_BIG(*) FROM dbo.lich_su_thanh_toan
+ORDER BY bang;
+GO
+
+SELECT trang_thai, COUNT_BIG(*) AS so_luong
 FROM dbo.hoa_don
-GROUP BY loai_hoa_don, hinh_thuc_nhan
-ORDER BY loai_hoa_don, hinh_thuc_nhan;
+GROUP BY trang_thai
+ORDER BY trang_thai;
+GO
+
+SELECT loai_hoa_don, COUNT_BIG(*) AS so_luong
+FROM dbo.hoa_don
+GROUP BY loai_hoa_don
+ORDER BY loai_hoa_don;
 GO

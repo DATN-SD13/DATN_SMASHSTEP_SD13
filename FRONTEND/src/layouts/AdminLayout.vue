@@ -15,6 +15,7 @@ const nav = [
     key: 'product', label: 'Quản lý sản phẩm', icon: 'bi-box-seam',
     children: [
       { label: 'Sản phẩm', to: '/san-pham' },
+<<<<<<< HEAD
       { label: 'Biến thể sản phẩm', to: '/bien-the-san-pham' }
     ]
   },
@@ -29,17 +30,21 @@ const nav = [
       { label: 'Xuất xứ', to: '/thuoc-tinh/xuat-xu' },
       { label: 'Màu sắc', to: '/thuoc-tinh/mau-sac' },
       { label: 'Kích thước', to: '/thuoc-tinh/kich-thuoc' }
+=======
+      { label: 'Biến thể sản phẩm', to: '/bien-the-san-pham' },
+      { label: 'Danh sách thuộc tính', to: '/thuoc-tinh' }
+>>>>>>> fa90b4b77ffb0f7ffb925b98258b49655da265b9
     ]
   },
-  { label: 'Quản lý khách hàng', icon: 'bi-people', to: '/khach-hang' },
-  { label: 'Quản lý nhân viên', icon: 'bi-person-badge', to: '/nhan-vien' },
   {
     key: 'promo', label: 'Quản lý giảm giá', icon: 'bi-tags',
     children: [
       { label: 'Phiếu giảm giá', to: '/giam-gia' },
       { label: 'Đợt giảm giá', to: '/dot-giam-gia' }
     ]
-  }
+  },
+  { label: 'Quản lý khách hàng', icon: 'bi-people', to: '/khach-hang' },
+  { label: 'Quản lý nhân viên', icon: 'bi-person-badge', to: '/nhan-vien' }
 ]
 
 const isOn = (to) => route.path === to || route.path.startsWith(to + '/')

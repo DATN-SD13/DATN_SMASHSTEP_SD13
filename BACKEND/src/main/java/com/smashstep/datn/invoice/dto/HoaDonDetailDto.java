@@ -4,6 +4,7 @@ import com.smashstep.datn.customer.entity.KhachHang;
 import com.smashstep.datn.employee.entity.NhanVien;
 import com.smashstep.datn.invoice.entity.HoaDon;
 import com.smashstep.datn.invoice.enums.LoaiHoaDon;
+import com.smashstep.datn.invoice.enums.HinhThucNhan;
 import com.smashstep.datn.invoice.enums.TrangThaiHoaDon;
 import com.smashstep.datn.payment.entity.PhuongThucThanhToan;
 import lombok.Builder;
@@ -24,6 +25,7 @@ public class HoaDonDetailDto {
     private Long idKhachHang;
     private String tenKhachHang;
     private String maKhachHang;
+    private String email;
     private String soDienThoai;
     private String diaChi;
 
@@ -33,6 +35,8 @@ public class HoaDonDetailDto {
 
     private String loaiHoaDon;
     private Integer maLoaiHoaDon;
+    private String hinhThucNhan;
+    private Integer maHinhThucNhan;
     private String trangThai;
     private Integer maTrangThai;
     private Integer maTrangThaiTiepTheo;
@@ -75,7 +79,9 @@ public class HoaDonDetailDto {
         PhuongThucThanhToan phuongThuc = hoaDon.getIdPhuongThucThanhToan();
         LoaiHoaDon loai = LoaiHoaDon.tuMa(hoaDon.getLoaiHoaDon());
         TrangThaiHoaDon trangThai = TrangThaiHoaDon.tuMa(hoaDon.getTrangThai());
-        TrangThaiHoaDon trangThaiTiepTheo = TrangThaiHoaDon.trangThaiTiepTheo(hoaDon.getTrangThai());
+        HinhThucNhan hinhThucNhan = HinhThucNhan.tuMa(hoaDon.getHinhThucNhan());
+        if (hinhThucNhan == null) hinhThucNhan = hoaDon.getLoaiHoaDon() != null && hoaDon.getLoaiHoaDon() == 0 ? HinhThucNhan.NHAN_TAI_QUAY : HinhThucNhan.GIAO_HANG;
+        TrangThaiHoaDon trangThaiTiepTheo = TrangThaiHoaDon.trangThaiTiepTheo(hoaDon.getTrangThai(), hinhThucNhan == HinhThucNhan.GIAO_HANG);
 
         return HoaDonDetailDto.builder()
                 .id(hoaDon.getId())
@@ -85,13 +91,20 @@ public class HoaDonDetailDto {
                 .idKhachHang(khachHang != null ? khachHang.getId() : null)
                 .tenKhachHang(firstNotBlank(hoaDon.getHoTenNguoiNhan(), khachHang != null ? khachHang.getTenKhachHang() : null, "Khách lẻ"))
                 .maKhachHang(khachHang != null ? khachHang.getMaKhachHang() : null)
+<<<<<<< HEAD
                 .soDienThoai(firstNotBlank(hoaDon.getSoDienThoaiNguoiNhan(), khachHang != null ? khachHang.getSoDienThoai() : null))
+=======
+                .email(khachHang != null ? khachHang.getEmail() : null)
+                .soDienThoai(khachHang != null ? khachHang.getSoDienThoai() : hoaDon.getSoDienThoaiNguoiNhan())
+>>>>>>> fa90b4b77ffb0f7ffb925b98258b49655da265b9
                 .diaChi(hoaDon.getDiaChiGiaoHang())
                 .idNhanVien(nhanVien != null ? nhanVien.getId() : null)
                 .tenNhanVien(nhanVien != null ? nhanVien.getTenNhanVien() : null)
                 .maNhanVien(nhanVien != null ? nhanVien.getMaNhanVien() : null)
                 .loaiHoaDon(loai != null ? loai.getNhan() : null)
                 .maLoaiHoaDon(hoaDon.getLoaiHoaDon())
+                .hinhThucNhan(hinhThucNhan.getNhan())
+                .maHinhThucNhan(hinhThucNhan.getMa())
                 .trangThai(trangThai != null ? trangThai.getNhan() : "Không xác định")
                 .maTrangThai(hoaDon.getTrangThai())
                 .maTrangThaiTiepTheo(trangThaiTiepTheo != null ? trangThaiTiepTheo.getMa() : null)

@@ -4,6 +4,7 @@ import com.smashstep.datn.customer.entity.KhachHang;
 import com.smashstep.datn.employee.entity.NhanVien;
 import com.smashstep.datn.invoice.entity.HoaDon;
 import com.smashstep.datn.invoice.enums.LoaiHoaDon;
+import com.smashstep.datn.invoice.enums.HinhThucNhan;
 import com.smashstep.datn.invoice.enums.TrangThaiHoaDon;
 import com.smashstep.datn.payment.entity.PhuongThucThanhToan;
 import lombok.Builder;
@@ -32,6 +33,8 @@ public class HoaDonListDto {
     private final BigDecimal thanhTien;
     private final String loaiHoaDon;
     private final Integer maLoaiHoaDon;
+    private final String hinhThucNhan;
+    private final Integer maHinhThucNhan;
     private final String trangThai;
     private final String lopTrangThai;
     private final Integer maTrangThai;
@@ -44,6 +47,8 @@ public class HoaDonListDto {
         PhuongThucThanhToan pt = h.getIdPhuongThucThanhToan();
         TrangThaiHoaDon tt = TrangThaiHoaDon.tuMa(h.getTrangThai());
         LoaiHoaDon loai = LoaiHoaDon.tuMa(h.getLoaiHoaDon());
+        HinhThucNhan htn = HinhThucNhan.tuMa(h.getHinhThucNhan());
+        if (htn == null) htn = h.getLoaiHoaDon() != null && h.getLoaiHoaDon() == 0 ? HinhThucNhan.NHAN_TAI_QUAY : HinhThucNhan.GIAO_HANG;
 
         return HoaDonListDto.builder()
                 .id(h.getId())
@@ -62,6 +67,8 @@ public class HoaDonListDto {
                 .thanhTien(nz(h.getThanhTien()))
                 .loaiHoaDon(loai != null ? loai.getKhoa() : null)
                 .maLoaiHoaDon(h.getLoaiHoaDon())
+                .hinhThucNhan(htn.getNhan())
+                .maHinhThucNhan(htn.getMa())
                 .trangThai(tt != null ? tt.getNhan() : "Không xác định")
                 .lopTrangThai(tt != null ? tt.getLop() : "unknown")
                 .maTrangThai(h.getTrangThai())

@@ -5,7 +5,7 @@ import com.smashstep.datn.common.exception.AppException;
 public enum TrangThaiHoaDon {
     CHO_XAC_NHAN(0, "Chờ xác nhận", "waiting"),
     DA_XAC_NHAN(1, "Đã xác nhận", "confirmed"),
-    CHO_GIAO_HANG(2, "Chờ lấy hàng", "ready"),
+    CHO_GIAO_HANG(2, "Chờ giao hàng", "ready"),
     DANG_GIAO_HANG(3, "Đang giao hàng", "shipping"),
     DA_GIAO_HANG(4, "Đã giao hàng", "delivered"),
     HOAN_THANH(5, "Hoàn thành", "done"),
@@ -28,9 +28,13 @@ public enum TrangThaiHoaDon {
     public String getLop() { return lop; }
 
     public static TrangThaiHoaDon trangThaiTiepTheo(Integer maHienTai) {
-        if (maHienTai == null || maHienTai < CHO_XAC_NHAN.ma || maHienTai >= HOAN_THANH.ma) {
-            return null;
-        }
+        return trangThaiTiepTheo(maHienTai, true);
+    }
+
+    public static TrangThaiHoaDon trangThaiTiepTheo(Integer maHienTai, boolean giaoHang) {
+        if (maHienTai == null) return null;
+        if (!giaoHang && maHienTai == DA_XAC_NHAN.ma) return HOAN_THANH;
+        if (maHienTai < CHO_XAC_NHAN.ma || maHienTai >= HOAN_THANH.ma) return null;
         return tuMa(maHienTai + 1);
     }
 

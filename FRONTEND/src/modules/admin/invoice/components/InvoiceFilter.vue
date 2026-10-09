@@ -45,7 +45,6 @@ onUnmounted(() => window.clearTimeout(searchTimer))
             <option value="all">Tất cả</option>
             <option value="online">Trực tuyến</option>
             <option value="store">Tại quầy</option>
-            <option value="delivery">Giao hàng</option>
           </select>
       </label>
       <button class="reset-btn btn btn-outline-primary col-12 col-md-6 col-lg-3" type="button" @click="reset"><i class="bi bi-arrow-counterclockwise"></i> Đặt lại bộ lọc</button>
