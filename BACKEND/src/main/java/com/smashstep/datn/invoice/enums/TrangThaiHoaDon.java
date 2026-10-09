@@ -33,7 +33,13 @@ public enum TrangThaiHoaDon {
 
     public static TrangThaiHoaDon trangThaiTiepTheo(Integer maHienTai, boolean giaoHang) {
         if (maHienTai == null) return null;
+
+        // Phiếu tạm giữ của khách lẻ nhận tại quầy: Hóa đơn chờ -> Hoàn thành.
+        if (maHienTai == HOA_DON_CHO.ma) return HOAN_THANH;
+
+        // Đơn nhận tại quầy có khách hàng vẫn giữ luồng tuần tự hiện có.
         if (!giaoHang && maHienTai == DA_XAC_NHAN.ma) return HOAN_THANH;
+
         if (maHienTai < CHO_XAC_NHAN.ma || maHienTai >= HOAN_THANH.ma) return null;
         return tuMa(maHienTai + 1);
     }

@@ -41,8 +41,7 @@ const deliverySteps = [
 ]
 
 const pickupSteps = [
-  { key: 'waiting', label: 'Chờ xác nhận', icon: 'bi-hourglass-split', value: 0 },
-  { key: 'confirmed', label: 'Đã xác nhận', icon: 'bi-check2-circle', value: 1 },
+  { key: 'pending', label: 'Hóa đơn chờ', icon: 'bi-hourglass-split', value: 8 },
   { key: 'done', label: 'Hoàn thành', icon: 'bi-flag', value: 5 }
 ]
 
@@ -54,6 +53,12 @@ const statusOptions = computed(() => steps.value.map(step => ({
 const progress = computed(() => {
   const code = invoice.value?.statusCode
   return steps.value.findIndex(step => step.value === code)
+})
+
+// Chỉ hiển thị các bước đã đi qua, bước hiện tại và tối đa một bước kế tiếp.
+const visibleSteps = computed(() => {
+  if (progress.value < 0) return []
+  return steps.value.slice(0, Math.min(progress.value + 2, steps.value.length))
 })
 
 const nextStatus = computed(() => {
@@ -69,7 +74,7 @@ const canUpdateStatus = computed(() => Boolean(nextStatus.value))
 const canCancelOrder = computed(() => {
   const code = invoice.value?.statusCode
   if (!Number.isInteger(code)) return false
-  return invoice.value?.receiveMethodCode === 0 ? code <= 1 : code <= 4
+  return invoice.value?.receiveMethodCode === 0 ? (code === 8 || code <= 1) : code <= 4
 })
 
 const canPrintInvoice = computed(() => {
@@ -580,9 +585,14 @@ onUnmounted(() => {
           <section class="panel card shadow-sm timeline-panel">
             <h2><i class="bi bi-clipboard2-check"></i> Trạng thái đơn hàng</h2>
 
-            <div v-if="progress >= 0" class="timeline" :class="{ 'timeline-pickup': steps.length === 3 }">
+            <div
+              v-if="progress >= 0"
+              class="timeline"
+              :class="{ 'timeline-pickup': invoice.receiveMethodCode === 0 }"
+              :style="{ gridTemplateColumns: `repeat(${visibleSteps.length}, minmax(0, 1fr))` }"
+            >
               <div
-                v-for="(step, index) in steps"
+                v-for="(step, index) in visibleSteps"
                 :key="step.key"
                 class="timeline-step"
                 :class="{ reached: index <= progress, current: index === progress }"
@@ -896,7 +906,6 @@ onUnmounted(() => {
           <div v-if="invoice.shippingNote"><span>Ghi chú:</span> {{ invoice.shippingNote }}</div>
         </div>
 
-        <div class="print-footer">Cảm ơn quý khách đã mua hàng tại SMASHSTEP!</div>
         </section>
       </template>
 

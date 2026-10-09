@@ -87,7 +87,7 @@ public class SalesService {
                 .setParameter("requestId", request.getRequestId()).setMaxResults(1).getResultList();
         if (!retryPayments.isEmpty()) {
             HoaDon invoice = retryPayments.get(0).getIdHoaDon();
-            if (!Integer.valueOf(5).equals(invoice.getTrangThai())) throw AppException.conflict("Hóa đơn đã được xử lý");
+            if (!Integer.valueOf(5).equals(invoice.getTrangThai()) && !Integer.valueOf(8).equals(invoice.getTrangThai())) throw AppException.conflict("Hóa đơn đã được xử lý");
             verifyRetry(invoice, request);
             BigDecimal discount = amount(invoice.getTongTien()).subtract(amount(invoice.getThanhTien())).max(ZERO);
             return new Receipt(invoice.getId(), invoice.getMaHoaDon(), invoice.getTongTien(), discount,
@@ -103,11 +103,11 @@ public class SalesService {
         invoice.setMaHoaDon(invoiceCode);
         invoice.setLoaiHoaDon(0);
         // Nghiệp vụ bán tại quầy:
-        // - Không chọn khách hàng => khách vãng lai, nhận ngay tại quầy, hoàn thành ngay.
-        // - Có chọn khách hàng => tạo đơn giao hàng, chờ xác nhận rồi mới đi tiếp luồng giao hàng.
+        // - Khách lẻ nhận tại quầy: bắt đầu ở Hóa đơn chờ (8), sau đó chuyển Hoàn thành (5).
+        // - Có chọn khách hàng: tạo đơn giao hàng, bắt đầu Chờ xác nhận (0).
         boolean walkInCustomer = data.customer() == null;
         invoice.setHinhThucNhan(walkInCustomer ? 0 : 1);
-        invoice.setTrangThai(walkInCustomer ? 5 : 0);
+        invoice.setTrangThai(walkInCustomer ? 8 : 0);
         invoice.setIdKhachHang(data.customer()); invoice.setIdNhanVien(data.employee());
         invoice.setIdPhuongThucThanhToan(data.payment()); invoice.setIdPhieuGiamGia(data.voucher());
         invoice.setTongTien(data.quote().subtotal()); invoice.setPhiVanChuyen(ZERO);
@@ -132,10 +132,10 @@ public class SalesService {
         payment.setMaGiaoDich(request.getRequestId()); payment.setThoiGian(now); payment.setTrangThai(1);
         payment.setMoTa("Thanh toán tại quầy - " + data.payment().getTenPhuongThuc()); em.persist(payment);
         LichSuHoaDon history = new LichSuHoaDon(); history.setIdHoaDon(invoice); history.setNguoiTao(data.employee().getId());
-        history.setTrangThai(walkInCustomer ? 5 : 0);
+        history.setTrangThai(walkInCustomer ? 8 : 0);
         history.setNgayTao(now);
         history.setGhiChu(walkInCustomer
-                ? "Khách vãng lai - nhận hàng tại quầy"
+                ? "Khách lẻ nhận tại quầy - hóa đơn chờ hoàn tất"
                 : "Khách hàng đã chọn - tạo đơn giao hàng tại quầy");
         em.persist(history);
         em.flush();
