@@ -362,6 +362,44 @@ public class PhieuGiamGiaService {
         }
 
         requireFormSupport();
+
+        Integer oldTimeStatus = getTimeStatus(p);
+        Integer oldForm = p.getHinhThucPhieu();
+        List<Long> oldCustomerIds = activeCustomerIds(p);
+
+        String oldTen = p.getTenPhieuGiamGia();
+        Integer oldLoaiGiam = p.getLoaiGiamGia();
+        BigDecimal oldGiaTriGiam = p.getGiaTriGiam();
+        BigDecimal oldGiaTriToiThieu = p.getGiaTriToiThieu();
+        BigDecimal oldGiamToiDa = p.getGiamToiDa();
+        LocalDateTime oldNgayBatDau = p.getNgayBatDau();
+        LocalDateTime oldNgayKetThuc = p.getNgayKetThuc();
+
+        LocalDateTime newStart = LocalDateTime.parse(request.getStartDate());
+        LocalDateTime newEnd = LocalDateTime.parse(request.getEndDate());
+
+        boolean isInfoChanged = !java.util.Objects.equals(oldTen, request.getName().trim())
+                || !java.util.Objects.equals(oldLoaiGiam, request.getDiscountType())
+                || isBigDecimalDifferent(oldGiaTriGiam, request.getDiscountValue())
+                || isBigDecimalDifferent(oldGiaTriToiThieu, request.getMinOrderValue())
+                || isBigDecimalDifferent(oldGiamToiDa, request.getMaxDiscount())
+                || !java.util.Objects.equals(oldNgayBatDau, newStart)
+                || !java.util.Objects.equals(oldNgayKetThuc, newEnd);
+
+        List<Long> newCustomerIds = (request.getForm() != null && request.getForm() == 2 && request.getCustomerIds() != null)
+                ? request.getCustomerIds().stream().filter(java.util.Objects::nonNull).distinct().toList()
+                : List.of();
+
+        List<Long> addedIds = newCustomerIds.stream()
+                .filter(cId -> !oldCustomerIds.contains(cId))
+                .toList();
+        List<Long> removedIds = oldCustomerIds.stream()
+                .filter(cId -> !newCustomerIds.contains(cId))
+                .toList();
+        List<Long> retainedIds = newCustomerIds.stream()
+                .filter(oldCustomerIds::contains)
+                .toList();
+
         p.setTenPhieuGiamGia(request.getName().trim());
 
         p.setHinhThucPhieu(request.getForm());
@@ -371,17 +409,8 @@ public class PhieuGiamGiaService {
         p.setGiaTriToiThieu(request.getMinOrderValue());
         p.setGiamToiDa(request.getMaxDiscount());
 
-        p.setNgayBatDau(
-                LocalDateTime.parse(
-                        request.getStartDate()
-                )
-        );
-
-        p.setNgayKetThuc(
-                LocalDateTime.parse(
-                        request.getEndDate()
-                )
-        );
+        p.setNgayBatDau(newStart);
+        p.setNgayKetThuc(newEnd);
 
         if (Boolean.TRUE.equals(request.getUnlimited())) {
             p.setVoHan(true);
@@ -404,6 +433,10 @@ public class PhieuGiamGiaService {
         PhieuGiamGia saved =
                 phieuGiamGiaRepository.save(p);
         syncAssignments(saved, request);
+
+        if (oldTimeStatus != null && oldTimeStatus != 3 && (Integer.valueOf(2).equals(oldForm) || Integer.valueOf(2).equals(saved.getHinhThucPhieu()))) {
+            sendEmailsOnUpdateAfterCommit(saved, addedIds, removedIds, retainedIds, isInfoChanged);
+        }
 
         return convertToResponse(saved);
     }
@@ -663,51 +696,161 @@ public class PhieuGiamGiaService {
                 .distinct()
                 .toList();
 
-        TransactionSynchronizationManager.registerSynchronization(
-                new TransactionSynchronization() {
-                    @Override
-                    public void afterCommit() {
-                        for (Long customerId : ids) {
-                            try {
-                                KhachHang customer = customers.findById(customerId)
-                                        .orElse(null);
+        executeAfterCommitOrNow(() -> {
+            String discount = formatDiscountString(voucher);
+            for (Long customerId : ids) {
+                try {
+                    KhachHang customer = customers.findById(customerId)
+                            .orElse(null);
 
-                                if (customer == null
-                                        || customer.getEmail() == null
-                                        || customer.getEmail().isBlank()) {
-                                    continue;
-                                }
+                    if (customer == null
+                            || customer.getEmail() == null
+                            || customer.getEmail().isBlank()) {
+                        continue;
+                    }
 
-                                String discount = voucher.getLoaiGiamGia() == 1
-                                        ? voucher.getGiaTriGiam()
-                                        .stripTrailingZeros()
-                                        .toPlainString() + "%"
-                                        : voucher.getGiaTriGiam()
-                                        .stripTrailingZeros()
-                                        .toPlainString() + " VNĐ";
-                                System.out.println(
-                                        "Đang gửi email phiếu giảm giá đến: " + customer.getEmail()
-                                );
+                    System.out.println(
+                            "Đang gửi email phiếu giảm giá đến: " + customer.getEmail()
+                    );
 
-                                emailService.sendVoucherEmail(
-                                        customer.getEmail(),
-                                        customer.getTenKhachHang(),
-                                        voucher.getTenPhieuGiamGia(),
-                                        voucher.getMaPhieuGiamGia(),
-                                        discount,
-                                        String.valueOf(voucher.getGiamToiDa()),
-                                        String.valueOf(voucher.getGiaTriToiThieu()),
-                                        String.valueOf(voucher.getNgayBatDau()),
-                                        String.valueOf(voucher.getNgayKetThuc()),
-                                        "https://example.com"
-                                );
-                            } catch (Exception ex) {
-                                ex.printStackTrace();
-                            }
+                    emailService.sendVoucherEmail(
+                            customer.getEmail(),
+                            customer.getTenKhachHang(),
+                            voucher.getTenPhieuGiamGia(),
+                            voucher.getMaPhieuGiamGia(),
+                            discount,
+                            String.valueOf(voucher.getGiamToiDa()),
+                            String.valueOf(voucher.getGiaTriToiThieu()),
+                            String.valueOf(voucher.getNgayBatDau()),
+                            String.valueOf(voucher.getNgayKetThuc()),
+                            "https://example.com"
+                    );
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                }
+            }
+        });
+    }
+
+    private void sendEmailsOnUpdateAfterCommit(
+            PhieuGiamGia voucher,
+            List<Long> addedIds,
+            List<Long> removedIds,
+            List<Long> retainedIds,
+            boolean isInfoChanged
+    ) {
+        if (addedIds.isEmpty() && removedIds.isEmpty() && (!isInfoChanged || retainedIds.isEmpty())) {
+            return;
+        }
+
+        executeAfterCommitOrNow(() -> {
+            String discount = formatDiscountString(voucher);
+
+            // 1. Khách hàng mới được thêm vào (TH2, TH3) -> Gửi mail mới
+            for (Long customerId : addedIds) {
+                try {
+                    KhachHang customer = customers.findById(customerId).orElse(null);
+                    if (customer == null || customer.getEmail() == null || customer.getEmail().isBlank()) {
+                        continue;
+                    }
+                    System.out.println("Đang gửi email cấp mới voucher đến: " + customer.getEmail());
+                    emailService.sendVoucherEmail(
+                            customer.getEmail(),
+                            customer.getTenKhachHang(),
+                            voucher.getTenPhieuGiamGia(),
+                            voucher.getMaPhieuGiamGia(),
+                            discount,
+                            String.valueOf(voucher.getGiamToiDa()),
+                            String.valueOf(voucher.getGiaTriToiThieu()),
+                            String.valueOf(voucher.getNgayBatDau()),
+                            String.valueOf(voucher.getNgayKetThuc()),
+                            "https://example.com"
+                    );
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                }
+            }
+
+            // 2. Khách hàng bị loại bỏ khỏi danh sách (TH2, TH3) -> Gửi mail hủy
+            for (Long customerId : removedIds) {
+                try {
+                    KhachHang customer = customers.findById(customerId).orElse(null);
+                    if (customer == null || customer.getEmail() == null || customer.getEmail().isBlank()) {
+                        continue;
+                    }
+                    System.out.println("Đang gửi email hủy voucher đến: " + customer.getEmail());
+                    emailService.sendVoucherCancelledEmail(
+                            customer.getEmail(),
+                            customer.getTenKhachHang(),
+                            voucher.getTenPhieuGiamGia(),
+                            voucher.getMaPhieuGiamGia()
+                    );
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                }
+            }
+
+            // 3. Khách hàng giữ nguyên -> Chỉ gửi nếu thông tin PGG thay đổi (TH1, TH3), nếu không đổi thì bỏ qua (5 -> K)
+            if (isInfoChanged) {
+                for (Long customerId : retainedIds) {
+                    try {
+                        KhachHang customer = customers.findById(customerId).orElse(null);
+                        if (customer == null || customer.getEmail() == null || customer.getEmail().isBlank()) {
+                            continue;
                         }
+                        System.out.println("Đang gửi email cập nhật voucher đến: " + customer.getEmail());
+                        emailService.sendVoucherUpdatedEmail(
+                                customer.getEmail(),
+                                customer.getTenKhachHang(),
+                                voucher.getTenPhieuGiamGia(),
+                                voucher.getMaPhieuGiamGia(),
+                                discount,
+                                String.valueOf(voucher.getGiamToiDa()),
+                                String.valueOf(voucher.getGiaTriToiThieu()),
+                                String.valueOf(voucher.getNgayBatDau()),
+                                String.valueOf(voucher.getNgayKetThuc()),
+                                "https://example.com"
+                        );
+                    } catch (Exception ex) {
+                        ex.printStackTrace();
                     }
                 }
-        );
+            }
+        });
+    }
+
+    private void executeAfterCommitOrNow(Runnable task) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(
+                    new TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            java.util.concurrent.CompletableFuture.runAsync(task);
+                        }
+                    }
+            );
+        } else {
+            java.util.concurrent.CompletableFuture.runAsync(task);
+        }
+    }
+
+    private String formatDiscountString(PhieuGiamGia voucher) {
+        if (voucher.getGiaTriGiam() == null) {
+            return "0";
+        }
+        return voucher.getLoaiGiamGia() == 1
+                ? voucher.getGiaTriGiam().stripTrailingZeros().toPlainString() + "%"
+                : voucher.getGiaTriGiam().stripTrailingZeros().toPlainString() + " VNĐ";
+    }
+
+    private boolean isBigDecimalDifferent(BigDecimal a, BigDecimal b) {
+        if (a == null && b == null) {
+            return false;
+        }
+        if (a == null || b == null) {
+            return true;
+        }
+        return a.compareTo(b) != 0;
     }
 
 }

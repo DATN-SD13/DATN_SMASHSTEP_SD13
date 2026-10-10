@@ -38,7 +38,7 @@ const toast = ref({
 })
 
 let toastTimer = null
-
+  
 function showLocalToast(type, title, message) {
   toast.value = {
     visible: true,
@@ -230,11 +230,19 @@ async function handleConfirm() {
 
     showConfirm.value = false
 
+    let message = 'Tạo phiếu giảm giá thất bại!'
+    if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+      message = 'Hết thời gian chờ phản hồi từ máy chủ (Backend phản hồi quá lâu hoặc chưa được khởi động)!'
+    } else if (!error.response) {
+      message = 'Không thể kết nối đến máy chủ Backend (vui lòng kiểm tra server port 8080)!'
+    } else if (error.response?.data?.message) {
+      message = error.response.data.message
+    }
+
     showLocalToast(
       'error',
       'Tạo thất bại',
-      error.response?.data?.message ||
-      'Tạo phiếu giảm giá thất bại!'
+      message
     )
   } finally {
     saving.value = false
