@@ -1,123 +1,91 @@
 <script setup>
-import AdminLayout from '../../../../layouts/AdminLayout.vue'
-import { computed, reactive, ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
-import api from '../../../../utils/api'
-import { showSuccess, showError } from '../../../../utils/feedback'
+import AdminLayout from "../../../../layouts/AdminLayout.vue";
+import Select2Input from "../components/Select2Input.vue";
+import { computed, reactive, ref, onMounted } from "vue";
+import { useRouter, onBeforeRouteLeave } from "vue-router";
+import api from "../../../../utils/api";
+import { showSuccess, showError } from "../../../../utils/feedback";
 
-const router = useRouter()
+const router = useRouter();
 
 // =====================================================
 // FORM ĐỢT GIẢM GIÁ
 // =====================================================
 const form = ref({
-  name: '',
+  name: "",
   value: 0,
-  start: '',
-  end: '',
-  desc: ''
-})
+  start: "",
+  end: "",
+  desc: "",
+});
 
 // =====================================================
 // DỮ LIỆU SẢN PHẨM THẬT TỪ BACKEND
 // =====================================================
-const products = ref([])
-const loadingProducts = ref(false)
-const saving = ref(false)
-const descriptionSupported = ref(false)
+const products = ref([]);
+const loadingProducts = ref(false);
+const loadProductsError = ref(false);
+const saving = ref(false);
+const descriptionSupported = ref(false);
 
 // Lấy sản phẩm + biến thể từ backend
+
 async function loadProducts() {
   try {
-    loadingProducts.value = true
+    loadingProducts.value = true;
+    loadProductsError.value = false;
 
-    const capabilities = await api.get('/dot-giam-gia/capabilities')
-    descriptionSupported.value = capabilities.data?.data?.descriptionSupported === true
+    // Kiểm tra backend có hỗ trợ mô tả hay không
+    const capabilities = await api.get("/dot-giam-gia/capabilities");
 
-    const response = await api.get(
-      '/dot-giam-gia/san-pham-chi-tiet'
-    )
+    descriptionSupported.value =
+      capabilities.data?.data?.descriptionSupported === true;
 
-    const data = response.data?.data || []
+    // Lấy danh sách biến thể sản phẩm
+    const response = await api.get("/dot-giam-gia/san-pham-chi-tiet");
 
-    /*
-      Backend trả từng biến thể.
+    const data = response.data?.data || [];
 
-      Ta gom lại thành:
+    // Gom các biến thể theo sản phẩm
+    const productMap = new Map();
 
-      products = [
-        {
-          code: 'SP001',
-          name: 'Nike Air Force 1',
-          variants: [...]
-        }
-      ]
-    */
-
-    const productMap = new Map()
-
-    data.forEach(item => {
-      const productCode =
-        item.productCode || ''
-
-      const productName =
-        item.productName || ''
+    data.forEach((item) => {
+      const productCode = item.productCode || "";
+      const productName = item.productName || "";
 
       if (!productMap.has(productCode)) {
         productMap.set(productCode, {
           code: productCode,
           name: productName,
-          variants: []
-        })
+          variants: [],
+        });
       }
 
       productMap.get(productCode).variants.push({
         id: item.id,
+        code: item.productDetailCode || item.sku || `CTSP-${item.id}`,
+        sku: item.sku || "",
+        color: item.color || "",
+        colorHex: item.colorHex || "",
+        size: item.size || "",
+        price: Number(item.price || 0),
+        qty: Number(item.quantity || 0),
+        status: item.status,
+      });
+    });
 
-        code:
-          item.productDetailCode ||
-          item.sku ||
-          `CTSP-${item.id}`,
-
-        sku: item.sku || '',
-
-        color:
-          item.color || '',
-
-        colorHex:
-          item.colorHex || '',
-
-        size:
-          item.size || '',
-
-        price:
-          Number(item.price || 0),
-
-        qty:
-          Number(item.quantity || 0),
-
-        status:
-          item.status
-      })
-    })
-
-    products.value =
-      Array.from(productMap.values())
-
+    products.value = Array.from(productMap.values());
   } catch (error) {
-    console.error(
-      'Lỗi tải sản phẩm:',
-      error
-    )
+    console.error("Lỗi tải sản phẩm:", error);
 
-    products.value = []
+    products.value = [];
+    loadProductsError.value = true;
 
     showError(
-      error.response?.data?.message ||
-      'Không thể tải danh sách sản phẩm'
-    )
+      error.response?.data?.message || "Không thể tải danh sách sản phẩm",
+    );
   } finally {
-    loadingProducts.value = false
+    loadingProducts.value = false;
   }
 }
 
@@ -125,154 +93,159 @@ async function loadProducts() {
 // TẤT CẢ BIẾN THỂ
 // =====================================================
 const allVariants = computed(() =>
-  products.value.flatMap(p =>
-    p.variants.map(x => ({
+  products.value.flatMap((p) =>
+    p.variants.map((x) => ({
       ...x,
       product: p.name,
-      productCode: p.code
-    }))
-  )
-)
+      productCode: p.code,
+    })),
+  ),
+);
 
 // =====================================================
 // DANH SÁCH MÀU
 // =====================================================
-const colors = computed(() =>
-  [
-    ...new Set(
-      allVariants.value
-        .map(x => x.color)
-        .filter(Boolean)
-    )
-  ]
-)
+const colors = computed(() => [
+  ...new Set(allVariants.value.map((x) => x.color).filter(Boolean)),
+]);
 
 // =====================================================
 // DANH SÁCH SIZE
 // =====================================================
 const sizes = computed(() =>
-  [
-    ...new Set(
-      allVariants.value
-        .map(x => x.size)
-        .filter(Boolean)
-    )
-  ].sort()
-)
+  [...new Set(allVariants.value.map((x) => x.size).filter(Boolean))].sort(),
+);
+const colorOptions = computed(() => [
+  { value: "all", label: "Tất cả màu sắc" },
+  ...colors.value.map((c) => ({
+    value: c,
+    label: c,
+  })),
+]);
 
+const sizeOptions = computed(() => [
+  { value: "all", label: "Tất cả kích cỡ" },
+  ...sizes.value.map((s) => ({
+    value: s,
+    label: String(s),
+  })),
+]);
 // =====================================================
 // BỘ LỌC CHỌN SẢN PHẨM
 // =====================================================
 const draft = reactive({
-  q: '',
-  color: 'all',
-  size: 'all'
-})
+  q: "",
+  color: "all",
+  size: "all",
+});
 
-const applied = reactive({
-  q: '',
-  color: 'all',
-  size: 'all'
-})
-
-function applySearch() {
-  Object.assign(applied, draft)
+// Đặt lại toàn bộ bộ lọc
+function resetSearch() {
+  Object.assign(draft, {
+    q: "",
+    color: "all",
+    size: "all",
+  });
 }
 
 // =====================================================
 // SẢN PHẨM SAU KHI LỌC
 // =====================================================
+
 const filteredProducts = computed(() => {
-  const q =
-    applied.q
-      .trim()
-      .toLowerCase()
+  const q = draft.q.trim().toLowerCase();
 
-  return products.value.filter(p => {
-    const matchKeyword =
-      !q ||
-      p.code.toLowerCase().includes(q) ||
-      p.name.toLowerCase().includes(q)
+  return products.value
+    .map((p) => {
+      const matchKeyword =
+        !q ||
+        p.code.toLowerCase().includes(q) ||
+        p.name.toLowerCase().includes(q);
 
-    const matchVariant =
-      p.variants.some(x =>
-        (
-          applied.color === 'all' ||
-          x.color === applied.color
-        ) &&
-        (
-          applied.size === 'all' ||
-          x.size === applied.size
-        )
-      )
+      const matchingVariants = p.variants.filter(
+        (x) =>
+          (draft.color === "all" || x.color === draft.color) &&
+          (draft.size === "all" || String(x.size) === String(draft.size)),
+      );
 
-    return matchKeyword && matchVariant
-  })
-})
+      return {
+        ...p,
+        variants: matchKeyword ? matchingVariants : [],
+      };
+    })
+    .filter((p) => p.variants.length > 0);
+});
 
 // =====================================================
 // BIẾN THỂ ĐÃ CHỌN
 // Lưu ID thật của san_pham_chi_tiet
 // =====================================================
-const selected = ref([])
+const selected = ref([]);
+const hasUnsavedChanges = computed(() => {
+  return (
+    form.value.name.trim() !== "" ||
+    Number(form.value.value) !== 0 ||
+    form.value.start !== "" ||
+    form.value.end !== "" ||
+    form.value.desc.trim() !== "" ||
+    selected.value.length > 0
+  );
+});
 
-const isChosen = (p) =>
-  p.variants.some(x =>
-    selected.value.includes(x.id)
-  )
+const allowLeave = ref(false);
+const isChosen = (p) => p.variants.some((x) => selected.value.includes(x.id));
 
 const isFull = (p) =>
   p.variants.length > 0 &&
-  p.variants.every(x =>
-    selected.value.includes(x.id)
-  )
+  p.variants.every((x) => selected.value.includes(x.id));
+
+// Kiểm tra sản phẩm được chọn một phần biến thể
+function isPartiallySelected(p) {
+  const selectedCount = p.variants.filter((x) =>
+    selected.value.includes(x.id),
+  ).length;
+
+  return selectedCount > 0 && selectedCount < p.variants.length;
+}
+
+// Hiển thị dấu gạch ngang khi chọn một phần
+const vIndeterminate = {
+  mounted(el, binding) {
+    el.indeterminate = binding.value;
+  },
+  updated(el, binding) {
+    el.indeterminate = binding.value;
+  },
+};
 
 // Chọn / bỏ chọn một sản phẩm
 function toggleProduct(p) {
-  const ids =
-    p.variants.map(x => x.id)
+  const ids = p.variants.map((x) => x.id);
 
   if (isFull(p)) {
-    selected.value =
-      selected.value.filter(
-        id => !ids.includes(id)
-      )
+    selected.value = selected.value.filter((id) => !ids.includes(id));
   } else {
-    selected.value = [
-      ...new Set([
-        ...selected.value,
-        ...ids
-      ])
-    ]
+    selected.value = [...new Set([...selected.value, ...ids])];
   }
 }
 
 // =====================================================
 // CHỌN TẤT CẢ
 // =====================================================
-const allChecked = computed(() =>
-  filteredProducts.value.length > 0 &&
-  filteredProducts.value.every(isFull)
-)
+const allChecked = computed(
+  () =>
+    filteredProducts.value.length > 0 && filteredProducts.value.every(isFull),
+);
 
 function toggleAll() {
-  const ids =
-    filteredProducts.value.flatMap(
-      p => p.variants.map(x => x.id)
-    )
+  const ids = filteredProducts.value.flatMap((p) =>
+    p.variants.map((x) => x.id),
+  );
 
   if (allChecked.value) {
-    selected.value =
-      selected.value.filter(
-        id => !ids.includes(id)
-      )
+    selected.value = selected.value.filter((id) => !ids.includes(id));
   } else {
-    selected.value = [
-      ...new Set([
-        ...selected.value,
-        ...ids
-      ])
-    ]
+    selected.value = [...new Set([...selected.value, ...ids])];
   }
 }
 
@@ -280,73 +253,48 @@ function toggleAll() {
 // XÓA BIẾN THỂ KHỎI DANH SÁCH CHỌN
 // =====================================================
 function removeVariant(id) {
-  selected.value =
-    selected.value.filter(
-      x => x !== id
-    )
+  selected.value = selected.value.filter((x) => x !== id);
 }
 
 // =====================================================
 // DANH SÁCH BIẾN THỂ ĐÃ CHỌN
 // =====================================================
 const listFilter = reactive({
-  q: '',
-  color: 'all',
-  size: 'all'
-})
+  q: "",
+  color: "all",
+  size: "all",
+});
 
 const chosenRows = computed(() =>
-  allVariants.value.filter(x =>
-    selected.value.includes(x.id)
-  )
-)
+  allVariants.value.filter((x) => selected.value.includes(x.id)),
+);
 
 const shownRows = computed(() => {
-  const q =
-    listFilter.q
-      .trim()
-      .toLowerCase()
+  const q = listFilter.q.trim().toLowerCase();
 
-  return chosenRows.value.filter(x =>
-    (
-      !q ||
-      x.code.toLowerCase().includes(q) ||
-      x.product.toLowerCase().includes(q)
-    ) &&
-    (
-      listFilter.color === 'all' ||
-      x.color === listFilter.color
-    ) &&
-    (
-      listFilter.size === 'all' ||
-      x.size === listFilter.size
-    )
-  )
-})
+  return chosenRows.value.filter(
+    (x) =>
+      (!q ||
+        x.code.toLowerCase().includes(q) ||
+        x.product.toLowerCase().includes(q)) &&
+      (listFilter.color === "all" || x.color === listFilter.color) &&
+      (listFilter.size === "all" || String(x.size) === String(listFilter.size)),
+  );
+});
 
 // =====================================================
 // TÍNH GIÁ SAU GIẢM
 // =====================================================
 const afterDiscount = (price) => {
-  const discount =
-    Math.min(
-      100,
-      Math.max(
-        0,
-        Number(form.value.value) || 0
-      )
-    )
+  const discount = Math.min(100, Math.max(0, Number(form.value.value) || 0));
 
-  return Math.round(
-    price * (1 - discount / 100)
-  )
-}
+  return Math.round(price * (1 - discount / 100));
+};
 
 // =====================================================
 // FORMAT TIỀN
 // =====================================================
-const money = (n) =>
-  `${Number(n || 0).toLocaleString('vi-VN')} đ`
+const money = (n) => `${Number(n || 0).toLocaleString("vi-VN")} đ`;
 
 // =====================================================
 // TẠO ĐỢT GIẢM GIÁ
@@ -354,78 +302,75 @@ const money = (n) =>
 // Test sản phẩm trước.
 // =====================================================
 async function save() {
-  if (saving.value || loadingProducts.value) return
+  if (saving.value || loadingProducts.value) return;
   // Kiểm tra dữ liệu
-  
 
   if (!form.value.name.trim()) {
-    showError('Vui lòng nhập tên đợt giảm giá')
-    return
+    showError("Vui lòng nhập tên đợt giảm giá");
+    return;
   }
 
-  const discountValue = Number(form.value.value)
+  const discountValue = Number(form.value.value);
 
   if (
-    !discountValue ||
+    !Number.isFinite(discountValue) ||
     discountValue <= 0 ||
     discountValue > 100
   ) {
-    showError('Giá trị giảm phải lớn hơn 0 và không vượt quá 100%')
-    return
+    showError("Giá trị giảm phải lớn hơn 0 và không vượt quá 100%");
+    return;
+  }
+
+  // Chỉ cho phép tối đa 2 chữ số sau dấu thập phân
+  const decimalPart = String(form.value.value).split(".")[1];
+
+  if (decimalPart && decimalPart.length > 2) {
+    showError("Phần trăm giảm chỉ được tối đa 2 chữ số thập phân");
+    return;
   }
 
   if (!form.value.start) {
-    showError('Vui lòng chọn ngày bắt đầu')
-    return
+    showError("Vui lòng chọn ngày bắt đầu");
+    return;
   }
 
   if (!form.value.end) {
-    showError('Vui lòng chọn ngày kết thúc')
-    return
+    showError("Vui lòng chọn ngày kết thúc");
+    return;
   }
 
   if (form.value.end < form.value.start) {
-    showError('Ngày kết thúc phải lớn hơn hoặc bằng ngày bắt đầu')
-    return
+    showError("Ngày kết thúc phải lớn hơn hoặc bằng ngày bắt đầu");
+    return;
   }
 
   if (selected.value.length === 0) {
-    showError('Vui lòng chọn ít nhất một biến thể sản phẩm')
-    return
+    showError("Vui lòng chọn ít nhất một biến thể sản phẩm");
+    return;
   }
 
   const data = {
-  name: form.value.name.trim(),
-  discountValue: discountValue,
-  startDate: form.value.start,
-  endDate: form.value.end,
-  description: descriptionSupported.value ? form.value.desc.trim() : null,
-  productDetailIds: selected.value
-}
+    name: form.value.name.trim(),
+    discountValue: discountValue,
+    startDate: form.value.start,
+    endDate: form.value.end,
+    description: descriptionSupported.value ? form.value.desc.trim() : null,
+    productDetailIds: selected.value,
+  };
 
   try {
-    saving.value = true
-    await api.post(
-      '/dot-giam-gia',
-      data
-    )
+    saving.value = true;
+    await api.post("/dot-giam-gia", data);
+    showSuccess("Tạo đợt giảm giá thành công!");
 
-    showSuccess('Tạo đợt giảm giá thành công!')
-
-    router.push('/dot-giam-gia')
-
+    allowLeave.value = true;
+    router.push("/dot-giam-gia");
   } catch (error) {
-    console.error(
-      'Lỗi tạo đợt giảm giá:',
-      error
-    )
+    console.error("Lỗi tạo đợt giảm giá:", error);
 
-    showError(
-      error.response?.data?.message ||
-      'Không thể tạo đợt giảm giá'
-    )
+    showError(error.response?.data?.message || "Không thể tạo đợt giảm giá");
   } finally {
-    saving.value = false
+    saving.value = false;
   }
 }
 
@@ -433,39 +378,38 @@ async function save() {
 // LOAD KHI MỞ TRANG
 // =====================================================
 onMounted(() => {
-  loadProducts()
-})
+  loadProducts();
+});
+
+onBeforeRouteLeave(() => {
+  if (allowLeave.value || !hasUnsavedChanges.value) {
+    return true;
+  }
+
+  return window.confirm(
+    "Bạn có thông tin chưa lưu. Bạn có chắc chắn muốn rời khỏi trang không?",
+  );
+});
 </script>
 
 <template>
   <AdminLayout>
-
     <main class="ss-page">
-
       <div class="top-grid">
-
         <!-- ========================= -->
         <!-- THÔNG TIN ĐỢT GIẢM -->
         <!-- ========================= -->
 
         <section class="ss-card ss-form">
-
           <div class="ss-head">
-
             <div class="ss-head-icon">
               <i class="bi bi-tag"></i>
             </div>
 
-            <h2>
-              Thông tin đợt giảm
-            </h2>
-
+            <h2>Thông tin đợt giảm</h2>
           </div>
 
-          
-
           <div class="ss-field">
-
             <label class="ss-label">
               Tên đợt
               <span class="req">*</span>
@@ -476,11 +420,9 @@ onMounted(() => {
               v-model="form.name"
               placeholder="Ví dụ: Siêu giảm giá mùa hè"
             />
-
           </div>
 
           <div class="ss-field">
-
             <label class="ss-label">
               Giá trị giảm (%)
               <span class="req">*</span>
@@ -489,77 +431,92 @@ onMounted(() => {
             <input
               class="ss-input"
               type="number"
-              min="0"
+              min="0.01"
               max="100"
+              step="0.01"
               v-model="form.value"
             />
-
           </div>
 
           <div class="two">
-
             <div class="ss-field">
-
               <label class="ss-label">
                 Từ ngày
                 <span class="req">*</span>
               </label>
 
-              <input
-                class="ss-input"
-                type="date"
-                v-model="form.start"
-              />
-
+              <input class="ss-input" type="date" v-model="form.start" />
             </div>
 
             <div class="ss-field">
-
               <label class="ss-label">
                 Đến ngày
                 <span class="req">*</span>
               </label>
 
-              <input
-                class="ss-input"
-                type="date"
-                v-model="form.end"
-              />
-
+              <input class="ss-input" type="date" v-model="form.end" />
             </div>
-
           </div>
 
           <div v-if="descriptionSupported" class="ss-field">
-
-            <label class="ss-label">
-              Mô tả
-            </label>
+            <label class="ss-label"> Mô tả </label>
 
             <textarea
               class="ss-textarea"
               v-model="form.desc"
               placeholder="Nhập mô tả..."
             ></textarea>
+          </div>
 
+          <div class="ss-summary">
+            <h3 class="ss-summary-title">
+              <i class="bi bi-clipboard-check"></i>
+              Tổng kết đợt giảm giá
+            </h3>
+
+            <div class="ss-summary-row">
+              <span>Mức giảm:</span>
+              <strong>{{ form.value || 0 }}%</strong>
+            </div>
+
+            <div class="ss-summary-row">
+              <span>Số biến thể:</span>
+              <strong>{{ selected.length }}</strong>
+            </div>
+
+            <div class="ss-summary-row">
+              <span>Ngày bắt đầu:</span>
+              <strong>{{ form.start || "Chưa chọn" }}</strong>
+            </div>
+
+            <div class="ss-summary-row">
+              <span>Ngày kết thúc:</span>
+              <strong>{{ form.end || "Chưa chọn" }}</strong>
+            </div>
           </div>
 
           <button
+            type="button"
             class="ss-btn primary block"
             @click="save"
             :disabled="saving || loadingProducts"
           >
-            <i class="bi bi-check2"></i>
-            Tạo đợt giảm giá
+            <i
+              class="bi"
+              :class="saving ? 'bi-arrow-repeat spin' : 'bi-check2'"
+            ></i>
+
+            {{ saving ? "Đang tạo đợt giảm giá..." : "Tạo đợt giảm giá" }}
           </button>
 
           <button
+            type="button"
             class="ss-btn block"
+            :disabled="saving"
             @click="router.back()"
           >
             Hủy
           </button>
-
         </section>
 
         <!-- ========================= -->
@@ -567,131 +524,97 @@ onMounted(() => {
         <!-- ========================= -->
 
         <section class="ss-card">
-
           <div class="ss-head">
-
             <div class="ss-head-icon">
               <i class="bi bi-search"></i>
             </div>
 
             <div>
-
-              <h2>
-                Chọn sản phẩm áp dụng
-              </h2>
+              <h2>Chọn sản phẩm áp dụng</h2>
 
               <p>
                 Đã chọn
                 {{ selected.length }}
                 biến thể
               </p>
-
             </div>
-
           </div>
 
           <div class="pick-filter">
+            <!-- Hàng 1: Tìm kiếm theo tên hoặc mã -->
+            <div class="pick-search-row">
+              <label class="ss-label strong"> Tìm kiếm sản phẩm </label>
 
-            <div class="ss-search">
+              <div class="ss-search">
+                <i class="bi bi-search"></i>
 
-              <i class="bi bi-search"></i>
-
-              <input
-                class="ss-input"
-                v-model="draft.q"
-                placeholder="Tìm theo tên hoặc mã sản phẩm..."
-                @keyup.enter="applySearch"
-              />
-
+                <input
+                  class="ss-input"
+                  v-model="draft.q"
+                  placeholder="Nhập mã hoặc tên sản phẩm..."
+                />
+              </div>
             </div>
 
-            <div class="ss-field">
+            <!-- Hàng 2: Lọc màu, kích cỡ và nút thao tác -->
+            <div class="pick-filter-row">
+              <div class="ss-field">
+                <span class="ss-label strong">Màu sắc</span>
 
-              <span class="ss-label strong">
-                Màu sắc
-              </span>
+                <Select2Input
+                  v-model="draft.color"
+                  :options="colorOptions"
+                  placeholder="Chọn màu sắc"
+                />
+              </div>
 
-              <select
-                class="ss-select"
-                v-model="draft.color"
+              <div class="ss-field">
+                <span class="ss-label strong">Kích cỡ</span>
+
+                <Select2Input
+                  v-model="draft.size"
+                  :options="sizeOptions"
+                  placeholder="Chọn kích cỡ"
+                />
+              </div>
+
+              <button
+                type="button"
+                class="ss-btn pick-reset-btn"
+                @click="resetSearch"
               >
-
-                <option value="all">
-                  Tất cả màu sắc
-                </option>
-
-                <option
-                  v-for="c in colors"
-                  :key="c"
-                >
-                  {{ c }}
-                </option>
-
-              </select>
-
+                <i class="bi bi-arrow-counterclockwise"></i>
+                Đặt lại
+              </button>
             </div>
 
-            <div class="ss-field">
-
-              <span class="ss-label strong">
-                Kích cỡ
-              </span>
-
-              <select
-                class="ss-select"
-                v-model="draft.size"
-              >
-
-                <option value="all">
-                  Tất cả kích cỡ
-                </option>
-
-                <option
-                  v-for="s in sizes"
-                  :key="s"
-                >
-                  {{ s }}
-                </option>
-
-              </select>
-
+            <!-- Số lượng sản phẩm tìm được -->
+            <div class="pick-result">
+              <i class="bi bi-list-check"></i>
+              Tìm thấy
+              <strong>{{ filteredProducts.length }}</strong>
+              sản phẩm
             </div>
-
-            <button
-              class="ss-btn primary"
-              @click="applySearch"
-            >
-              <i class="bi bi-search"></i>
-              Tìm kiếm
-            </button>
-
           </div>
 
-          <div
-            v-if="loadingProducts"
-            class="ss-empty"
-          >
+          <div v-if="loadingProducts" class="ss-empty">
             Đang tải sản phẩm...
           </div>
 
-          <div
-            v-else
-            class="ss-table-wrap"
-          >
+          <div v-else-if="loadProductsError" class="ss-empty">
+            <p>Không thể tải danh sách sản phẩm.</p>
 
-            <table
-              class="ss-table"
-              style="min-width:520px"
-            >
+            <button type="button" class="ss-btn primary" @click="loadProducts">
+              <i class="bi bi-arrow-clockwise"></i>
+              Thử tải lại
+            </button>
+          </div>
 
+          <div v-else class="ss-table-wrap">
+            <table class="ss-table" style="min-width: 520px">
               <thead>
-
                 <tr>
-
-                  <th
-                    style="width:44px"
-                    class="c"
-                  >
+                  <th style="width: 44px" class="c">
                     <input
                       type="checkbox"
                       :checked="allChecked"
@@ -699,42 +622,23 @@ onMounted(() => {
                     />
                   </th>
 
-                  <th class="w-stt c">
-                    STT
-                  </th>
+                  <th class="w-stt c">STT</th>
 
-                  <th>
-                    Mã SP
-                  </th>
+                  <th>Mã SP</th>
 
-                  <th>
-                    Tên sản phẩm
-                  </th>
-
-                  <th
-                    class="r"
-                    style="width:70px"
-                  ></th>
-
+                  <th>Tên sản phẩm</th>
                 </tr>
-
               </thead>
 
               <tbody>
-
-                <tr
-                  v-for="(p, i) in filteredProducts"
-                  :key="p.code"
-                >
-
+                <tr v-for="(p, i) in filteredProducts" :key="p.code">
                   <td class="c">
-
                     <input
                       type="checkbox"
                       :checked="isFull(p)"
+                      v-indeterminate="isPartiallySelected(p)"
                       @change="toggleProduct(p)"
                     />
-
                   </td>
 
                   <td class="c">
@@ -748,62 +652,19 @@ onMounted(() => {
                   <td>
                     {{ p.name }}
                   </td>
-
-                  <td class="r">
-
-                    <button
-                      class="ss-icon-btn"
-                      :class="{
-                        chosen: isChosen(p)
-                      }"
-                      :title="
-                        isFull(p)
-                          ? 'Bỏ chọn'
-                          : 'Chọn'
-                      "
-                      @click="toggleProduct(p)"
-                    >
-
-                      <i
-                        class="bi"
-                        :class="
-                          isFull(p)
-                            ? 'bi-check2'
-                            : 'bi-plus-lg'
-                        "
-                      ></i>
-
-                    </button>
-
-                  </td>
-
                 </tr>
 
-                <tr
-                  v-if="!filteredProducts.length"
-                >
-
-                  <td
-                    colspan="5"
-                    class="ss-empty"
-                  >
-
+                <tr v-if="!filteredProducts.length">
+                  <td colspan="4" class="ss-empty">
                     <i class="bi bi-inbox"></i>
 
                     Không tìm thấy sản phẩm.
-
                   </td>
-
                 </tr>
-
               </tbody>
-
             </table>
-
           </div>
-
         </section>
-
       </div>
 
       <!-- ========================= -->
@@ -811,129 +672,69 @@ onMounted(() => {
       <!-- ========================= -->
 
       <section class="ss-card">
-
         <div class="ss-head">
-
           <div class="ss-head-icon">
             <i class="bi bi-check2-square"></i>
           </div>
 
           <div>
-
-            <h2>
-              Sản phẩm & biến thể đã chọn áp dụng
-            </h2>
+            <h2>Sản phẩm & biến thể đã chọn áp dụng</h2>
 
             <p>
               Danh sách chi tiết gồm
               {{ chosenRows.length }}
               biến thể đã chọn
             </p>
-
           </div>
-
         </div>
 
         <div class="list-filter">
-
-          <select
-            class="ss-select"
+          <Select2Input
             v-model="listFilter.color"
-          >
+            :options="colorOptions"
+            placeholder="Chọn màu sắc"
+          />
 
-            <option value="all">
-              Tất cả màu sắc
-            </option>
-
-            <option
-              v-for="c in colors"
-              :key="c"
-            >
-              {{ c }}
-            </option>
-
-          </select>
-
-          <select
-            class="ss-select"
+          <Select2Input
             v-model="listFilter.size"
-          >
-
-            <option value="all">
-              Tất cả kích cỡ
-            </option>
-
-            <option
-              v-for="s in sizes"
-              :key="s"
-            >
-              {{ s }}
-            </option>
-
-          </select>
+            :options="sizeOptions"
+            placeholder="Chọn kích cỡ"
+          />
 
           <input
             class="ss-input"
             v-model="listFilter.q"
             placeholder="Tìm trong danh sách..."
           />
-
         </div>
 
         <div class="ss-table-wrap">
-
           <table class="ss-table">
-
             <thead>
-
               <tr>
-                <th class="w-stt c">
-                  STT
-                </th>
+                <th class="w-stt c">STT</th>
 
-                <th>
-                  Sản phẩm
-                </th>
+                <th>Sản phẩm</th>
 
-                <th>
-                  Biến thể
-                </th>
+                <th>Biến thể</th>
 
-                <th>
-                  Giá bán
-                </th>
+                <th>Giá bán</th>
 
-                <th>
-                  Giá sau giảm
-                </th>
+                <th>Giá sau giảm</th>
 
-                <th class="r">
-                  Số lượng
-                </th>
+                <th class="r">Số lượng</th>
 
-                <th
-                  class="c"
-                  style="width:60px"
-                >
-                  Xóa
-                </th>
+                <th class="c" style="width: 60px">Xóa</th>
               </tr>
-
             </thead>
 
             <tbody>
-
-              <tr
-                v-for="(x, i) in shownRows"
-                :key="x.id"
-              >
-
+              <tr v-for="(x, i) in shownRows" :key="x.id">
                 <td class="c">
                   {{ i + 1 }}
                 </td>
 
                 <td>
-
                   <span class="ss-strong">
                     {{ x.product }}
                   </span>
@@ -941,17 +742,12 @@ onMounted(() => {
                   <span class="ss-sub">
                     {{ x.productCode }}
                   </span>
-
                 </td>
 
                 <td>
-
                   {{ x.code }}
 
-                  <span class="ss-sub">
-                    {{ x.color }} · {{ x.size }}
-                  </span>
-
+                  <span class="ss-sub"> {{ x.color }} · {{ x.size }} </span>
                 </td>
 
                 <td class="nowrap">
@@ -959,15 +755,9 @@ onMounted(() => {
                 </td>
 
                 <td class="nowrap">
-
                   <span class="ss-code">
-                    {{
-                      money(
-                        afterDiscount(x.price)
-                      )
-                    }}
+                    {{ money(afterDiscount(x.price)) }}
                   </span>
-
                 </td>
 
                 <td class="r">
@@ -975,51 +765,38 @@ onMounted(() => {
                 </td>
 
                 <td class="c">
-
                   <button
+                    type="button"
                     class="ss-icon-btn danger"
-                    title="Xóa"
+                    title="Bỏ chọn biến thể"
+                    aria-label="Bỏ chọn biến thể"
+                    :disabled="saving"
                     @click="removeVariant(x.id)"
                   >
                     <i class="bi bi-x-lg"></i>
                   </button>
-
                 </td>
-
               </tr>
 
               <tr v-if="!shownRows.length">
-
-                <td
-                  colspan="7"
-                  class="ss-empty"
-                >
-
+                <td colspan="7" class="ss-empty">
                   <i class="bi bi-inbox"></i>
 
                   Chưa có biến thể nào được chọn.
-
                 </td>
-
               </tr>
-
             </tbody>
-
           </table>
-
         </div>
-
       </section>
-
     </main>
-
   </AdminLayout>
 </template>
 
 <style scoped>
 .top-grid {
   display: grid;
-  grid-template-columns: 340px minmax(0, 1fr);
+  grid-template-columns: 365px minmax(0, 1fr);
   gap: 16px;
   align-items: start;
 }
@@ -1030,27 +807,83 @@ onMounted(() => {
   gap: 10px;
 }
 
+/* ============================= */
+/* BỘ LỌC TÌM KIẾM SẢN PHẨM */
+/* ============================= */
+
 .pick-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+/* Hàng tìm kiếm */
+.pick-search-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pick-search-row .ss-search {
+  width: 100%;
+}
+
+/* Hàng lọc màu, kích cỡ và nút */
+.pick-filter-row {
   display: grid;
   grid-template-columns:
     minmax(0, 1fr)
-    150px
-    150px
+    minmax(0, 1fr)
+    auto
     auto;
   gap: 10px;
   align-items: end;
 }
 
-.pick-filter > .ss-btn {
-  height: 40px;
+.pick-filter-row .ss-field {
+  min-width: 0;
 }
+
+/* Nút Đặt lại và Tìm kiếm */
+.pick-reset-btn,
+.pick-search-btn {
+  height: 40px;
+  white-space: nowrap;
+}
+
+.pick-reset-btn {
+  background: #fff;
+  border: 1px solid #dbe4f0;
+  color: #475569;
+}
+
+.pick-reset-btn:hover {
+  background: #f1f5f9;
+}
+
+/* Hiển thị số sản phẩm tìm thấy */
+.pick-result {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.pick-result strong {
+  color: #2563eb;
+  font-weight: 700;
+}
+
+/* ============================= */
+/* BỘ LỌC BẢNG BIẾN THỂ ĐÃ CHỌN */
+/* ============================= */
 
 .list-filter {
   display: grid;
-  grid-template-columns:
-    170px
-    170px
-    240px;
+  grid-template-columns: 170px 170px 240px;
   justify-content: end;
   gap: 10px;
 }
@@ -1068,6 +901,10 @@ input[type="checkbox"] {
   cursor: pointer;
 }
 
+/* ============================= */
+/* RESPONSIVE */
+/* ============================= */
+
 @media (max-width: 1100px) {
   .top-grid {
     grid-template-columns: 1fr;
@@ -1075,9 +912,73 @@ input[type="checkbox"] {
 }
 
 @media (max-width: 760px) {
-  .pick-filter,
+  .pick-filter-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
   .list-filter {
     grid-template-columns: 1fr;
   }
+
+  .pick-reset-btn,
+  .pick-search-btn {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .pick-filter-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ============================= */
+/* HIỆU ỨNG NÚT LƯU */
+/* ============================= */
+
+.spin {
+  display: inline-block;
+  animation: loading-spin 1s linear infinite;
+}
+
+@keyframes loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+/* ============================= */
+/* TỔNG KẾT ĐỢT GIẢM GIÁ */
+/* ============================= */
+
+.ss-summary {
+  padding: 14px;
+  margin: 16px 0;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.ss-summary-title {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.ss-summary-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.ss-summary-row strong {
+  text-align: right;
 }
 </style>
