@@ -7,12 +7,15 @@ import ProductImages from '../components/ProductImages.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
 import { useConfirmation } from '../composables/useConfirmation'
 import { productService, productSummary, errorMessage } from '../services/productService'
+import { useProductToast } from '../composables/useProductToast'
+import { apiFieldErrors } from '../services/productValidation'
 import { productDuplicatePrompt } from '../services/duplicateConfirmation'
 import { productAttributeService } from '../services/productAttributeService'
 const route = useRoute(), router = useRouter()
 const product = ref(null), options = ref({}), error = ref(''), images = ref([])
 const { confirmation, confirming: saving, confirmError, askConfirmation, replaceConfirmation, cancelConfirmation, confirmAction } = useConfirmation()
-const duplicateBusy = ref(false)
+const duplicateBusy = ref(false), serverErrors = ref({})
+const toast = useProductToast()
 const formBusy = computed(() => duplicateBusy.value || saving.value || !!confirmation.value)
 let loadVersion = 0
 onBeforeUnmount(() => { loadVersion++ })
@@ -27,12 +30,15 @@ async function load() {
 }
 async function save(data) {
   if (formBusy.value || !product.value) return
+  serverErrors.value = {}
   const id = product.value.id, payload = { ...data }, version = loadVersion
   error.value = ''; duplicateBusy.value = true
   try {
     const result = await productService.checkDuplicate({ ...payload, excludeId: id })
     if (version !== loadVersion) return
     if (result.duplicate) {
+      serverErrors.value = { tenSanPham: 'Sản phẩm với tên và bộ thuộc tính này đã tồn tại.' }
+      toast.warning(serverErrors.value.tenSanPham)
       askConfirmation(productDuplicatePrompt(result.product), () => router.push(`/san-pham/${result.product.id}/sua`))
       return
     }
@@ -41,6 +47,7 @@ async function save(data) {
       error.value = ''
       try { await productService.update(id, payload) }
       catch (e) {
+        serverErrors.value = apiFieldErrors(e)
         if (e?.response?.status !== 409) throw e
         let duplicate
         try { duplicate = await productService.checkDuplicate({ ...payload, excludeId: id }) }
@@ -66,7 +73,7 @@ async function refreshImages() {
 <template>
   <ProductShell title="Sửa sản phẩm" description="Cập nhật thông tin sản phẩm và giữ nguyên các biến thể hiện có." :error="error">
     <template #actions><RouterLink :to="'/san-pham/' + route.params.id" class="p-btn"><i class="bi bi-arrow-left"></i> Quay lại</RouterLink></template>
-    <ProductForm v-if="product" :key="product.id" :initial="product" :options="options" :saving="formBusy" editing @save="save" />
+    <ProductForm :server-errors="serverErrors" v-if="product" :key="product.id" :initial="product" :options="options" :saving="formBusy" editing @save="save" />
     <div v-else class="p-card p-empty">{{ error ? 'Không tải được sản phẩm.' : 'Đang tải...' }} <button v-if="error" class="p-btn" @click="load">Thử lại</button></div>
     <ProductImages v-if="product" :key="product.id" :product-id="product.id" :product-code="product.maSanPham" :images="images" :loading="formBusy" @changed="refreshImages" />
     <ConfirmModal v-bind="confirmation || {}" :show="!!confirmation" :loading="saving" :error="confirmError" @confirm="confirmAction" @cancel="cancelConfirmation" />

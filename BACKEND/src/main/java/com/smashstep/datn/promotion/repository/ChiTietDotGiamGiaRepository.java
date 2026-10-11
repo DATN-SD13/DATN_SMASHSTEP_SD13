@@ -1,3 +1,4 @@
+
 package com.smashstep.datn.promotion.repository;
 
 import com.smashstep.datn.promotion.entity.ChiTietDotGiamGia;
@@ -8,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Repository
@@ -25,11 +27,10 @@ public interface ChiTietDotGiamGiaRepository
             Long idSanPhamChiTiet
     );
 
-
-    // =====================================================
-    // TÌM CÁC ĐỢT GIẢM GIÁ ĐANG HOẠT ĐỘNG
-    // CỦA MỘT BIẾN THỂ SẢN PHẨM
-    // =====================================================
+    // ==========================================
+    // KIỂM TRA XUNG ĐỘT GIỮA CÁC ĐỢT GIẢM GIÁ
+    // Giữ nguyên: cần kiểm tra cả đợt trong tương lai
+    // ==========================================
 
     @Query("""
         SELECT ct
@@ -43,11 +44,30 @@ public interface ChiTietDotGiamGiaRepository
             @Param("productDetailId") Long productDetailId
     );
 
+    // ==========================================
+    // LẤY ĐỢT GIẢM GIÁ ĐANG CÓ HIỆU LỰC
+    // Phục vụ việc tính giá bán sau giảm
+    // ==========================================
 
-    // =====================================================
-    // XÓA CHI TIẾT THEO ĐỢT GIẢM GIÁ
-    // Dùng khi cập nhật lại danh sách sản phẩm
-    // =====================================================
+    @Query("""
+        SELECT ct
+        FROM ChiTietDotGiamGia ct
+        JOIN FETCH ct.idDotGiamGia dgg
+        WHERE ct.idSanPhamChiTiet.id = :productDetailId
+          AND ct.trangThai = 1
+          AND dgg.trangThai = 1
+          AND dgg.ngayBatDau <= :now
+          AND dgg.ngayKetThuc >= :now
+    """)
+    List<ChiTietDotGiamGia> findCurrentlyEffectiveByProductDetailId(
+            @Param("productDetailId") Long productDetailId,
+            @Param("now") LocalDateTime now
+    );
+
+    // ==========================================
+    // XÓA CHI TIẾT KHI CẬP NHẬT DANH SÁCH
+    // SẢN PHẨM THUỘC ĐỢT GIẢM GIÁ
+    // ==========================================
 
     @Modifying
     @Query("""

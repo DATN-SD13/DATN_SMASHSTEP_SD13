@@ -23,6 +23,7 @@ public class SanPhamChiTietService {
     private final MauSacRepository mauSacRepository;
     private final KichThuocRepository kichThuocRepository;
     private final HinhAnhSanPhamRepository hinhAnhRepository;
+    private final KhoaGhiSanPham khoaGhi;
 
     public PageResponse<BienTheResponse> layDanhSach(int trang, int kichThuocTrang,
             String tuKhoa, Integer trangThai, Long sanPhamId, Long mauSacId, Long kichThuocId) {
@@ -205,6 +206,8 @@ public class SanPhamChiTietService {
     }
 
     private SanPham khoaSanPham(Long id) {
+        // Mã/SKU là duy nhất trên mọi sản phẩm, nên khóa theo phạm vi toàn bộ biến thể.
+        khoaGhi.khoa("variants");
         return sanPhamRepository.timVaKhoaTheoId(id)
                 .orElseThrow(() -> AppException.notFound("Không tìm thấy sản phẩm"));
     }

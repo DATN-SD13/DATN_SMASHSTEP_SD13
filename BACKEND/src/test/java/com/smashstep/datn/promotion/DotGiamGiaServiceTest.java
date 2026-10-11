@@ -17,6 +17,7 @@ import org.springframework.http.HttpStatus;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -31,8 +32,8 @@ class DotGiamGiaServiceTest {
         var variant = new SanPhamChiTiet(); variant.setId(1L); variant.setIdSanPham(product); variant.setKichHoat(true); variant.setTrangThai(0);
         when(variants.findById(1L)).thenReturn(Optional.of(variant));
         var request = new DotGiamGiaRequest(); request.setName("Eligibility"); request.setDiscountValue(BigDecimal.TEN);
-        request.setStartDate(LocalDate.of(2097, 1, 1)); request.setEndDate(LocalDate.of(2097, 1, 31)); request.setProductDetailIds(List.of(1L));
-        assertThrows(AppException.class, () -> service.create(request));
+        request.setStartDate(LocalDateTime.of(2097, 1, 1, 0, 0, 0));
+        request.setEndDate(LocalDateTime.of(2097, 1, 31, 23, 59, 59)); request.setProductDetailIds(List.of(1L));        assertThrows(AppException.class, () -> service.create(request));
         variant.setTrangThai(1); variant.setKichHoat(false); assertThrows(AppException.class, () -> service.create(request));
         variant.setKichHoat(true); product.setTrangThai(0); assertThrows(AppException.class, () -> service.create(request));
         product.setTrangThai(1); request.setProductDetailIds(List.of(1L, 1L)); assertThrows(AppException.class, () -> service.create(request));
@@ -48,8 +49,8 @@ class DotGiamGiaServiceTest {
         var link = new com.smashstep.datn.promotion.entity.ChiTietDotGiamGia(); link.setIdDotGiamGia(existing);
         when(details.findActiveByProductDetailId(1L)).thenReturn(List.of(link));
         var request = new DotGiamGiaRequest(); request.setName("Overlap"); request.setDiscountValue(BigDecimal.TEN);
-        request.setStartDate(LocalDate.of(2097, 10, 15)); request.setEndDate(LocalDate.of(2097, 11, 15)); request.setProductDetailIds(List.of(1L));
-        assertEquals(HttpStatus.CONFLICT, assertThrows(AppException.class, () -> service.create(request)).getStatus());
+        request.setStartDate(LocalDateTime.of(2097, 10, 15, 8, 0, 0));
+        request.setEndDate(LocalDateTime.of(2097, 11, 15, 18, 0, 0)); request.setProductDetailIds(List.of(1L));        assertEquals(HttpStatus.CONFLICT, assertThrows(AppException.class, () -> service.create(request)).getStatus());
         verify(campaigns, never()).save(any());
     }
     private final DotGiamGiaRepository campaigns = mock(DotGiamGiaRepository.class);
@@ -73,8 +74,8 @@ class DotGiamGiaServiceTest {
         var request = new DotGiamGiaRequest();
         request.setName("Giảm giá demo");
         request.setDiscountValue(BigDecimal.TEN);
-        request.setStartDate(LocalDate.of(2026, 10, 1));
-        request.setEndDate(LocalDate.of(2026, 10, 31));
+        request.setStartDate(LocalDateTime.of(2026, 10, 1, 8, 0, 0));
+        request.setEndDate(LocalDateTime.of(2026, 10, 31, 23, 59, 59));
         request.setProductDetailIds(List.of(1L));
 
         assertEquals("DGG1000", service.create(request).getCode());

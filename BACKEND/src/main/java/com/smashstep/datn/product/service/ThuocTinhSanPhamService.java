@@ -153,8 +153,8 @@ public class ThuocTinhSanPhamService {
         };
         BigInteger lonNhat = BigInteger.ZERO;
         for (String ma : danhSachMa) {
-            if (ma != null && ma.matches(tienTo + "[0-9]+")) {
-                lonNhat = lonNhat.max(new BigInteger(ma.substring(tienTo.length())));
+            if (ma != null && ma.trim().matches("(?i)" + tienTo + "[0-9]+")) {
+                lonNhat = lonNhat.max(new BigInteger(ma.trim().substring(tienTo.length())));
             }
         }
         String soTiepTheo = lonNhat.add(BigInteger.ONE).toString();

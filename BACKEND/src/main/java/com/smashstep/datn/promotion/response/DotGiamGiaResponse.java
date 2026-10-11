@@ -1,10 +1,11 @@
+
 package com.smashstep.datn.promotion.response;
 
 import lombok.Builder;
 import lombok.Getter;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Getter
@@ -15,13 +16,13 @@ public class DotGiamGiaResponse {
     private String code;
     private String name;
     private BigDecimal discountValue;
-    private LocalDate startDate;
-    private LocalDate endDate;
+
+    // Ngày + giờ + phút + giây
+    private LocalDateTime startDate;
+    private LocalDateTime endDate;
 
     private Integer status;
     private String statusLabel;
-
-    // THÊM DÒNG NÀY
     private String timeStatus;
 
     private String description;

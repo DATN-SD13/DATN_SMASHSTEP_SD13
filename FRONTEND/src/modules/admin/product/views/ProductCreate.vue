@@ -8,13 +8,16 @@ import ConfirmModal from '../components/ConfirmModal.vue'
 import { useConfirmation } from '../composables/useConfirmation'
 import { productService, productSummary, errorMessage } from '../services/productService'
 import { productAttributeService } from '../services/productAttributeService'
+import { useProductToast } from '../composables/useProductToast'
+import { apiFieldErrors } from '../services/productValidation'
 import { productDuplicatePrompt } from '../services/duplicateConfirmation'
 import { validateImageFile } from '../services/imageUtils'
 const router = useRouter()
 const route = useRoute()
 const options = ref({}), ready = ref(false), error = ref(''), code = ref('')
 const { confirmation, confirming: saving, confirmError, askConfirmation, replaceConfirmation, cancelConfirmation, confirmAction } = useConfirmation()
-const duplicateBusy = ref(false)
+const duplicateBusy = ref(false), serverErrors = ref({})
+const toast = useProductToast()
 const formBusy = computed(() => duplicateBusy.value || saving.value || !!confirmation.value)
 let active = true
 onBeforeUnmount(() => { active = false })
@@ -31,6 +34,7 @@ async function load() {
 async function save(data) {
   if (formBusy.value || product.value) return
   error.value = ''
+  serverErrors.value = {}
   const payload = { ...data }
   const selection = newImages.value.map(image => ({ ...image }))
   for (const image of selection) {
@@ -39,9 +43,12 @@ async function save(data) {
   }
   duplicateBusy.value = true
   try {
+    if (await productService.codeExists(payload.maSanPham)) { serverErrors.value = { maSanPham: 'Mã sản phẩm đã tồn tại. Vui lòng tải lại form để lấy mã mới.' }; toast.warning(serverErrors.value.maSanPham); return }
     const result = await productService.checkDuplicate(payload)
     if (!active) return
     if (result.duplicate) {
+      serverErrors.value = { tenSanPham: 'Sản phẩm với tên và bộ thuộc tính này đã tồn tại.' }
+      toast.warning(serverErrors.value.tenSanPham)
       askConfirmation(productDuplicatePrompt(result.product), () => router.push(`/san-pham/${result.product.id}/sua`))
       return
     }
@@ -53,6 +60,7 @@ async function save(data) {
       if (!product.value) {
         try { product.value = await productService.create(payload) }
         catch (e) {
+          serverErrors.value = apiFieldErrors(e)
           if (e?.response?.status !== 409) throw e
           let duplicate
           try { duplicate = await productService.checkDuplicate(payload) }
@@ -119,7 +127,7 @@ async function refreshImages() {
         <RouterLink :to="'/san-pham/' + product.id" class="p-btn">Hoàn tất / Xem sản phẩm</RouterLink>
       </section>
     </template>
-    <ProductForm v-else-if="ready" :code="code" :options="options" :saving="formBusy" @save="save" />
+    <ProductForm :server-errors="serverErrors" v-else-if="ready" :code="code" :options="options" :saving="formBusy" @save="save" />
     <div v-else class="p-card p-empty">Đang chờ dữ liệu thuộc tính. <button v-if="error" class="p-btn" @click="load">Thử lại</button></div>
     <ProductImages v-if="ready" v-model="newImages" :product-id="product?.id" :product-code="product?.maSanPham || code" :images="images" deferred :loading="formBusy" @changed="refreshImages().catch(e => error = errorMessage(e))" />
     <ConfirmModal v-bind="confirmation || {}" :show="!!confirmation" :loading="saving" :error="product && error ? error : confirmError" @confirm="confirmAction" @cancel="cancelConfirmation">

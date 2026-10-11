@@ -32,14 +32,14 @@ function reset() {
         {{ type.label }}
         <Select2Control v-model="filters[type.filter]" :disabled="busy || optionsBusy" @change="search">
           <option value="">Tất cả</option>
-          <option v-for="a in options[type.key] || []" :key="a.id" :value="a.id">{{ a.ten }}{{ a.trangThai === 1 ? '' : ' (ngừng hoạt động)' }}</option>
+          <option v-for="a in options[type.key] || []" :key="a.id" :value="a.id">{{ a.ten }}{{ a.trangThai === 1 ? '' : ' (ngừng kinh doanh)' }}</option>
         </Select2Control>
       </label>
       <label>Trạng thái
         <Select2Control v-model="filters.status" :disabled="busy" @change="search">
           <option value="">Tất cả trạng thái</option>
-          <option :value="1">Hoạt động</option>
-          <option :value="0">Ngừng hoạt động</option>
+          <option :value="1">Kinh doanh</option>
+          <option :value="0">Ngừng kinh doanh</option>
         </Select2Control>
       </label>
     </div>

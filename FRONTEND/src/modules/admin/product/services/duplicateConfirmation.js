@@ -20,7 +20,7 @@ export function attributeDuplicatePrompt(label, existing, reason) {
       ...(existing.ma ? [{ label: 'Mã', value: existing.ma }] : []),
       { label: 'Tên / giá trị', value: existing.ten },
       ...(existing.maMauHex ? [{ label: 'Mã HEX', value: existing.maMauHex }] : []),
-      { label: 'Trạng thái', value: existing.trangThai === 1 ? 'Hoạt động' : 'Ngừng hoạt động' },
+      { label: 'Trạng thái', value: existing.trangThai === 1 ? 'Kinh doanh' : 'Ngừng kinh doanh' },
       { label: 'Trùng', value: reason === 'HEX' ? 'Mã HEX' : reason === 'NAME_AND_HEX' ? 'Tên và mã HEX' : 'Tên / giá trị' }]
   }
 }

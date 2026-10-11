@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { useProductToast } from './useProductToast'
 import { errorMessage } from '../services/productService'
 
 export function useConfirmation() {
@@ -30,7 +31,7 @@ export function useConfirmation() {
     try {
       await operation()
       if (currentRevision === revision) { confirmation.value = null; operation = null }
-    } catch (error) { confirmError.value = errorMessage(error) }
+    } catch (error) { confirmError.value = errorMessage(error); useProductToast().error(confirmError.value) }
     finally { confirming.value = false }
   }
   return { confirmation, confirming, confirmError, askConfirmation, replaceConfirmation, cancelConfirmation, confirmAction }
@@ -39,8 +40,8 @@ export function useConfirmation() {
 export function statusConfirmation(kind, name, status) {
   const stopping = status === 1
   return {
-    title: `${stopping ? 'Ngừng hoạt động' : 'Kích hoạt'} ${kind}?`,
-    message: `Bạn có chắc muốn ${stopping ? 'ngừng hoạt động' : 'kích hoạt lại'} ${name}?`,
-    details: [{ label: 'Trạng thái sau khi xác nhận', value: stopping ? 'Ngừng hoạt động' : 'Hoạt động' }]
+    title: `${stopping ? 'Ngừng kinh doanh' : 'Kinh doanh'} ${kind}?`,
+    message: `Bạn có chắc muốn ${stopping ? 'ngừng kinh doanh' : 'kinh doanh lại'} ${name}?`,
+    details: [{ label: 'Trạng thái sau khi xác nhận', value: stopping ? 'Ngừng kinh doanh' : 'Kinh doanh' }]
   }
 }

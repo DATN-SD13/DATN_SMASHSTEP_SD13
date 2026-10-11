@@ -122,4 +122,10 @@ class ThuocTinhSanPhamServiceTest {
         assertThrows(AppException.class, () -> service.layDanhSach("unknown", 0, 10, "", null));
         assertThrows(AppException.class, () -> service.luuThuocTinh("sizes", null, new ThuocTinhRequest(null, "x".repeat(51), "", null, 1)));
     }
+    @Test
+    void autoCodeIncludesLowercaseAndTrimmedHistoricalCodes() {
+        codes("brands", List.of("TH001", "th002", " Th009 "));
+        assertEquals("TH010", service.taoMaTiepTheo("brands"));
+    }
+
 }

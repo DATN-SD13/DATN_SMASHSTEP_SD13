@@ -1,4 +1,5 @@
 <script setup>
+import { useProductFeedback } from '../composables/useProductToast'
 import { ref, computed, watch } from 'vue'
 import { productService, variantService, errorMessage } from '../services/productService'
 import { imageUrl, validateImageFile } from '../services/imageUtils'
@@ -72,14 +73,13 @@ function askImage(title, image, action) {
     emit('changed')
   })
 }
+useProductFeedback(error, success)
 </script>
 
 <template>
   <section class="p-card">
     <h2><i class="bi bi-images"></i> {{ variantId ? 'Hình ảnh biến thể' : 'Hình ảnh sản phẩm' }}</h2>
     <p>{{ variantId ? 'Ảnh được lưu riêng cho đúng màu và kích thước của biến thể này.' : 'Ảnh được dùng chung cho các biến thể của sản phẩm.' }} Chọn ảnh từ máy để xem trước khi lưu.</p>
-    <div v-if="error" class="alert alert-danger" role="alert">{{ error }}</div>
-    <div v-if="success" class="alert alert-success" role="status">{{ success }}</div>
     <ProductImagePicker v-model="drafts" :disabled="locked" />
     <small v-if="deferred" class="p-image-help">Ảnh đã chọn sẽ được tải lên sau khi xác nhận lưu sản phẩm.</small>
     <div v-else class="p-form-actions">
@@ -100,7 +100,6 @@ function askImage(title, image, action) {
     <div v-if="!images.length && !drafts.length" class="p-empty">{{ variantId ? 'Biến thể' : 'Sản phẩm' }} chưa có ảnh.</div>
     <ConfirmModal v-bind="confirmation || {}" :show="!!confirmation" :loading="busy" :error="confirmError" @confirm="confirmAction" @cancel="cancelConfirmation">
       <p v-if="progress" role="status">{{ progress }}</p>
-      <p v-if="error && !busy" class="p-field-error">{{ error }}</p>
     </ConfirmModal>
   </section>
 </template>

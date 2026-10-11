@@ -580,4 +580,66 @@ class SanPhamTichHopTest {
         }
     }
 
+    @Test
+    void httpRejectsFractionalAndStringQuantityForSingleBatchAndUpdate() throws Exception {
+        var product = products.themSanPham(productRequest());
+        var existing = variants.themSanPhamChiTiet(variantRequest(product.getId(), ids.get("sizes"), 2, "1000000"));
+        var mapper = JsonMapper.builder().build();
+        for (Object quantity : List.of(new BigDecimal("1.2"), new BigDecimal("1.0"), "10.000", "abc", 2147483648L)) {
+            var body = new HashMap<String, Object>();
+            body.put("sanPhamId", product.getId()); body.put("mauSacId", ids.get("colors"));
+            body.put("kichThuocId", ids.get("sizes")); body.put("maChiTietSanPham", code + "-new");
+            body.put("sku", code + "-new"); body.put("soLuong", quantity); body.put("giaBan", 1250000);
+            body.put("kichHoat", true); body.put("trangThai", 1);
+            String json = mapper.writeValueAsString(body);
+            mvc.perform(post("/api/product-details").contentType(MediaType.APPLICATION_JSON).content(json))
+                    .andExpect(status().isBadRequest());
+            mvc.perform(post("/api/products/" + product.getId() + "/variants").contentType(MediaType.APPLICATION_JSON).content(json))
+                    .andExpect(status().isBadRequest());
+            mvc.perform(post("/api/products/" + product.getId() + "/variants").contentType(MediaType.APPLICATION_JSON)
+                            .content(mapper.writeValueAsString(Map.of("variants", List.of(body)))))
+                    .andExpect(status().isBadRequest());
+            mvc.perform(put("/api/product-details/" + existing.getId()).contentType(MediaType.APPLICATION_JSON).content(json))
+                    .andExpect(status().isBadRequest());
+        }
+        entityManager.flush(); entityManager.clear();
+        for (String path : List.of("/api/products/" + product.getId() + "/status",
+                "/api/product-details/" + existing.getId() + "/status",
+                "/api/product-attributes/colors/" + ids.get("colors") + "/status")) {
+            mvc.perform(patch(path).contentType(MediaType.APPLICATION_JSON).content("{\"trangThai\":0.5}"))
+                    .andExpect(status().isBadRequest());
+        }
+        assertEquals(2, variants.layChiTiet(existing.getId()).getSoLuong());
+        assertEquals(1, products.layChiTietSanPham(product.getId()).getVariants().size());
+    }
+
+    @Test
+    void httpAcceptsExactDecimalStringAtPriceLimitAndRejectsInvalidPrices() throws Exception {
+        var product = products.themSanPham(productRequest());
+        var request = variantRequest(product.getId(), ids.get("sizes"), 1, "1");
+        var mapper = JsonMapper.builder().build();
+        var body = (tools.jackson.databind.node.ObjectNode) mapper.valueToTree(request);
+        for (String invalid : List.of("0", "-1", "10000000000000000", "1250000.123")) {
+            body.put("giaBan", invalid);
+            mvc.perform(post("/api/product-details").contentType(MediaType.APPLICATION_JSON).content(body.toString()))
+                    .andExpect(status().isBadRequest());
+        }
+        body.put("giaBan", "9999999999999999.99");
+        String response = mvc.perform(post("/api/product-details").contentType(MediaType.APPLICATION_JSON).content(body.toString()))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        Long id = mapper.readTree(response).get("id").asLong();
+        entityManager.flush(); entityManager.clear();
+        assertEquals(0, new BigDecimal("9999999999999999.99").compareTo(variants.layChiTiet(id).getGiaBan()));
+        body.put("giaBan", "9007199254740991.99");
+        mvc.perform(put("/api/product-details/" + id).contentType(MediaType.APPLICATION_JSON).content(body.toString()))
+                .andExpect(status().isOk());
+        entityManager.flush(); entityManager.clear();
+        assertEquals(0, new BigDecimal("9007199254740991.99").compareTo(variants.layChiTiet(id).getGiaBan()));
+        for (String invalid : List.of("0", "-1", "10000000000000000", "1250000.123")) {
+            body.put("giaBan", invalid);
+            mvc.perform(put("/api/product-details/" + id).contentType(MediaType.APPLICATION_JSON).content(body.toString()))
+                    .andExpect(status().isBadRequest());
+        }
+    }
+
 }

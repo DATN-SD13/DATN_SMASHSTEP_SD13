@@ -20,7 +20,7 @@ class SanPhamChiTietServiceTest {
     private final MauSacRepository colors = mock(MauSacRepository.class);
     private final KichThuocRepository sizes = mock(KichThuocRepository.class);
     private final SanPhamChiTietService service = new SanPhamChiTietService(mock(com.smashstep.datn.common.pricing.CurrentPriceService.class), variants, products, colors, sizes,
-            mock(HinhAnhSanPhamRepository.class));
+            mock(HinhAnhSanPhamRepository.class), mock(KhoaGhiSanPham.class));
     private SanPham product;
 
     @BeforeEach

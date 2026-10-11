@@ -1,4 +1,5 @@
 <script setup>
+import { useCampaignPriceRefresh } from '../composables/useCampaignPriceRefresh'
 import Select2Control from '../components/Select2Control.vue'
 import { reactive, ref, onMounted } from 'vue'
 import ProductShell from '../components/ProductShell.vue'
@@ -7,7 +8,7 @@ import VariantTable from '../components/VariantTable.vue'
 import VariantEditModal from '../components/VariantEditModal.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
 import { useConfirmation, statusConfirmation } from '../composables/useConfirmation'
-import { variantService, cleanParams, errorMessage } from '../services/productService'
+import { variantService, mergeCurrentPriceFields, cleanParams, errorMessage } from '../services/productService'
 import { productAttributeService } from '../services/productAttributeService'
 const options = ref({}), busy = ref(false), error = ref(''), success = ref(''), editing = ref(null)
 const { confirmation, confirming, confirmError, askConfirmation, cancelConfirmation, confirmAction } = useConfirmation()
@@ -40,12 +41,18 @@ async function initialize() {
   try { options.value = await productAttributeService.options() } catch (e) { error.value = errorMessage(e); return }
   await load()
 }
+useCampaignPriceRefresh(async () => {
+  if (busy.value || !page.value.content.length) return
+  const current = page.value
+  const fresh = await variantService.list({ ...applied, page: current.number, size: current.size })
+  if (current === page.value) mergeCurrentPriceFields(current.content, fresh.content)
+})
 onMounted(initialize)
 </script>
 <template>
   <ProductShell title="Biến thể sản phẩm" description="Quản lý SKU, giá bán, tồn kho và trạng thái theo màu sắc / kích thước." :error="error" :success="success">
     <template #actions><RouterLink to="/san-pham" class="p-btn primary"><i class="bi bi-plus-lg"></i> Chọn sản phẩm để thêm biến thể</RouterLink></template>
-    <form class="p-card" @submit.prevent="search"><h2><i class="bi bi-funnel"></i> Bộ lọc biến thể</h2><div class="p-filter-grid"><label>Tìm kiếm<input v-model="filters.keyword" placeholder="Mã SP, SKU, mã chi tiết, tên sản phẩm..." /></label><label>Màu sắc<Select2Control v-model="filters.colorId" :disabled="busy || confirming"><option value="">Tất cả màu sắc</option><option v-for="a in options.colors || []" :key="a.id" :value="a.id">{{ a.ten }}</option></Select2Control></label><label>Kích thước<Select2Control v-model="filters.sizeId" :disabled="busy || confirming"><option value="">Tất cả kích thước</option><option v-for="a in options.sizes || []" :key="a.id" :value="a.id">{{ a.ten }}</option></Select2Control></label><label>Trạng thái<Select2Control v-model="filters.status" :disabled="busy || confirming"><option value="">Tất cả trạng thái</option><option :value="1">Hoạt động</option><option :value="0">Ngừng hoạt động</option></Select2Control></label></div><div class="p-filter-actions"><button type="button" class="p-btn" :disabled="busy" @click="reset">Đặt lại</button><button class="p-btn primary" :disabled="busy"><i class="bi bi-search"></i> Tìm kiếm / Lọc</button></div></form>
+    <form class="p-card" @submit.prevent="search"><h2><i class="bi bi-funnel"></i> Bộ lọc biến thể</h2><div class="p-filter-grid"><label>Tìm kiếm<input v-model="filters.keyword" placeholder="Mã SP, SKU, mã chi tiết, tên sản phẩm..." /></label><label>Màu sắc<Select2Control v-model="filters.colorId" :disabled="busy || confirming"><option value="">Tất cả màu sắc</option><option v-for="a in options.colors || []" :key="a.id" :value="a.id">{{ a.ten }}</option></Select2Control></label><label>Kích thước<Select2Control v-model="filters.sizeId" :disabled="busy || confirming"><option value="">Tất cả kích thước</option><option v-for="a in options.sizes || []" :key="a.id" :value="a.id">{{ a.ten }}</option></Select2Control></label><label>Trạng thái<Select2Control v-model="filters.status" :disabled="busy || confirming"><option value="">Tất cả trạng thái</option><option :value="1">Kinh doanh</option><option :value="0">Ngừng kinh doanh</option></Select2Control></label></div><div class="p-filter-actions"><button type="button" class="p-btn" :disabled="busy" @click="reset">Đặt lại</button><button class="p-btn primary" :disabled="busy"><i class="bi bi-search"></i> Tìm kiếm / Lọc</button></div></form>
     <section class="p-card"><h2><i class="bi bi-layers"></i> Danh sách biến thể</h2><VariantTable :rows="page.content" :offset="page.number * page.size" :busy="busy" @edit="editing = $event" @status="changeStatus" /><ProductPagination :page="page" :busy="busy" @change="load($event)" @size="load(0, $event)" /></section>
     <VariantEditModal v-if="editing" :key="editing.id" :variant="editing" :options="options" @close="editing = null" @saved="saved" @images-changed="load(page.number)" />
     <ConfirmModal v-bind="confirmation || {}" :show="!!confirmation" :loading="confirming" :error="confirmError" @confirm="confirmAction" @cancel="cancelConfirmation" />
