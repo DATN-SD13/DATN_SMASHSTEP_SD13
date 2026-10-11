@@ -41,4 +41,7 @@ public class PhieuGiamGiaResponse {
 // vo han phieu
     private Boolean unlimited;
     private List<Long> customerIds;
+
+    private Integer timeStatus;
+    private String timeStatusLabel;
 }

@@ -5,6 +5,7 @@ import com.smashstep.datn.employee.entity.NhanVien;
 import com.smashstep.datn.invoice.entity.HoaDon;
 import com.smashstep.datn.invoice.enums.LoaiHoaDon;
 import com.smashstep.datn.invoice.enums.HinhThucNhan;
+import com.smashstep.datn.invoice.rules.HoaDonRules;
 import com.smashstep.datn.invoice.enums.TrangThaiHoaDon;
 import com.smashstep.datn.payment.entity.PhuongThucThanhToan;
 import lombok.Builder;
@@ -21,6 +22,9 @@ public class HoaDonListDto {
     private final String maHoaDon;
     private final String tenNhanVien;
     private final String maNhanVien;
+    private final Long idKhachHang;
+    private final String maKhachHang;
+    private final Long idNhanVien;
     private final String tenKhachHang;
     private final String soDienThoai;
     private final String ngayTao;
@@ -44,15 +48,17 @@ public class HoaDonListDto {
         PhuongThucThanhToan pt = h.getIdPhuongThucThanhToan();
         TrangThaiHoaDon tt = TrangThaiHoaDon.tuMa(h.getTrangThai());
         LoaiHoaDon loai = LoaiHoaDon.tuMa(h.getLoaiHoaDon());
-        HinhThucNhan htn = HinhThucNhan.tuMa(h.getHinhThucNhan());
-        if (htn == null) htn = h.getLoaiHoaDon() != null && h.getLoaiHoaDon() == 0 ? HinhThucNhan.NHAN_TAI_QUAY : HinhThucNhan.GIAO_HANG;
+        HinhThucNhan htn = HoaDonRules.resolveHinhThucNhan(h);
 
         return HoaDonListDto.builder()
                 .id(h.getId())
                 .maHoaDon(h.getMaHoaDon())
                 .tenNhanVien(nv != null ? nv.getTenNhanVien() : null)
                 .maNhanVien(nv != null ? nv.getMaNhanVien() : null)
-                .tenKhachHang(firstNotBlank(kh != null ? kh.getTenKhachHang() : null, h.getHoTenNguoiNhan(), "Khách lẻ"))
+                .idKhachHang(kh != null ? kh.getId() : null)
+                .maKhachHang(kh != null ? kh.getMaKhachHang() : null)
+                .idNhanVien(nv != null ? nv.getId() : null)
+                .tenKhachHang(firstNotBlank(h.getHoTenNguoiNhan(), kh != null ? kh.getTenKhachHang() : null, "Khách lẻ"))
                 .soDienThoai(firstNotBlank(h.getSoDienThoaiNguoiNhan(), kh != null ? kh.getSoDienThoai() : null, ""))
                 .ngayTao(h.getNgayTao() != null ? h.getNgayTao().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss")) : null)
                 .tongTien(nz(h.getTongTien()))

@@ -23,6 +23,10 @@ public class HinhAnhSanPham {
     @Transient
     private MauSac idMauSac;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "id_san_pham_chi_tiet")
+    private SanPhamChiTiet idSanPhamChiTiet;
+
     @Column(name = "url_anh")
     private String urlAnh;
 

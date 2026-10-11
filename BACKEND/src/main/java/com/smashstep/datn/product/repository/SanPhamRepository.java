@@ -16,6 +16,10 @@ public interface SanPhamRepository extends JpaRepository<SanPham, Long>, JpaSpec
     @EntityGraph(attributePaths = {"idDanhMuc", "idThuongHieu", "idChatLieu", "idKieuDang", "idCoGiay", "idXuatXu"})
     Page<SanPham> findAll(Specification<SanPham> boLoc, Pageable phanTrang);
 
+    @Override
+    @EntityGraph(attributePaths = {"idDanhMuc", "idThuongHieu", "idChatLieu", "idKieuDang", "idCoGiay", "idXuatXu"})
+    java.util.List<SanPham> findAll(Specification<SanPham> boLoc);
+
     boolean existsByMaSanPham(String maSanPham);
     boolean existsByMaSanPhamIgnoreCase(String maSanPham);
 

@@ -30,9 +30,18 @@ public class PhieuGiamGiaRequest {
 
     @DecimalMin("0") @Digits(integer = 16, fraction = 2) private BigDecimal maxDiscount;
 
-    @NotBlank @Pattern(regexp = "\\d{4}-\\d{2}-\\d{2}") private String startDate;
+    @Pattern(
+            regexp = "\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}",
+            message = "Ngày giờ bắt đầu không đúng định dạng"
+    )
+    private String startDate;
 
-    @NotBlank @Pattern(regexp = "\\d{4}-\\d{2}-\\d{2}") private String endDate;
+    @Pattern(
+            regexp = "\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}",
+            message = "Ngày giờ kết thúc không đúng định dạng"
+    )
+    private String endDate;
+
 
     private Integer quantity;
 

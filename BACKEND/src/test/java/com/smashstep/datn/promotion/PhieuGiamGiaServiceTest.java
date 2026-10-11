@@ -51,11 +51,14 @@ class PhieuGiamGiaServiceTest {
     private final PhieuGiamGiaKhachHangRepository assignments = mock(PhieuGiamGiaKhachHangRepository.class);
     private final KhachHangRepository customers = mock(KhachHangRepository.class);
     private final com.smashstep.datn.common.config.DatabaseCapabilities database = mock(com.smashstep.datn.common.config.DatabaseCapabilities.class);
-    private final PhieuGiamGiaService service = new PhieuGiamGiaService(vouchers, assignments, customers, database);
+    private final com.smashstep.datn.promotion.service.EmailService emailService = mock(com.smashstep.datn.promotion.service.EmailService.class);
+    private final PhieuGiamGiaService service = new PhieuGiamGiaService(vouchers, assignments, customers, database, emailService);
     private final List<PhieuGiamGiaKhachHang> links = new ArrayList<>();
 
     @BeforeEach
     void setup() {
+        links.clear();
+        reset(emailService);
         when(database.hasColumn("phieu_giam_gia", "hinh_thuc_phieu")).thenReturn(true);
         when(vouchers.save(any())).thenAnswer(call -> {
             PhieuGiamGia voucher = call.getArgument(0);
@@ -70,6 +73,8 @@ class PhieuGiamGiaServiceTest {
         });
         var customer = new KhachHang();
         customer.setId(10L);
+        customer.setTenKhachHang("Khách hàng 10");
+        customer.setEmail("kh10@example.com");
         customer.setTrangThai(1);
         when(customers.findById(10L)).thenReturn(Optional.of(customer));
     }
@@ -81,9 +86,13 @@ class PhieuGiamGiaServiceTest {
         request.setForm(1);
         request.setDiscountType(1);
         request.setDiscountValue(BigDecimal.TEN);
+        request.setMinOrderValue(BigDecimal.ZERO);
+        request.setMaxDiscount(new BigDecimal("200000"));
         request.setQuantity(10);
-        request.setStartDate("2026-10-01");
-        request.setEndDate("2026-10-31");
+        request.setStartDate("2097-10-01T08:00");
+        request.setMinOrderValue(BigDecimal.ZERO);
+        request.setMaxDiscount(new BigDecimal("100000"));
+        request.setEndDate("2097-10-31T23:59");
         return request;
     }
 
@@ -115,6 +124,7 @@ class PhieuGiamGiaServiceTest {
         var request = request();
         request.setForm(2);
         request.setCustomerIds(List.of(10L, 10L));
+        request.setQuantity(1);
         var response = service.create(request);
         assertEquals(2, response.getForm());
         assertEquals(List.of(10L), response.getCustomerIds());
@@ -182,5 +192,203 @@ class PhieuGiamGiaServiceTest {
         assertEquals(3, voucher.getSoLuongDaDung());
         verify(vouchers, times(4)).findByIdForUpdate(2L);
         verify(vouchers, never()).findById(anyLong());
+    }
+
+    @Test void latestValidationRejectsMissingMinimumAndPercentCap() {
+        var request = request(); request.setMinOrderValue(null);
+        assertEquals(HttpStatus.BAD_REQUEST, assertThrows(AppException.class, () -> service.create(request)).getStatus());
+        request.setMinOrderValue(BigDecimal.ZERO); request.setMaxDiscount(null);
+        assertEquals(HttpStatus.BAD_REQUEST, assertThrows(AppException.class, () -> service.create(request)).getStatus());
+        verify(vouchers, never()).save(any());
+    }
+    @Test void latestValidationRejectsEqualDateTimeAndWrongPrivateQuantity() {
+        var request = request(); request.setEndDate(request.getStartDate());
+        assertEquals(HttpStatus.BAD_REQUEST, assertThrows(AppException.class, () -> service.create(request)).getStatus());
+        var privateRequest = request(); privateRequest.setForm(2); privateRequest.setCustomerIds(List.of(10L));
+        assertEquals(HttpStatus.BAD_REQUEST, assertThrows(AppException.class, () -> service.create(privateRequest)).getStatus());
+        verify(vouchers, never()).save(any());
+    }
+
+
+    @Test
+    void updateTH1_onlyVoucherInfoChanged_sendsUpdatedEmailToRetainedCustomers() {
+        var voucher = new PhieuGiamGia();
+        voucher.setId(2L);
+        voucher.setTenPhieuGiamGia("Phiếu 10%");
+        voucher.setMaPhieuGiamGia("PGG01");
+        voucher.setHinhThucPhieu(2);
+        voucher.setLoaiGiamGia(1);
+        voucher.setGiaTriGiam(BigDecimal.TEN);
+        voucher.setGiaTriToiThieu(new BigDecimal("500000"));
+        voucher.setGiamToiDa(new BigDecimal("200000"));
+        var start = java.time.LocalDateTime.now().plusDays(2).withNano(0);
+        var end = java.time.LocalDateTime.now().plusDays(7).withNano(0);
+        voucher.setNgayBatDau(start);
+        voucher.setNgayKetThuc(end);
+        voucher.setTrangThai(1);
+
+        when(vouchers.findByIdForUpdate(2L)).thenReturn(Optional.of(voucher));
+
+        // Existing customer: 10L
+        var link = new PhieuGiamGiaKhachHang();
+        link.setIdPhieuGiamGia(voucher);
+        link.setIdKhachHang(customers.findById(10L).orElseThrow());
+        link.setTrangThai(1);
+        links.add(link);
+
+        // TH1: Customer kept (10L), Discount changed from 10% to 15%
+        var request = request();
+        request.setName("Phiếu 10%");
+        request.setForm(2);
+        request.setCustomerIds(List.of(10L));
+        request.setQuantity(1);
+        request.setDiscountValue(new BigDecimal("15"));
+        request.setMinOrderValue(new BigDecimal("500000"));
+        request.setMaxDiscount(new BigDecimal("200000"));
+        request.setStartDate(start.toString());
+        request.setEndDate(end.toString());
+
+        service.update(2L, request);
+
+        // Retained customer (10L) should receive Updated Email
+        verify(emailService, timeout(1000).atLeastOnce()).sendVoucherUpdatedEmail(
+                eq("kh10@example.com"), any(), any(), any(), any(), any(), any(), any(), any(), any()
+        );
+        verify(emailService, never()).sendVoucherCancelledEmail(any(), any(), any(), any());
+    }
+
+    @Test
+    void updateTH2_onlyCustomerListChanged_sendsNewMailToAddedAndCancelMailToRemoved() {
+        var voucher = new PhieuGiamGia();
+        voucher.setId(2L);
+        voucher.setTenPhieuGiamGia("Phiếu 10%");
+        voucher.setMaPhieuGiamGia("PGG01");
+        voucher.setHinhThucPhieu(2);
+        voucher.setLoaiGiamGia(1);
+        voucher.setGiaTriGiam(BigDecimal.TEN);
+        voucher.setGiaTriToiThieu(new BigDecimal("500000"));
+        voucher.setGiamToiDa(new BigDecimal("200000"));
+        var start = java.time.LocalDateTime.now().plusDays(2).withNano(0);
+        var end = java.time.LocalDateTime.now().plusDays(7).withNano(0);
+        voucher.setNgayBatDau(start);
+        voucher.setNgayKetThuc(end);
+        voucher.setTrangThai(1);
+
+        when(vouchers.findByIdForUpdate(2L)).thenReturn(Optional.of(voucher));
+
+        // Setup 2nd customer (11L)
+        var customer11 = new KhachHang();
+        customer11.setId(11L);
+        customer11.setTenKhachHang("Khách hàng 11");
+        customer11.setEmail("kh11@example.com");
+        customer11.setTrangThai(1);
+        when(customers.findById(11L)).thenReturn(Optional.of(customer11));
+
+        // Old recipient: 10L
+        var link = new PhieuGiamGiaKhachHang();
+        link.setIdPhieuGiamGia(voucher);
+        link.setIdKhachHang(customers.findById(10L).orElseThrow());
+        link.setTrangThai(1);
+        links.add(link);
+
+        // TH2: Voucher conditions unchanged, replace 10L with 11L
+        var request = request();
+        request.setName("Phiếu 10%");
+        request.setForm(2);
+        request.setCustomerIds(List.of(11L));
+        request.setQuantity(1);
+        request.setDiscountValue(BigDecimal.TEN);
+        request.setMinOrderValue(new BigDecimal("500000"));
+        request.setMaxDiscount(new BigDecimal("200000"));
+        request.setStartDate(start.toString());
+        request.setEndDate(end.toString());
+
+        service.update(2L, request);
+
+        // 11L is newly added -> receives sendVoucherEmail (New voucher)
+        verify(emailService, timeout(1000).atLeastOnce()).sendVoucherEmail(
+                eq("kh11@example.com"), any(), any(), any(), any(), any(), any(), any(), any(), any()
+        );
+        // 10L was removed -> receives sendVoucherCancelledEmail
+        verify(emailService, timeout(1000).atLeastOnce()).sendVoucherCancelledEmail(
+                eq("kh10@example.com"), any(), any(), any()
+        );
+        // No updated email should be sent because voucher info didn't change
+        verify(emailService, never()).sendVoucherUpdatedEmail(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void updateTH3_bothInfoAndCustomersChanged_sendsAllThreeTypesCorrectly() {
+        var voucher = new PhieuGiamGia();
+        voucher.setId(2L);
+        voucher.setTenPhieuGiamGia("Phiếu 10%");
+        voucher.setMaPhieuGiamGia("PGG01");
+        voucher.setHinhThucPhieu(2);
+        voucher.setLoaiGiamGia(1);
+        voucher.setGiaTriGiam(BigDecimal.TEN);
+        voucher.setGiaTriToiThieu(new BigDecimal("500000"));
+        voucher.setGiamToiDa(new BigDecimal("200000"));
+        var start = java.time.LocalDateTime.now().plusDays(2).withNano(0);
+        var end = java.time.LocalDateTime.now().plusDays(7).withNano(0);
+        voucher.setNgayBatDau(start);
+        voucher.setNgayKetThuc(end);
+        voucher.setTrangThai(1);
+
+        when(vouchers.findByIdForUpdate(2L)).thenReturn(Optional.of(voucher));
+
+        // Setup customers: 10L (old & kept), 11L (old & removed), 12L (newly added)
+        var customer11 = new KhachHang();
+        customer11.setId(11L);
+        customer11.setTenKhachHang("Khách hàng 11");
+        customer11.setEmail("kh11@example.com");
+        customer11.setTrangThai(1);
+        when(customers.findById(11L)).thenReturn(Optional.of(customer11));
+
+        var customer12 = new KhachHang();
+        customer12.setId(12L);
+        customer12.setTenKhachHang("Khách hàng 12");
+        customer12.setEmail("kh12@example.com");
+        customer12.setTrangThai(1);
+        when(customers.findById(12L)).thenReturn(Optional.of(customer12));
+
+        // Old recipients: 10L, 11L
+        var link10 = new PhieuGiamGiaKhachHang();
+        link10.setIdPhieuGiamGia(voucher);
+        link10.setIdKhachHang(customers.findById(10L).orElseThrow());
+        link10.setTrangThai(1);
+        links.add(link10);
+
+        var link11 = new PhieuGiamGiaKhachHang();
+        link11.setIdPhieuGiamGia(voucher);
+        link11.setIdKhachHang(customer11);
+        link11.setTrangThai(1);
+        links.add(link11);
+
+        // TH3: Change discount to 15% AND change customer list to {10L, 12L} (10L kept, 11L removed, 12L added)
+        var request = request();
+        request.setName("Phiếu 15%");
+        request.setForm(2);
+        request.setCustomerIds(List.of(10L, 12L));
+        request.setQuantity(2);
+        request.setDiscountValue(new BigDecimal("15"));
+        request.setMinOrderValue(new BigDecimal("500000"));
+        request.setMaxDiscount(new BigDecimal("200000"));
+        request.setStartDate(start.toString());
+        request.setEndDate(end.toString());
+
+        service.update(2L, request);
+
+        // 12L is newly added -> receives sendVoucherEmail (New)
+        verify(emailService, timeout(1000).atLeastOnce()).sendVoucherEmail(
+                eq("kh12@example.com"), any(), any(), any(), any(), any(), any(), any(), any(), any()
+        );
+        // 11L is removed -> receives sendVoucherCancelledEmail (Cancel)
+        verify(emailService, timeout(1000).atLeastOnce()).sendVoucherCancelledEmail(
+                eq("kh11@example.com"), any(), any(), any()
+        );
+        // 10L is retained -> receives sendVoucherUpdatedEmail (Update)
+        verify(emailService, timeout(1000).atLeastOnce()).sendVoucherUpdatedEmail(
+                eq("kh10@example.com"), any(), any(), any(), any(), any(), any(), any(), any(), any()
+        );
     }
 }

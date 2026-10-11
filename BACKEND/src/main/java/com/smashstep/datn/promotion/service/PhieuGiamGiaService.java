@@ -31,6 +31,9 @@ import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -40,6 +43,7 @@ public class PhieuGiamGiaService {
     private final PhieuGiamGiaKhachHangRepository assignments;
     private final KhachHangRepository customers;
     private final DatabaseCapabilities database;
+    private final EmailService emailService;
 
     public boolean supportsForm() {
         return database.hasColumn("phieu_giam_gia", "hinh_thuc_phieu");
@@ -162,16 +166,14 @@ public class PhieuGiamGiaService {
         response.setStartDate(
                 p.getNgayBatDau() != null
                         ? p.getNgayBatDau()
-                        .toLocalDate()
-                        .toString()
+                        .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm"))
                         : null
         );
 
         response.setEndDate(
                 p.getNgayKetThuc() != null
                         ? p.getNgayKetThuc()
-                        .toLocalDate()
-                        .toString()
+                        .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm"))
                         : null
         );
 
@@ -195,6 +197,14 @@ public class PhieuGiamGiaService {
                 getStatusLabel(
                         p.getTrangThai()
                 )
+        );
+// trang thai pgg theo tgian thuc
+        Integer timeStatus = getTimeStatus(p);
+
+        response.setTimeStatus(timeStatus);
+
+        response.setTimeStatusLabel(
+                getTimeStatusLabel(timeStatus)
         );
 
         response.setDescription(
@@ -287,13 +297,13 @@ public class PhieuGiamGiaService {
 
         p.setNgayBatDau(
                 LocalDateTime.parse(
-                        request.getStartDate() + "T00:00:00"
+                        request.getStartDate()
                 )
         );
 
         p.setNgayKetThuc(
                 LocalDateTime.parse(
-                        request.getEndDate() + "T23:59:59"
+                        request.getEndDate()
                 )
         );
 
@@ -322,6 +332,9 @@ public class PhieuGiamGiaService {
                 phieuGiamGiaRepository.save(p);
         syncAssignments(saved, request);
 
+        if (Integer.valueOf(2).equals(saved.getHinhThucPhieu())) {
+            sendEmailsAfterCommit(saved, request.getCustomerIds());
+        }
         return convertToResponse(saved);
 
     }
@@ -347,6 +360,44 @@ public class PhieuGiamGiaService {
         }
 
         requireFormSupport();
+
+        Integer oldTimeStatus = getTimeStatus(p);
+        Integer oldForm = p.getHinhThucPhieu();
+        List<Long> oldCustomerIds = activeCustomerIds(p);
+
+        String oldTen = p.getTenPhieuGiamGia();
+        Integer oldLoaiGiam = p.getLoaiGiamGia();
+        BigDecimal oldGiaTriGiam = p.getGiaTriGiam();
+        BigDecimal oldGiaTriToiThieu = p.getGiaTriToiThieu();
+        BigDecimal oldGiamToiDa = p.getGiamToiDa();
+        LocalDateTime oldNgayBatDau = p.getNgayBatDau();
+        LocalDateTime oldNgayKetThuc = p.getNgayKetThuc();
+
+        LocalDateTime newStart = LocalDateTime.parse(request.getStartDate());
+        LocalDateTime newEnd = LocalDateTime.parse(request.getEndDate());
+
+        boolean isInfoChanged = !java.util.Objects.equals(oldTen, request.getName().trim())
+                || !java.util.Objects.equals(oldLoaiGiam, request.getDiscountType())
+                || isBigDecimalDifferent(oldGiaTriGiam, request.getDiscountValue())
+                || isBigDecimalDifferent(oldGiaTriToiThieu, request.getMinOrderValue())
+                || isBigDecimalDifferent(oldGiamToiDa, request.getMaxDiscount())
+                || !java.util.Objects.equals(oldNgayBatDau, newStart)
+                || !java.util.Objects.equals(oldNgayKetThuc, newEnd);
+
+        List<Long> newCustomerIds = (request.getForm() != null && request.getForm() == 2 && request.getCustomerIds() != null)
+                ? request.getCustomerIds().stream().filter(java.util.Objects::nonNull).distinct().toList()
+                : List.of();
+
+        List<Long> addedIds = newCustomerIds.stream()
+                .filter(cId -> !oldCustomerIds.contains(cId))
+                .toList();
+        List<Long> removedIds = oldCustomerIds.stream()
+                .filter(cId -> !newCustomerIds.contains(cId))
+                .toList();
+        List<Long> retainedIds = newCustomerIds.stream()
+                .filter(oldCustomerIds::contains)
+                .toList();
+
         p.setTenPhieuGiamGia(request.getName().trim());
 
         p.setHinhThucPhieu(request.getForm());
@@ -356,17 +407,8 @@ public class PhieuGiamGiaService {
         p.setGiaTriToiThieu(request.getMinOrderValue());
         p.setGiamToiDa(request.getMaxDiscount());
 
-        p.setNgayBatDau(
-                LocalDateTime.parse(
-                        request.getStartDate() + "T00:00:00"
-                )
-        );
-
-        p.setNgayKetThuc(
-                LocalDateTime.parse(
-                        request.getEndDate() + "T23:59:59"
-                )
-        );
+        p.setNgayBatDau(newStart);
+        p.setNgayKetThuc(newEnd);
 
         if (Boolean.TRUE.equals(request.getUnlimited())) {
             p.setSoLuong(null);
@@ -387,6 +429,10 @@ public class PhieuGiamGiaService {
         PhieuGiamGia saved =
                 phieuGiamGiaRepository.save(p);
         syncAssignments(saved, request);
+
+        if (oldTimeStatus != null && oldTimeStatus != 3 && (Integer.valueOf(2).equals(oldForm) || Integer.valueOf(2).equals(saved.getHinhThucPhieu()))) {
+            sendEmailsOnUpdateAfterCommit(saved, addedIds, removedIds, retainedIds, isInfoChanged);
+        }
 
         return convertToResponse(saved);
     }
@@ -478,6 +524,21 @@ public class PhieuGiamGiaService {
             }
         }
 
+        if (request.getForm() == 2) {
+            long customerCount = request.getCustomerIds()
+                    .stream()
+                    .filter(java.util.Objects::nonNull)
+                    .distinct()
+                    .count();
+
+            if (request.getQuantity() == null ||
+                    request.getQuantity().longValue() != customerCount) {
+                throw AppException.badRequest(
+                        "Số lượng phiếu phải bằng số khách hàng được chọn"
+                );
+            }
+        }
+
         if (request.getDiscountType() == null ||
                 (request.getDiscountType() != 1 &&
                         request.getDiscountType() != 2)) {
@@ -496,21 +557,17 @@ public class PhieuGiamGiaService {
             );
         }
 
-        if (request.getMinOrderValue() != null &&
-                request.getMinOrderValue()
-                        .compareTo(BigDecimal.ZERO) < 0) {
-
+        if (request.getMinOrderValue() == null ||
+                request.getMinOrderValue().compareTo(BigDecimal.ZERO) < 0) {
             throw AppException.badRequest(
-                    "Giá trị đơn tối thiểu không hợp lệ"
+                    "Giá trị đơn tối thiểu phải lớn hơn hoặc bằng 0"
             );
         }
 
-        if (request.getMaxDiscount() != null &&
-                request.getMaxDiscount()
-                        .compareTo(BigDecimal.ZERO) < 0) {
-
+        if (request.getDiscountType() == 1 &&
+                (request.getMaxDiscount() == null || request.getMaxDiscount().compareTo(BigDecimal.ZERO) <= 0)) {
             throw AppException.badRequest(
-                    "Giảm tối đa không hợp lệ"
+                    "Giảm theo phần trăm phải có mức giảm tối đa lớn hơn 0"
             );
         }
 
@@ -531,18 +588,21 @@ public class PhieuGiamGiaService {
             );
         }
 
-        LocalDate start;
-        LocalDate end;
-        try {
-            start = LocalDate.parse(request.getStartDate());
-            end = LocalDate.parse(request.getEndDate());
-        } catch (DateTimeParseException ex) {
-            throw AppException.badRequest("Ngày bắt đầu và kết thúc phải có định dạng yyyy-MM-dd hợp lệ");
-        }
-        if (end.isBefore(start)) {
+        LocalDateTime start;
+        LocalDateTime end;
 
+        try {
+            start = LocalDateTime.parse(request.getStartDate());
+            end = LocalDateTime.parse(request.getEndDate());
+        } catch (DateTimeParseException ex) {
             throw AppException.badRequest(
-                    "Ngày kết thúc phải lớn hơn hoặc bằng ngày bắt đầu"
+                    "Ngày giờ bắt đầu và kết thúc không đúng định dạng"
+            );
+        }
+
+        if (!end.isAfter(start)) {
+            throw AppException.badRequest(
+                    "Ngày giờ kết thúc phải sau ngày giờ bắt đầu"
             );
         }
 
@@ -583,6 +643,210 @@ public class PhieuGiamGiaService {
             assignments.save(link);
         }
     }
+// trang thai cua pgg theo tgian thuc
+    private Integer getTimeStatus(PhieuGiamGia p) {
 
+        LocalDateTime now = LocalDateTime.now();
+
+        if (p.getNgayBatDau() == null || p.getNgayKetThuc() == null) {
+            return null;
+        }
+
+        if (now.isBefore(p.getNgayBatDau())) {
+            return 1; // Sắp diễn ra
+        }
+
+        if (now.isBefore(p.getNgayKetThuc())) {
+            return 2; // Đang diễn ra
+        }
+
+        return 3; // Đã kết thúc
+    }
+
+    private String getTimeStatusLabel(Integer value) {
+
+        if (value == null) {
+            return "Không xác định";
+        }
+
+        return switch (value) {
+            case 1 -> "Sắp diễn ra";
+            case 2 -> "Đang diễn ra";
+            case 3 -> "Đã kết thúc";
+            default -> "Không xác định";
+        };
+    }
+
+    private void sendEmailsAfterCommit(
+            PhieuGiamGia voucher,
+            List<Long> customerIds
+    ) {
+        if (!Integer.valueOf(2).equals(voucher.getHinhThucPhieu())
+                || customerIds == null
+                || customerIds.isEmpty()) {
+            return;
+        }
+
+        List<Long> ids = customerIds.stream()
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .toList();
+
+        executeAfterCommitOrNow(() -> {
+            String discount = formatDiscountString(voucher);
+            for (Long customerId : ids) {
+                try {
+                    KhachHang customer = customers.findById(customerId)
+                            .orElse(null);
+
+                    if (customer == null
+                            || customer.getEmail() == null
+                            || customer.getEmail().isBlank()) {
+                        continue;
+                    }
+
+                    System.out.println(
+                            "Đang gửi email phiếu giảm giá đến: " + customer.getEmail()
+                    );
+
+                    emailService.sendVoucherEmail(
+                            customer.getEmail(),
+                            customer.getTenKhachHang(),
+                            voucher.getTenPhieuGiamGia(),
+                            voucher.getMaPhieuGiamGia(),
+                            discount,
+                            String.valueOf(voucher.getGiamToiDa()),
+                            String.valueOf(voucher.getGiaTriToiThieu()),
+                            String.valueOf(voucher.getNgayBatDau()),
+                            String.valueOf(voucher.getNgayKetThuc()),
+                            "https://example.com"
+                    );
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                }
+            }
+        });
+    }
+
+    private void sendEmailsOnUpdateAfterCommit(
+            PhieuGiamGia voucher,
+            List<Long> addedIds,
+            List<Long> removedIds,
+            List<Long> retainedIds,
+            boolean isInfoChanged
+    ) {
+        if (addedIds.isEmpty() && removedIds.isEmpty() && (!isInfoChanged || retainedIds.isEmpty())) {
+            return;
+        }
+
+        executeAfterCommitOrNow(() -> {
+            String discount = formatDiscountString(voucher);
+
+            // 1. Khách hàng mới được thêm vào (TH2, TH3) -> Gửi mail mới
+            for (Long customerId : addedIds) {
+                try {
+                    KhachHang customer = customers.findById(customerId).orElse(null);
+                    if (customer == null || customer.getEmail() == null || customer.getEmail().isBlank()) {
+                        continue;
+                    }
+                    System.out.println("Đang gửi email cấp mới voucher đến: " + customer.getEmail());
+                    emailService.sendVoucherEmail(
+                            customer.getEmail(),
+                            customer.getTenKhachHang(),
+                            voucher.getTenPhieuGiamGia(),
+                            voucher.getMaPhieuGiamGia(),
+                            discount,
+                            String.valueOf(voucher.getGiamToiDa()),
+                            String.valueOf(voucher.getGiaTriToiThieu()),
+                            String.valueOf(voucher.getNgayBatDau()),
+                            String.valueOf(voucher.getNgayKetThuc()),
+                            "https://example.com"
+                    );
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                }
+            }
+
+            // 2. Khách hàng bị loại bỏ khỏi danh sách (TH2, TH3) -> Gửi mail hủy
+            for (Long customerId : removedIds) {
+                try {
+                    KhachHang customer = customers.findById(customerId).orElse(null);
+                    if (customer == null || customer.getEmail() == null || customer.getEmail().isBlank()) {
+                        continue;
+                    }
+                    System.out.println("Đang gửi email hủy voucher đến: " + customer.getEmail());
+                    emailService.sendVoucherCancelledEmail(
+                            customer.getEmail(),
+                            customer.getTenKhachHang(),
+                            voucher.getTenPhieuGiamGia(),
+                            voucher.getMaPhieuGiamGia()
+                    );
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                }
+            }
+
+            // 3. Khách hàng giữ nguyên -> Chỉ gửi nếu thông tin PGG thay đổi (TH1, TH3), nếu không đổi thì bỏ qua (5 -> K)
+            if (isInfoChanged) {
+                for (Long customerId : retainedIds) {
+                    try {
+                        KhachHang customer = customers.findById(customerId).orElse(null);
+                        if (customer == null || customer.getEmail() == null || customer.getEmail().isBlank()) {
+                            continue;
+                        }
+                        System.out.println("Đang gửi email cập nhật voucher đến: " + customer.getEmail());
+                        emailService.sendVoucherUpdatedEmail(
+                                customer.getEmail(),
+                                customer.getTenKhachHang(),
+                                voucher.getTenPhieuGiamGia(),
+                                voucher.getMaPhieuGiamGia(),
+                                discount,
+                                String.valueOf(voucher.getGiamToiDa()),
+                                String.valueOf(voucher.getGiaTriToiThieu()),
+                                String.valueOf(voucher.getNgayBatDau()),
+                                String.valueOf(voucher.getNgayKetThuc()),
+                                "https://example.com"
+                        );
+                    } catch (Exception ex) {
+                        ex.printStackTrace();
+                    }
+                }
+            }
+        });
+    }
+
+    private void executeAfterCommitOrNow(Runnable task) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(
+                    new TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            java.util.concurrent.CompletableFuture.runAsync(task);
+                        }
+                    }
+            );
+        } else {
+            java.util.concurrent.CompletableFuture.runAsync(task);
+        }
+    }
+
+    private String formatDiscountString(PhieuGiamGia voucher) {
+        if (voucher.getGiaTriGiam() == null) {
+            return "0";
+        }
+        return voucher.getLoaiGiamGia() == 1
+                ? voucher.getGiaTriGiam().stripTrailingZeros().toPlainString() + "%"
+                : voucher.getGiaTriGiam().stripTrailingZeros().toPlainString() + " VNĐ";
+    }
+
+    private boolean isBigDecimalDifferent(BigDecimal a, BigDecimal b) {
+        if (a == null && b == null) {
+            return false;
+        }
+        if (a == null || b == null) {
+            return true;
+        }
+        return a.compareTo(b) != 0;
+    }
 
 }
