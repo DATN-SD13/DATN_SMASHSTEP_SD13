@@ -38,6 +38,7 @@ public class DotGiamGiaService {
     private final ChiTietDotGiamGiaRepository chiTietDotGiamGiaRepository;
 
     private final SanPhamChiTietRepository sanPhamChiTietRepository;
+    private final com.smashstep.datn.product.service.KhoaGhiSanPham writeLock;
     private final DatabaseCapabilities database;
 
     @PersistenceContext
@@ -139,6 +140,7 @@ public class DotGiamGiaService {
     public DotGiamGiaResponse create(
             DotGiamGiaRequest request
     ) {
+        writeLock.khoa("campaigns");
         validateCampaignRequest(request);
         validateDescription(request);
 
@@ -305,9 +307,9 @@ public class DotGiamGiaService {
             var product = root.join("idSanPham");
             return cb.and(cb.equal(root.get("trangThai"), 1), cb.isTrue(root.get("kichHoat")),
                     cb.equal(product.get("trangThai"), 1), cb.or(
-                    cb.like(cb.lower(product.get("maSanPham")), search),
-                    cb.like(cb.lower(product.get("tenSanPham")), search),
-                    cb.like(cb.lower(root.get("maChiTietSanPham")), search), cb.like(cb.lower(root.get("sku")), search)));
+                            cb.like(cb.lower(product.get("maSanPham")), search),
+                            cb.like(cb.lower(product.get("tenSanPham")), search),
+                            cb.like(cb.lower(root.get("maChiTietSanPham")), search), cb.like(cb.lower(root.get("sku")), search)));
         };
         var result = sanPhamChiTietRepository.findAll(eligible, PageRequest.of(0, 1000, Sort.by("id")));
         if (result.hasNext()) throw AppException.badRequest("Có hơn 1000 biến thể phù hợp. Hãy thu hẹp từ khóa tìm kiếm");
@@ -388,6 +390,8 @@ public class DotGiamGiaService {
             String ma,
             DotGiamGiaRequest request
     ) {
+        writeLock.khoa("campaigns");
+        validateCampaignRequest(request);
         validateDescription(request);
 
         // 1. Tìm đợt giảm giá cần sửa
@@ -406,7 +410,7 @@ public class DotGiamGiaService {
         }
 
         // 2. Kiểm tra ngày
-        if (request.getEndDate().isBefore(request.getStartDate())) {
+        if (!request.getEndDate().isAfter(request.getStartDate())) {
             throw AppException.badRequest(
                     "Ngày kết thúc không được nhỏ hơn ngày bắt đầu"
             );
@@ -508,6 +512,7 @@ public class DotGiamGiaService {
     }
     @Transactional
     public DotGiamGiaResponse delete(String ma) {
+        writeLock.khoa("campaigns");
 
         DotGiamGia entity = dotGiamGiaRepository
                 .findByMaDotGiamGia(ma)
@@ -559,7 +564,7 @@ public class DotGiamGiaService {
                 || request.getDiscountValue().compareTo(new java.math.BigDecimal("100")) > 0
                 || request.getDiscountValue().scale() > 2
                 || request.getStartDate() == null || request.getEndDate() == null
-                || request.getEndDate().isBefore(request.getStartDate())
+                || !request.getEndDate().isAfter(request.getStartDate())
                 || (request.getDescription() != null && request.getDescription().length() > 1000)) {
             throw AppException.badRequest("Thông tin đợt giảm giá không hợp lệ");
         }
@@ -591,7 +596,7 @@ public class DotGiamGiaService {
             return;
         }
 
-        if (startDate == null || endDate == null || endDate.isBefore(startDate)) {
+        if (startDate == null || endDate == null || !endDate.isAfter(startDate)) {
             throw AppException.badRequest("Khoảng thời gian không hợp lệ");
         }
 
@@ -687,6 +692,7 @@ public class DotGiamGiaService {
             String ma,
             Integer status
     ) {
+        writeLock.khoa("campaigns");
 
         // Chỉ cho phép trạng thái 0 hoặc 1
         if (status == null || (status != 0 && status != 1)) {
@@ -833,8 +839,14 @@ public class DotGiamGiaService {
 
     @Transactional
     public DotGiamGia create(com.smashstep.datn.promotion.dto.DotGiamGiaRequest request) {
+        writeLock.khoa("campaigns");
 
         validateTeamCampaign(request);
+        if (!Boolean.FALSE.equals(request.getKichHoat())) {
+            validateProductPromotionConflict(request.getChiTiet().stream().map(
+                            com.smashstep.datn.promotion.dto.ChiTietDotGiamGiaRequest::getIdSanPhamChiTiet).toList(),
+                    request.getNgayBatDau(), request.getNgayKetThuc(), null);
+        }
         if (request.getMaDotGiamGia() == null || request.getMaDotGiamGia().isBlank()) request.setMaDotGiamGia(generateCode());
         if (dotGiamGiaRepository.existsByMaDotGiamGia(request.getMaDotGiamGia())) throw AppException.conflict("Mã đợt giảm giá đã tồn tại");
         DotGiamGia dotGiamGia = new DotGiamGia();
@@ -886,6 +898,7 @@ public class DotGiamGiaService {
     }
     @Transactional
     public void delete(Long id) {
+        writeLock.khoa("campaigns");
 
         DotGiamGia dotGiamGia = dotGiamGiaRepository.findById(id)
                 .orElseThrow(() ->
@@ -914,6 +927,7 @@ public class DotGiamGiaService {
     }
     @Transactional
     public DotGiamGia update(Long id, com.smashstep.datn.promotion.dto.DotGiamGiaRequest request) {
+        writeLock.khoa("campaigns");
         validateTeamCampaign(request);
 
         DotGiamGia dotGiamGia = dotGiamGiaRepository.findById(id)
@@ -923,6 +937,12 @@ public class DotGiamGiaService {
                         )
                 );
 
+        if (Integer.valueOf(1).equals(dotGiamGia.getTrangThai()) &&
+                (request.getKichHoat() == null ? Boolean.TRUE.equals(dotGiamGia.getKichHoat()) : request.getKichHoat())) {
+            validateProductPromotionConflict(request.getChiTiet().stream().map(
+                            com.smashstep.datn.promotion.dto.ChiTietDotGiamGiaRequest::getIdSanPhamChiTiet).toList(),
+                    request.getNgayBatDau(), request.getNgayKetThuc(), id);
+        }
         if (request.getMaDotGiamGia() != null) {
             var owner = dotGiamGiaRepository.findByMaDotGiamGia(request.getMaDotGiamGia());
             if (owner.isPresent() && !owner.get().getId().equals(id)) throw AppException.conflict("Mã đợt giảm giá đã tồn tại");

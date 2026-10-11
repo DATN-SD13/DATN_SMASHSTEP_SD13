@@ -26,12 +26,12 @@ public class SanPhamChiTietService {
     private final KhoaGhiSanPham khoaGhi;
 
     public PageResponse<BienTheResponse> layDanhSach(int trang, int kichThuocTrang,
-            String tuKhoa, Integer trangThai, Long sanPhamId, Long mauSacId, Long kichThuocId) {
+                                                     String tuKhoa, Integer trangThai, Long sanPhamId, Long mauSacId, Long kichThuocId) {
         return layDanhSach(trang, kichThuocTrang, tuKhoa, trangThai, sanPhamId, mauSacId, kichThuocId, null);
     }
 
     public PageResponse<BienTheResponse> layDanhSach(int trang, int kichThuocTrang,
-            String tuKhoa, Integer trangThai, Long sanPhamId, Long mauSacId, Long kichThuocId, Boolean kichHoat) {
+                                                     String tuKhoa, Integer trangThai, Long sanPhamId, Long mauSacId, Long kichThuocId, Boolean kichHoat) {
         QuyTacSanPham.kiemTraTrangThai(trangThai);
         Specification<SanPhamChiTiet> boLoc = (bang, truyVan, tieuChi) -> {
             List<Predicate> dieuKien = new ArrayList<>();
@@ -140,7 +140,8 @@ public class SanPhamChiTietService {
         chiTiet.setIdSanPham(sanPham);
         chiTiet.setNgayTao(LocalDateTime.now());
         capNhatDuLieu(chiTiet, yeuCau);
-        return chuyenSangResponse(sanPhamChiTietRepository.save(chiTiet), null);
+        sanPhamChiTietRepository.save(chiTiet);
+        return chuyenSangResponse(chiTiet, null, currentPrices.getPrice(chiTiet, LocalDateTime.now()));
     }
 
     @Transactional
@@ -159,7 +160,8 @@ public class SanPhamChiTietService {
         khoaSanPham(yeuCau.getSanPhamId());
         capNhatDuLieu(chiTiet, yeuCau);
         chiTiet.setNgayCapNhat(LocalDateTime.now());
-        return chuyenSangResponse(sanPhamChiTietRepository.save(chiTiet), null);
+        sanPhamChiTietRepository.save(chiTiet);
+        return chuyenSangResponse(chiTiet, null, currentPrices.getPrice(chiTiet, LocalDateTime.now()));
     }
 
     @Transactional
@@ -169,7 +171,8 @@ public class SanPhamChiTietService {
         khoaSanPham(chiTiet.getIdSanPham().getId());
         chiTiet.setTrangThai(trangThai);
         chiTiet.setNgayCapNhat(LocalDateTime.now());
-        return chuyenSangResponse(sanPhamChiTietRepository.save(chiTiet), null);
+        sanPhamChiTietRepository.save(chiTiet);
+        return chuyenSangResponse(chiTiet, null, currentPrices.getPrice(chiTiet, LocalDateTime.now()));
     }
 
     private void capNhatDuLieu(SanPhamChiTiet chiTiet, SanPhamChiTietThemRequest yeuCau) {

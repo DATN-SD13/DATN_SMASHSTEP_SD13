@@ -99,3 +99,5 @@
 .product-page .p-price-stack { display: inline-flex; flex-direction: column; vertical-align: middle; white-space: nowrap; }
 .product-page .p-price-original { text-decoration: line-through; opacity: .6; font-size: 12px; font-weight: 400; }
 .product-page .p-price-effective { margin-top: 2px; font-weight: 700; color: #dc3545; }
+
+@media print { .product-toast { display: none !important; } }

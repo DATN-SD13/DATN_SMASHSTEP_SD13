@@ -44,6 +44,12 @@ public class PhieuGiamGiaService {
     private final KhachHangRepository customers;
     private final DatabaseCapabilities database;
     private final EmailService emailService;
+    private final com.smashstep.datn.product.service.KhoaGhiSanPham writeLock;
+
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(PhieuGiamGiaService.class);
+
+    @org.springframework.beans.factory.annotation.Value("${smashstep.website-url:}")
+    private String websiteUrl;
 
     public boolean supportsForm() {
         return database.hasColumn("phieu_giam_gia", "hinh_thuc_phieu");
@@ -263,12 +269,13 @@ public class PhieuGiamGiaService {
 
         return convertToResponse(p);
     }
-// tao moi
+    // tao moi
     @Transactional
     public PhieuGiamGiaResponse create(
             PhieuGiamGiaRequest request
 
     ) {
+        writeLock.khoa("voucher-codes");
         if (request == null) throw AppException.badRequest("Dữ liệu phiếu không hợp lệ");
         if (request.getCode() == null ||
                 request.getCode().trim().isEmpty()) {
@@ -332,13 +339,14 @@ public class PhieuGiamGiaService {
                 phieuGiamGiaRepository.save(p);
         syncAssignments(saved, request);
 
+        var response = convertToResponse(saved);
         if (Integer.valueOf(2).equals(saved.getHinhThucPhieu())) {
-            sendEmailsAfterCommit(saved, request.getCustomerIds());
+            scheduleEmails(saved, request.getCustomerIds(), List.of(), List.of(), false, response.getEmailResult());
         }
-        return convertToResponse(saved);
+        return response;
 
     }
-// update
+    // update
     @Transactional
     public PhieuGiamGiaResponse update(
             Long id,
@@ -430,13 +438,13 @@ public class PhieuGiamGiaService {
                 phieuGiamGiaRepository.save(p);
         syncAssignments(saved, request);
 
+        var response = convertToResponse(saved);
         if (oldTimeStatus != null && oldTimeStatus != 3 && (Integer.valueOf(2).equals(oldForm) || Integer.valueOf(2).equals(saved.getHinhThucPhieu()))) {
-            sendEmailsOnUpdateAfterCommit(saved, addedIds, removedIds, retainedIds, isInfoChanged);
+            scheduleEmails(saved, addedIds, removedIds, retainedIds, isInfoChanged, response.getEmailResult());
         }
-
-        return convertToResponse(saved);
+        return response;
     }
-// xoa mem
+    // xoa mem
     @Transactional
     public void deactivate(Long id) {
 
@@ -474,7 +482,7 @@ public class PhieuGiamGiaService {
         phieu.setNgayCapNhat(LocalDateTime.now());
         phieuGiamGiaRepository.save(phieu);
     }
-// validate
+    // validate
     private void validateRequest(
             PhieuGiamGiaRequest request
     ) {
@@ -643,7 +651,7 @@ public class PhieuGiamGiaService {
             assignments.save(link);
         }
     }
-// trang thai cua pgg theo tgian thuc
+    // trang thai cua pgg theo tgian thuc
     private Integer getTimeStatus(PhieuGiamGia p) {
 
         LocalDateTime now = LocalDateTime.now();
@@ -677,157 +685,77 @@ public class PhieuGiamGiaService {
         };
     }
 
-    private void sendEmailsAfterCommit(
-            PhieuGiamGia voucher,
-            List<Long> customerIds
-    ) {
-        if (!Integer.valueOf(2).equals(voucher.getHinhThucPhieu())
-                || customerIds == null
-                || customerIds.isEmpty()) {
-            return;
-        }
-
-        List<Long> ids = customerIds.stream()
-                .filter(java.util.Objects::nonNull)
-                .distinct()
-                .toList();
-
-        executeAfterCommitOrNow(() -> {
-            String discount = formatDiscountString(voucher);
-            for (Long customerId : ids) {
+    private void scheduleEmails(PhieuGiamGia voucher, List<Long> added, List<Long> removed,
+                                List<Long> retained, boolean changed,
+                                com.smashstep.datn.promotion.response.VoucherEmailResult result) {
+        Map<Long, String> recipients = new LinkedHashMap<>();
+        added.forEach(id -> recipients.put(id, "new"));
+        removed.forEach(id -> recipients.put(id, "cancel"));
+        if (changed) retained.forEach(id -> recipients.put(id, "update"));
+        if (recipients.isEmpty()) return;
+        // Capture all data while the persistence context and transaction are active.
+        record Recipient(Long id, String name, String email, String kind) {}
+        var snapshots = recipients.entrySet().stream().map(entry -> {
+            var customer = customers.findById(entry.getKey()).orElse(null);
+            return new Recipient(entry.getKey(), customer == null ? "" : customer.getTenKhachHang(),
+                    customer == null ? null : customer.getEmail(), entry.getValue());
+        }).toList();
+        String name = voucher.getTenPhieuGiamGia(), code = voucher.getMaPhieuGiamGia();
+        String discount = formatDiscountString(voucher);
+        String max = voucher.getGiamToiDa() == null ? "0" : voucher.getGiamToiDa().toPlainString();
+        String min = String.valueOf(voucher.getGiaTriToiThieu());
+        String start = String.valueOf(voucher.getNgayBatDau()), end = String.valueOf(voucher.getNgayKetThuc());
+        Runnable task = () -> {
+            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(30);
+            String configurationError = emailService.configurationError();
+            java.util.Set<String> reasons = new java.util.LinkedHashSet<>();
+            for (Recipient recipient : snapshots) {
                 try {
-                    KhachHang customer = customers.findById(customerId)
-                            .orElse(null);
-
-                    if (customer == null
-                            || customer.getEmail() == null
-                            || customer.getEmail().isBlank()) {
-                        continue;
+                    if (configurationError != null) throw new IllegalStateException(configurationError);
+                    if (System.nanoTime() > deadline) throw new IllegalStateException("Hết thời gian gửi email cho danh sách khách hàng");
+                    if (recipient.email() == null || recipient.email().isBlank()) throw new IllegalStateException("Khách hàng chưa có email");
+                    switch (recipient.kind()) {
+                        case "cancel" -> emailService.sendVoucherCancelledEmail(recipient.email(), recipient.name(), name, code);
+                        case "update" -> emailService.sendVoucherUpdatedEmail(recipient.email(), recipient.name(), name, code,
+                                discount, max, min, start, end, websiteUrl);
+                        default -> emailService.sendVoucherEmail(recipient.email(), recipient.name(), name, code,
+                                discount, max, min, start, end, websiteUrl);
                     }
-
-                    System.out.println(
-                            "Đang gửi email phiếu giảm giá đến: " + customer.getEmail()
-                    );
-
-                    emailService.sendVoucherEmail(
-                            customer.getEmail(),
-                            customer.getTenKhachHang(),
-                            voucher.getTenPhieuGiamGia(),
-                            voucher.getMaPhieuGiamGia(),
-                            discount,
-                            String.valueOf(voucher.getGiamToiDa()),
-                            String.valueOf(voucher.getGiaTriToiThieu()),
-                            String.valueOf(voucher.getNgayBatDau()),
-                            String.valueOf(voucher.getNgayKetThuc()),
-                            "https://example.com"
-                    );
+                    result.setSent(result.getSent() + 1);
                 } catch (Exception ex) {
-                    ex.printStackTrace();
+                    result.setFailed(result.getFailed() + 1);
+                    // Do not log SMTP exception bodies or customer addresses/credentials.
+                    String reason = mailFailureReason(ex);
+                    reasons.add(reason);
+                    log.warn("Voucher {}: email failed for customer ID {}: {}", code, recipient.id(), reason);
                 }
             }
-        });
-    }
+            result.setStatus(result.getFailed() == 0 ? "SENT" : result.getSent() == 0 ? "FAILED" : "PARTIAL");
+            result.setMessage(configurationError != null ? configurationError
+                    : "SMTP đã nhận " + result.getSent() + " email; " + result.getFailed() + " email chưa gửi được." + (reasons.isEmpty() ? "" : " " + String.join("; ", reasons)));
 
-    private void sendEmailsOnUpdateAfterCommit(
-            PhieuGiamGia voucher,
-            List<Long> addedIds,
-            List<Long> removedIds,
-            List<Long> retainedIds,
-            boolean isInfoChanged
-    ) {
-        if (addedIds.isEmpty() && removedIds.isEmpty() && (!isInfoChanged || retainedIds.isEmpty())) {
-            return;
-        }
-
-        executeAfterCommitOrNow(() -> {
-            String discount = formatDiscountString(voucher);
-
-            // 1. Khách hàng mới được thêm vào (TH2, TH3) -> Gửi mail mới
-            for (Long customerId : addedIds) {
-                try {
-                    KhachHang customer = customers.findById(customerId).orElse(null);
-                    if (customer == null || customer.getEmail() == null || customer.getEmail().isBlank()) {
-                        continue;
-                    }
-                    System.out.println("Đang gửi email cấp mới voucher đến: " + customer.getEmail());
-                    emailService.sendVoucherEmail(
-                            customer.getEmail(),
-                            customer.getTenKhachHang(),
-                            voucher.getTenPhieuGiamGia(),
-                            voucher.getMaPhieuGiamGia(),
-                            discount,
-                            String.valueOf(voucher.getGiamToiDa()),
-                            String.valueOf(voucher.getGiaTriToiThieu()),
-                            String.valueOf(voucher.getNgayBatDau()),
-                            String.valueOf(voucher.getNgayKetThuc()),
-                            "https://example.com"
-                    );
-                } catch (Exception ex) {
-                    ex.printStackTrace();
-                }
-            }
-
-            // 2. Khách hàng bị loại bỏ khỏi danh sách (TH2, TH3) -> Gửi mail hủy
-            for (Long customerId : removedIds) {
-                try {
-                    KhachHang customer = customers.findById(customerId).orElse(null);
-                    if (customer == null || customer.getEmail() == null || customer.getEmail().isBlank()) {
-                        continue;
-                    }
-                    System.out.println("Đang gửi email hủy voucher đến: " + customer.getEmail());
-                    emailService.sendVoucherCancelledEmail(
-                            customer.getEmail(),
-                            customer.getTenKhachHang(),
-                            voucher.getTenPhieuGiamGia(),
-                            voucher.getMaPhieuGiamGia()
-                    );
-                } catch (Exception ex) {
-                    ex.printStackTrace();
-                }
-            }
-
-            // 3. Khách hàng giữ nguyên -> Chỉ gửi nếu thông tin PGG thay đổi (TH1, TH3), nếu không đổi thì bỏ qua (5 -> K)
-            if (isInfoChanged) {
-                for (Long customerId : retainedIds) {
-                    try {
-                        KhachHang customer = customers.findById(customerId).orElse(null);
-                        if (customer == null || customer.getEmail() == null || customer.getEmail().isBlank()) {
-                            continue;
-                        }
-                        System.out.println("Đang gửi email cập nhật voucher đến: " + customer.getEmail());
-                        emailService.sendVoucherUpdatedEmail(
-                                customer.getEmail(),
-                                customer.getTenKhachHang(),
-                                voucher.getTenPhieuGiamGia(),
-                                voucher.getMaPhieuGiamGia(),
-                                discount,
-                                String.valueOf(voucher.getGiamToiDa()),
-                                String.valueOf(voucher.getGiaTriToiThieu()),
-                                String.valueOf(voucher.getNgayBatDau()),
-                                String.valueOf(voucher.getNgayKetThuc()),
-                                "https://example.com"
-                        );
-                    } catch (Exception ex) {
-                        ex.printStackTrace();
-                    }
-                }
-            }
-        });
-    }
-
-    private void executeAfterCommitOrNow(Runnable task) {
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(
-                    new TransactionSynchronization() {
-                        @Override
-                        public void afterCommit() {
-                            java.util.concurrent.CompletableFuture.runAsync(task);
-                        }
-                    }
-            );
+        };
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override public void afterCommit() { task.run(); }
+            });
         } else {
-            java.util.concurrent.CompletableFuture.runAsync(task);
+            // Supports direct service unit tests. Production writes use @Transactional.
+            task.run();
         }
+    }
+
+    private String mailFailureReason(Exception error) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            if (cause instanceof org.springframework.mail.MailAuthenticationException) return "Gmail từ chối đăng nhập; kiểm tra Google App Password";
+            if (cause instanceof java.net.SocketTimeoutException) return "SMTP hết thời gian chờ";
+            if (cause instanceof java.net.ConnectException || cause instanceof java.net.UnknownHostException) return "Không kết nối được SMTP; kiểm tra host và mạng";
+            if (cause instanceof jakarta.mail.internet.AddressException || cause instanceof IllegalArgumentException) return "Email khách hàng sai định dạng";
+        }
+        // Messages here are application constants, never transport/server messages.
+        if ("Khách hàng chưa có email".equals(error.getMessage())) return "Khách hàng chưa có email";
+        if ("Hết thời gian gửi email cho danh sách khách hàng".equals(error.getMessage())) return "Danh sách gửi vượt thời gian chờ; một số email chưa được gửi";
+        return "SMTP từ chối hoặc không gửi được email; kiểm tra cấu hình Gmail";
     }
 
     private String formatDiscountString(PhieuGiamGia voucher) {

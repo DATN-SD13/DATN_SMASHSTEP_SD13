@@ -10,7 +10,7 @@ function show(type, message, title = titles[type]) {
   lastShownAt = Date.now()
   clearTimeout(timer)
   toast.value = { id: ++sequence, type, title, message }
-  timer = setTimeout(close, type === 'success' ? 4000 : 5000)
+  timer = setTimeout(close, 3000)
 }
 export function useProductToast() {
   return { toast, close, show, ...Object.fromEntries(Object.keys(titles).map(type => [type, (message, title) => show(type, message, title)])) }

@@ -18,7 +18,7 @@ const optionsBusy = ref(false)
 const optionsError = ref('')
 const busy = ref(true)
 const error = ref('')
-const success = ref(typeof route.query.created === 'string' ? `Thêm sản phẩm ${route.query.created} thành công.` : '')
+const success = ref('')
 const page = ref({ content: [], number: 0, size: 10, totalElements: 0, totalPages: 0 })
 let applied = {}
 let loadVersion = 0

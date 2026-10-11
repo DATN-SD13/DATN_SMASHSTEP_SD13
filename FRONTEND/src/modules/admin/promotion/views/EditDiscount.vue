@@ -1,4 +1,5 @@
 <script setup>
+import { useProductToast } from '../../product/composables/useProductToast'
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -35,31 +36,9 @@ const form = ref({
   customerIds: []
 })
 
-const toast = ref({
-  visible: false,
-  type: 'success',
-  title: '',
-  message: ''
-})
+const { show: showToast } = useProductToast()
 
-let toastTimer = null
-
-function showLocalToast(type, title, message) {
-  toast.value = {
-    visible: true,
-    type,
-    title,
-    message
-  }
-
-  if (toastTimer) {
-    window.clearTimeout(toastTimer)
-  }
-
-  toastTimer = window.setTimeout(() => {
-    toast.value.visible = false
-  }, 3000)
-}
+function showLocalToast(type, title, message) { showToast(type, message, title) }
 
 function toDate(value) {
   if (!value) return ''
@@ -186,7 +165,7 @@ async function handleConfirm() {
   saving.value = true
 
   try {
-    await updateDiscount(
+    const response = await updateDiscount(
       route.params.id,
       {
         ...form.value
@@ -195,11 +174,11 @@ async function handleConfirm() {
 
     showConfirm.value = false
 
-    showLocalToast(
-      'success',
-      'Cập nhật thành công',
-      'Cập nhật phiếu giảm giá thành công!'
-    )
+    if (response.data?.success !== true) throw new Error(response.data?.message || 'Lưu phiếu thất bại')
+    const email = response.data?.data?.emailResult
+    showLocalToast(email?.failed > 0 ? 'warning' : 'success',
+      email?.failed > 0 ? 'Đã lưu phiếu; email chưa gửi đủ' : 'Thành công',
+      'Cập nhật phiếu giảm giá thành công!' + (email && email.status !== 'NOT_REQUESTED' ? ' ' + email.message : ''))
 
     setTimeout(() => {
       router.push('/giam-gia')
@@ -280,36 +259,7 @@ onMounted(loadDetail)
     />
 
     <!-- tbao popup -->
-    <div
-      v-if="toast.visible"
-      class="ss-toast"
-      :class="`ss-toast-${toast.type}`"
-    >
-      <div class="ss-toast-icon">
-        <i
-          v-if="toast.type === 'success'"
-          class="bi bi-check-circle-fill"
-        ></i>
-
-        <i
-          v-else
-          class="bi bi-x-circle-fill"
-        ></i>
-      </div>
-
-      <div class="ss-toast-content">
-        <strong>{{ toast.title }}</strong>
-        <span>{{ toast.message }}</span>
-      </div>
-
-      <button
-        type="button"
-        class="ss-toast-close"
-        @click="toast.visible = false"
-      >
-        ×
-      </button>
-    </div>
+    
 
   </AdminLayout>
 </template>

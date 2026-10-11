@@ -20,7 +20,7 @@ const product = computed(() => detail.value?.product)
 let version = 0
 async function load(initial = false) {
   const request = ++version
-  if (initial) { detail.value = null; editing.value = null; success.value = route.query.updated ? 'Cập nhật sản phẩm thành công.' : route.query.created ? 'Đã tạo sản phẩm. Bạn có thể thêm biến thể và ảnh bên dưới.' : '' }
+  if (initial) { detail.value = null; editing.value = null; success.value = '' }
   busy.value = true; error.value = ''
   try {
     const [data, attributes] = await Promise.all([productService.get(route.params.id), productAttributeService.options()])

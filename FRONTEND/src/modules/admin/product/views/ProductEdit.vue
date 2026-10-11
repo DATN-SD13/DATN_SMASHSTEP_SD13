@@ -56,7 +56,8 @@ async function save(data) {
         replaceConfirmation(productDuplicatePrompt(duplicate.product), () => router.push(`/san-pham/${duplicate.product.id}/sua`))
         return
       }
-      await router.push({ path: '/san-pham/' + id, query: { updated: '1' } })
+      toast.success('Cập nhật sản phẩm thành công!')
+      await router.push({ path: '/san-pham/' + id })
     })
   } catch { if (version === loadVersion) error.value = 'Không thể kiểm tra sản phẩm trùng. Vui lòng thử lại.' }
   finally { duplicateBusy.value = false }

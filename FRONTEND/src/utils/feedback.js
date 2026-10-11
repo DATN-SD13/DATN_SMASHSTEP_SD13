@@ -21,3 +21,12 @@ export function showError(message, title = 'Thất bại!') {
     detail: { message, title, type: 'error' }
   }))
 }
+
+export function askToLeave(message) {
+  return new Promise(resolve => {
+    window.dispatchEvent(new CustomEvent('ss:confirm', {
+      detail: { message, title: 'Rời khỏi trang?', confirmText: 'Rời trang', cancelText: 'Ở lại',
+        onConfirm: () => resolve(true), onCancel: () => resolve(false) }
+    }))
+  })
+}

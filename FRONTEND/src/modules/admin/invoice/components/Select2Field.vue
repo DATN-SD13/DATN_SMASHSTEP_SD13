@@ -48,7 +48,7 @@ async function init() {
 
     if (factory) {
       try {
-        factory($)
+        factory(window, $)
       } catch (error) {
         console.error('Không thể khởi tạo Select2:', error)
       }

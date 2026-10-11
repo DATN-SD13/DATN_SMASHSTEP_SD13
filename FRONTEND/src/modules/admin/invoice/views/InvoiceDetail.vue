@@ -1,4 +1,5 @@
 <script setup>
+import { useProductToast } from '../../product/composables/useProductToast'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
@@ -28,8 +29,7 @@ const productSort = ref('default')
 const showConfirmModal = ref(false)
 const confirmSubmitting = ref(false)
 const showCancelModal = ref(false)
-const toast = ref({ visible: false, type: 'success', title: '', message: '' })
-let toastTimer = null
+const { show: showToast } = useProductToast()
 let invoiceLoadVersion = 0
 
 const deliverySteps = [
@@ -42,11 +42,17 @@ const deliverySteps = [
 ]
 
 const pickupSteps = [
-  { key: 'pending', label: 'Hóa đơn chờ', icon: 'bi-hourglass-split', value: 8 },
+  { key: 'waiting', label: 'Chờ xác nhận', icon: 'bi-hourglass-split', value: 0 },
+  { key: 'confirmed', label: 'Đã xác nhận', icon: 'bi-check2-circle', value: 1 },
   { key: 'done', label: 'Hoàn thành', icon: 'bi-flag', value: 5 }
 ]
 
-const steps = computed(() => invoice.value?.receiveMethodCode === 0 ? pickupSteps : deliverySteps)
+const steps = computed(() => {
+  if (invoice.value?.statusCode === 8 || invoice.value?.history?.some(item => Number(item.maTrangThai) === 8)) {
+    return [{ key: 'pending', label: 'Hóa đơn chờ', icon: 'bi-hourglass-split', value: 8 }, pickupSteps.at(-1)]
+  }
+  return invoice.value?.receiveMethodCode === 0 ? pickupSteps : deliverySteps
+})
 const statusOptions = computed(() => steps.value.map(step => ({
   value: step.value, key: step.key, label: step.label
 })))
@@ -418,21 +424,14 @@ function closeCancelModal() {
 //     confirmSubmitting.value = false
 //   }
 // }
-
-function showLocalToast(type, title, message) {
-  toast.value = { visible: true, type, title, message }
-  if (toastTimer) window.clearTimeout(toastTimer)
-  toastTimer = window.setTimeout(() => {
-    toast.value.visible = false
-  }, 4500)
-}
+function showLocalToast(type, title, message) { showToast(type, message, title) }
 
 async function saveStatus() {
   if (updatingStatus.value || confirmSubmitting.value || !invoice.value) return
   const newCode = Number(selectedStatus.value)
   const currentCode = Number(invoice.value?.statusCode)
 
-  if (!Number.isInteger(newCode)) {
+  if (selectedStatus.value === '' || selectedStatus.value == null || !Number.isInteger(newCode)) {
     showLocalToast('error', 'Cập nhật thất bại', 'Vui lòng chọn trạng thái hợp lệ.')
     return
   }
@@ -562,7 +561,6 @@ watch(() => route.params.code, () => {
 })
 onUnmounted(() => {
   invoiceLoadVersion += 1
-  if (toastTimer) window.clearTimeout(toastTimer)
   window.removeEventListener('afterprint', clearPrintMode)
   clearPrintMode()
 })
@@ -637,6 +635,10 @@ onUnmounted(() => {
             </div>
 
             <div class="timeline-actions">
+              <!-- <button v-if="canCancelOrder" type="button" class="btn btn-outline-danger btn-sm cancel-order-button"
+                :disabled="confirmSubmitting || updatingStatus" @click="openCancelModal">
+                <i class="bi bi-x-circle"></i> Hủy đơn hàng
+              </button> -->
               <button
                 class="soft-button btn btn-outline-primary btn-sm"
                 type="button"
@@ -954,16 +956,7 @@ onUnmounted(() => {
 
 
       <!-- Toast cục bộ cho thao tác cập nhật DB -->
-      <div v-if="toast.visible" class="invoice-toast toast show" role="alert" aria-live="assertive">
-        <div class="toast-icon" :class="toast.type === 'success' ? 'success' : 'error'">
-          <i :class="toast.type === 'success' ? 'bi bi-check-lg' : 'bi bi-x-lg'"></i>
-        </div>
-        <div class="toast-body">
-          <strong>{{ toast.title }}</strong>
-          <span>{{ toast.message }}</span>
-        </div>
-        <button type="button" class="btn-close ms-auto" aria-label="Đóng" @click="toast.visible = false"></button>
-      </div>
+      
 
       <!-- Modal xác nhận hủy đơn hàng
       <div
@@ -1050,16 +1043,16 @@ onUnmounted(() => {
                 </div>
 
                 <label class="form-label mt-3 mb-2">Trạng thái</label>
-                <Select2Field
-                  v-model="selectedStatus"
-                  :options="editableStatusOptions.map(option => ({
-                    value: option.value,
-                    label: option.label + (option.value === Number(invoice.statusCode) ? ' (hiện tại)' : '')
-                  }))"
-                  placeholder="Chọn trạng thái"
+                <select
+                  v-model.number="selectedStatus"
+                  class="form-select"
+                  aria-label="Trạng thái đơn hàng"
                   :disabled="updatingStatus || !canUpdateStatus"
-                  :allow-clear="false"
-                />
+                >
+                  <option v-for="option in editableStatusOptions" :key="option.value" :value="option.value">
+                    {{ option.label }}{{ option.value === Number(invoice.statusCode) ? ' (hiện tại)' : '' }}
+                  </option>
+                </select>
                 <div class="form-text">
                   Chỉ được chuyển sang trạng thái kế tiếp theo đúng quy trình của đơn hàng.
                 </div>

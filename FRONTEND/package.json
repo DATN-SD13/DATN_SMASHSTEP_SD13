@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:regression": "node scripts/regression.mjs"
   },
   "dependencies": {
     "axios": "^1.12.2",

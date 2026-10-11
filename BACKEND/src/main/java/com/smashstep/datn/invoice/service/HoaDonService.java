@@ -110,6 +110,9 @@ public class HoaDonService {
         HoaDon hoaDon = hoaDonRepository.findByMaHoaDonForUpdate(ma.trim())
                 .orElseThrow(() -> AppException.notFound("Không tìm thấy hóa đơn: " + ma));
         Integer trangThaiHienTai = hoaDon.getTrangThai();
+        if (java.util.Objects.equals(trangThaiHienTai, request.getTrangThai())) {
+            throw AppException.badRequest("Trạng thái mới phải khác trạng thái hiện tại.");
+        }
 
         if (request.getTrangThai() == TrangThaiHoaDon.DA_HUY.getMa()) {
             if (trangThaiHienTai != null && trangThaiHienTai == TrangThaiHoaDon.HOAN_THANH.getMa()) {
@@ -156,13 +159,13 @@ public class HoaDonService {
         if (idNhanVienThaoTac == null && hoaDon.getIdNhanVien() != null) {
             idNhanVienThaoTac = hoaDon.getIdNhanVien().getId();
         }
-        if (idNhanVienThaoTac != null) {
+        if (request.getIdNhanVien() != null) {
             NhanVien nhanVien = nhanVienRepository.findById(idNhanVienThaoTac)
                     .orElseThrow(() -> AppException.notFound("Không tìm thấy nhân viên"));
             if (!Integer.valueOf(1).equals(nhanVien.getTrangThai())) {
                 throw AppException.badRequest("Nhân viên thao tác phải đang hoạt động");
             }
-            hoaDon.setIdNhanVien(nhanVien);
+            // Actor is recorded in history; the invoice owner remains unchanged.
         }
         hoaDon.setTrangThai(request.getTrangThai());
         hoaDon.setNgayCapNhat(LocalDateTime.now());

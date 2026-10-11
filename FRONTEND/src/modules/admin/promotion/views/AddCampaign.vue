@@ -1,4 +1,5 @@
 <script setup>
+import { askToLeave } from '../../../../utils/feedback'
 import AdminLayout from "../../../../layouts/AdminLayout.vue";
 import Select2Input from "../components/Select2Input.vue";
 import { computed, reactive, ref, onMounted, watch } from "vue";
@@ -441,7 +442,7 @@ onBeforeRouteLeave(() => {
     return true;
   }
 
-  return window.confirm(
+  return askToLeave(
     "Bạn có thông tin chưa lưu. Bạn có chắc chắn muốn rời khỏi trang không?",
   );
 });
