@@ -33,6 +33,71 @@ const form = ref({
   desc: "",
 });
 
+// 1. Khai báo ngày và giờ
+const startDate = ref("");
+const startTime = ref("08:00:00");
+
+const endDate = ref("");
+const endTime = ref("23:59:59");
+
+// 2. Hàm ghép ngày và giờ
+function combineDateTime(date, time) {
+  if (!date || !time) return "";
+
+  const parts = time.split(":");
+
+  if (parts.length === 2) {
+    parts.push("00");
+  }
+
+  if (parts.length !== 3) return "";
+
+  const [hour, minute, second] = parts.map(Number);
+
+  if (
+    !Number.isInteger(hour) ||
+    hour < 0 ||
+    hour > 23 ||
+    !Number.isInteger(minute) ||
+    minute < 0 ||
+    minute > 59 ||
+    !Number.isInteger(second) ||
+    second < 0 ||
+    second > 59
+  ) {
+    return "";
+  }
+
+  return `${date}T${parts.map((x) => String(x).padStart(2, "0")).join(":")}`;
+}
+
+// 3. Hàm tách ngày và giờ từ backend
+function splitDateTime(value) {
+  if (!value) return { date: "", time: "" };
+
+  const [date, rawTime = "00:00:00"] = value.split("T");
+
+  const timeParts = rawTime.slice(0, 8).split(":");
+
+  return {
+    date,
+    time: [
+      timeParts[0] || "00",
+      timeParts[1] || "00",
+      (timeParts[2] || "00").padStart(2, "0"),
+    ].join(":"),
+  };
+}
+
+// 4. Đồng bộ ngày giờ vào form
+watch([startDate, startTime], () => {
+  form.value.start = combineDateTime(startDate.value, startTime.value);
+});
+
+watch([endDate, endTime], () => {
+  form.value.end = combineDateTime(endDate.value, endTime.value);
+});
+
 // ======================================
 // DANH SÁCH SẢN PHẨM
 // ======================================
@@ -262,6 +327,7 @@ const money = (n) => `${Number(n || 0).toLocaleString("vi-VN")} đ`;
 // ======================================
 // LOAD DỮ LIỆU CŨ ĐỂ EDIT
 // ======================================
+
 async function loadEditData() {
   try {
     loading.value = true;
@@ -284,6 +350,7 @@ async function loadEditData() {
       return;
     }
 
+    // 1. Đổ dữ liệu vào form
     form.value = {
       code: data.code || "",
       name: data.name || "",
@@ -293,9 +360,24 @@ async function loadEditData() {
       desc: data.description || "",
     };
 
+    // 2. Tách ngày và giờ bắt đầu
+    const startParts = splitDateTime(data.startDate);
+    startDate.value = startParts.date;
+    startTime.value = startParts.time;
+
+    // 3. Tách ngày và giờ kết thúc
+    const endParts = splitDateTime(data.endDate);
+    endDate.value = endParts.date;
+    endTime.value = endParts.time;
+
+    // 4. Tải sản phẩm và biến thể đã chọn
     await loadProducts();
 
     selected.value = [...(data.productDetailIds || [])];
+
+    // 5. Lưu trạng thái ban đầu sau khi đồng bộ toàn bộ dữ liệu
+    originalData.value = getCurrentData();
+    hasUnsavedChanges.value = false;
   } catch (error) {
     console.error("Lỗi tải đợt giảm giá:", error);
 
@@ -305,8 +387,6 @@ async function loadEditData() {
   } finally {
     loading.value = false;
   }
-  originalData.value = getCurrentData();
-  hasUnsavedChanges.value = false;
 }
 
 // ======================================
@@ -494,19 +574,59 @@ onMounted(loadEditData);
               />
             </div>
 
-            <div class="two">
-              <div class="ss-field">
-                <label class="ss-label">
-                  Từ ngày <span class="req">*</span>
-                </label>
-                <input class="ss-input" type="date" v-model="form.start" />
+            <!-- THỜI GIAN ÁP DỤNG -->
+            <div class="campaign-datetime">
+              <div class="datetime-heading">
+                <i class="bi bi-calendar2-week"></i>
+                <span>Thời gian áp dụng</span>
               </div>
 
-              <div class="ss-field">
+              <!-- BẮT ĐẦU -->
+              <div class="datetime-group">
                 <label class="ss-label">
-                  Đến ngày <span class="req">*</span>
+                  Thời gian bắt đầu <span class="req">*</span>
                 </label>
-                <input class="ss-input" type="date" v-model="form.end" />
+
+                <div class="datetime-inputs">
+                  <div class="datetime-item">
+                    <span class="datetime-label">Ngày bắt đầu</span>
+                    <input class="ss-input" type="date" v-model="startDate" />
+                  </div>
+
+                  <div class="datetime-item">
+                    <span class="datetime-label">Giờ bắt đầu</span>
+                    <input
+                      class="ss-input"
+                      type="time"
+                      step="1"
+                      v-model="startTime"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <!-- KẾT THÚC -->
+              <div class="datetime-group">
+                <label class="ss-label">
+                  Thời gian kết thúc <span class="req">*</span>
+                </label>
+
+                <div class="datetime-inputs">
+                  <div class="datetime-item">
+                    <span class="datetime-label">Ngày kết thúc</span>
+                    <input class="ss-input" type="date" v-model="endDate" />
+                  </div>
+
+                  <div class="datetime-item">
+                    <span class="datetime-label">Giờ kết thúc</span>
+                    <input
+                      class="ss-input"
+                      type="time"
+                      step="1"
+                      v-model="endTime"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -518,8 +638,6 @@ onMounted(loadEditData);
                 placeholder="Nhập mô tả..."
               ></textarea>
             </div>
-
-           
 
             <button
               class="ss-btn block"
@@ -746,6 +864,54 @@ onMounted(loadEditData);
 </template>
 
 <style scoped>
+/* Giao diện chọn ngày giờ */
+.campaign-datetime {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 16px 0;
+}
+
+.datetime-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #1e40af;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.datetime-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.datetime-inputs {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+
+.datetime-item {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.datetime-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #64748b;
+}
+
+.datetime-item .ss-input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
 .edit-summary {
   display: flex;
   align-items: center;

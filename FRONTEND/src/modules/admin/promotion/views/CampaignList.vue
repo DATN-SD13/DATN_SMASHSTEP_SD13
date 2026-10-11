@@ -56,6 +56,24 @@ function formatDate(value) {
   return year && month && day ? `${day}/${month}/${year}` : "—";
 }
 
+function formatTime(value) {
+  if (!value) return "—";
+
+  const time = String(value).split("T")[1];
+
+  if (!time) return "00:00:00";
+
+  const parts = time.substring(0, 8).split(":");
+
+  return [parts[0] || "00", parts[1] || "00", parts[2] || "00"].join(":");
+}
+
+function formatDateTime(value) {
+  if (!value) return "—";
+
+  return `${formatDate(value)} ${formatTime(value)}`;
+}
+
 async function loadCampaigns() {
   const currentRequest = ++requestId;
 
@@ -105,6 +123,9 @@ async function loadCampaigns() {
       value: item.discountValue == null ? "—" : `${item.discountValue}%`,
       start: formatDate(item.startDate),
       end: formatDate(item.endDate),
+
+      startTime: formatTime(item.startDate),
+      endTime: formatTime(item.endDate),
       status: item.statusLabel || "—",
       statusValue: item.status,
       timeStatus: item.timeStatus,
@@ -292,8 +313,8 @@ async function exportExcel() {
       "Mã đợt giảm giá": item.code || "",
       "Tên đợt giảm giá": item.name || "",
       "Giá trị giảm (%)": Number(item.discountValue || 0),
-      "Ngày bắt đầu": formatDate(item.startDate),
-      "Ngày kết thúc": formatDate(item.endDate),
+      "Ngày bắt đầu": formatDateTime(item.startDate),
+      "Ngày kết thúc": formatDateTime(item.endDate),
       "Trạng thái": getDisplayStatus({
         statusValue: item.status,
         timeStatus: item.timeStatus,
@@ -309,8 +330,8 @@ async function exportExcel() {
       { wch: 20 },
       { wch: 40 },
       { wch: 20 },
-      { wch: 18 },
-      { wch: 18 },
+      { wch: 23 },
+      { wch: 23 },
       { wch: 22 },
     ];
 
@@ -499,13 +520,25 @@ onUnmounted(() => {
                 </td>
 
                 <!-- NGÀY BẮT ĐẦU -->
-                <td class="nowrap">
-                  {{ x.start }}
+                <td>
+                  <div class="campaign-date-cell">
+                    <strong>{{ x.start }}</strong>
+                    <span>
+                      <i class="bi bi-clock"></i>
+                      {{ x.startTime }}
+                    </span>
+                  </div>
                 </td>
 
                 <!-- NGÀY KẾT THÚC -->
-                <td class="nowrap">
-                  {{ x.end }}
+                <td>
+                  <div class="campaign-date-cell">
+                    <strong>{{ x.end }}</strong>
+                    <span>
+                      <i class="bi bi-clock"></i>
+                      {{ x.endTime }}
+                    </span>
+                  </div>
                 </td>
 
                 <!-- TRẠNG THÁI -->
@@ -620,5 +653,33 @@ onUnmounted(() => {
 .ss-pill.secondary {
   background: #f1f5f9;
   color: #475569;
+}
+
+/* Ngày giờ trong bảng đợt giảm giá */
+.campaign-date-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 110px;
+}
+
+.campaign-date-cell strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e293b;
+  white-space: nowrap;
+}
+
+.campaign-date-cell span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.campaign-date-cell .bi-clock {
+  font-size: 12px;
 }
 </style>

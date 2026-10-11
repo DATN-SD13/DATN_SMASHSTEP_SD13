@@ -81,23 +81,21 @@ public class DotGiamGiaSpecification {
             // =========================================
             // NGÀY KẾT THÚC <= ĐẾN NGÀY
             // =========================================
+
             if (denNgay != null) {
 
-                LocalDateTime to =
-                        denNgay.atTime(
-                                23,
-                                59,
-                                59
-                        );
+                LocalDateTime toExclusive =
+                        denNgay.plusDays(1).atStartOfDay();
 
                 predicate = cb.and(
                         predicate,
-                        cb.lessThanOrEqualTo(
+                        cb.lessThan(
                                 root.get("ngayKetThuc"),
-                                to
+                                toExclusive
                         )
                 );
             }
+ 
 
             // =========================================
             // LỌC TRẠNG THÁI

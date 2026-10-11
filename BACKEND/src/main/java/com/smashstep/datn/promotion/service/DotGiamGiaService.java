@@ -189,17 +189,10 @@ public class DotGiamGiaService {
                 request.getDiscountValue()
         );
 
-        entity.setNgayBatDau(
-                request
-                        .getStartDate()
-                        .atStartOfDay()
-        );
 
-        entity.setNgayKetThuc(
-                request
-                        .getEndDate()
-                        .atTime(23, 59, 59)
-        );
+        entity.setNgayBatDau(request.getStartDate());
+        entity.setNgayKetThuc(request.getEndDate());
+
 
         entity.setMoTa(
                 request.getDescription()
@@ -438,13 +431,10 @@ public class DotGiamGiaService {
                 request.getDiscountValue()
         );
 
-        entity.setNgayBatDau(
-                request.getStartDate().atStartOfDay()
-        );
 
-        entity.setNgayKetThuc(
-                request.getEndDate().atTime(23, 59, 59)
-        );
+        entity.setNgayBatDau(request.getStartDate());
+        entity.setNgayKetThuc(request.getEndDate());
+
 
         entity.setMoTa(
                 request.getDescription()
@@ -590,74 +580,66 @@ public class DotGiamGiaService {
         }
     }
 
+
     private void validateProductPromotionConflict(
             List<Long> productDetailIds,
-            LocalDate startDate,
-            LocalDate endDate,
+            LocalDateTime startDate,
+            LocalDateTime endDate,
             Long currentPromotionId
     ) {
-
         if (productDetailIds == null || productDetailIds.isEmpty()) {
             return;
         }
 
+        if (startDate == null || endDate == null || endDate.isBefore(startDate)) {
+            throw AppException.badRequest("Khoảng thời gian không hợp lệ");
+        }
+
         validateVariants(productDetailIds);
-        for (Long productDetailId :
-                productDetailIds.stream().distinct().toList()) {
+
+        for (Long productDetailId : productDetailIds.stream().distinct().toList()) {
 
             List<ChiTietDotGiamGia> activePromotions =
                     chiTietDotGiamGiaRepository
                             .findActiveByProductDetailId(productDetailId);
 
             for (ChiTietDotGiamGia chiTiet : activePromotions) {
+                DotGiamGia otherPromotion = chiTiet.getIdDotGiamGia();
 
-                DotGiamGia otherPromotion =
-                        chiTiet.getIdDotGiamGia();
-
-                if (otherPromotion == null || otherPromotion.getNgayBatDau() == null
+                if (otherPromotion == null
+                        || otherPromotion.getNgayBatDau() == null
                         || otherPromotion.getNgayKetThuc() == null) {
                     continue;
                 }
 
-                // Khi UPDATE:
-                // bỏ qua chính đợt giảm giá đang sửa
+                // Khi cập nhật: bỏ qua chính đợt đang sửa
                 if (currentPromotionId != null
                         && currentPromotionId.equals(otherPromotion.getId())) {
                     continue;
                 }
 
-                LocalDate otherStart =
-                        otherPromotion
-                                .getNgayBatDau()
-                                .toLocalDate();
+                LocalDateTime otherStart = otherPromotion.getNgayBatDau();
+                LocalDateTime otherEnd = otherPromotion.getNgayKetThuc();
 
-                LocalDate otherEnd =
-                        otherPromotion
-                                .getNgayKetThuc()
-                                .toLocalDate();
-
-                // Hai khoảng thời gian bị giao nhau khi:
-                // start <= otherEnd
-                // và end >= otherStart
+                // Hai khoảng thời gian giao nhau khi:
+                // startDate <= otherEnd && endDate >= otherStart
                 boolean overlap =
                         !startDate.isAfter(otherEnd)
                                 && !endDate.isBefore(otherStart);
 
                 if (overlap) {
                     throw AppException.conflict(
-                            "Biến thể sản phẩm ID "
-                                    + productDetailId
+                            "Biến thể sản phẩm ID " + productDetailId
                                     + " đang thuộc đợt giảm giá "
                                     + otherPromotion.getMaDotGiamGia()
-                                    + " trong khoảng "
-                                    + otherStart
-                                    + " đến "
-                                    + otherEnd
+                                    + " từ " + otherStart
+                                    + " đến " + otherEnd
                     );
                 }
             }
         }
     }
+
 
     private DotGiamGiaResponse toResponse(DotGiamGia entity) {
 
@@ -676,17 +658,10 @@ public class DotGiamGiaService {
                 .name(entity.getTenDotGiamGia())
                 .discountValue(entity.getPhanTramGiamDot())
 
-                .startDate(
-                        entity.getNgayBatDau() == null
-                                ? null
-                                : entity.getNgayBatDau().toLocalDate()
-                )
 
-                .endDate(
-                        entity.getNgayKetThuc() == null
-                                ? null
-                                : entity.getNgayKetThuc().toLocalDate()
-                )
+                .startDate(entity.getNgayBatDau())
+                .endDate(entity.getNgayKetThuc())
+
 
                 .status(entity.getTrangThai())
 
@@ -758,15 +733,10 @@ public class DotGiamGiaService {
                             .distinct()
                             .toList();
 
-            LocalDate startDate =
-                    entity
-                            .getNgayBatDau()
-                            .toLocalDate();
 
-            LocalDate endDate =
-                    entity
-                            .getNgayKetThuc()
-                            .toLocalDate();
+            LocalDateTime startDate = entity.getNgayBatDau();
+            LocalDateTime endDate = entity.getNgayKetThuc();
+
 
             validateVariants(productDetailIds);
             // Kiểm tra xem các biến thể có đang nằm
@@ -805,34 +775,33 @@ public class DotGiamGiaService {
         return toResponse(saved);
     }
 
+
     private String getTimeStatus(DotGiamGia entity) {
 
         if (!Integer.valueOf(1).equals(entity.getTrangThai())) {
             return "NGUNG_HOAT_DONG";
         }
 
-        if (entity.getNgayBatDau() == null || entity.getNgayKetThuc() == null) {
+        LocalDateTime start = entity.getNgayBatDau();
+        LocalDateTime end = entity.getNgayKetThuc();
+
+        if (start == null || end == null) {
             return "KHONG_XAC_DINH";
         }
 
-        LocalDate today = LocalDate.now();
+        LocalDateTime now = LocalDateTime.now();
 
-        LocalDate startDate =
-                entity.getNgayBatDau().toLocalDate();
-
-        LocalDate endDate =
-                entity.getNgayKetThuc().toLocalDate();
-
-        if (today.isBefore(startDate)) {
+        if (now.isBefore(start)) {
             return "SAP_DIEN_RA";
         }
 
-        if (today.isAfter(endDate)) {
+        if (now.isAfter(end)) {
             return "DA_KET_THUC";
         }
 
         return "DANG_DIEN_RA";
     }
+
     private String getStatusLabel(
             Integer status
     ) {

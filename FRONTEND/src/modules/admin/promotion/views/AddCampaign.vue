@@ -1,7 +1,7 @@
 <script setup>
 import AdminLayout from "../../../../layouts/AdminLayout.vue";
 import Select2Input from "../components/Select2Input.vue";
-import { computed, reactive, ref, onMounted } from "vue";
+import { computed, reactive, ref, onMounted, watch } from "vue";
 import { useRouter, onBeforeRouteLeave } from "vue-router";
 import api from "../../../../utils/api";
 import { showSuccess, showError } from "../../../../utils/feedback";
@@ -18,6 +18,61 @@ const form = ref({
   end: "",
   desc: "",
 });
+
+// Tách ngày và giờ để nhập riêng
+const startDate = ref("");
+const startTime = ref("08:00:00");
+
+const endDate = ref("");
+const endTime = ref("23:59:59");
+
+// Ghép ngày và giờ theo định dạng backend LocalDateTime
+function combineDateTime(date, time) {
+  if (!date) return "";
+
+  const parts = time.split(":");
+
+  if (parts.length === 2) {
+    parts.push("00");
+  }
+
+  if (parts.length !== 3) return "";
+
+  const [hour, minute, second] = parts.map(Number);
+
+  if (
+    !Number.isInteger(hour) ||
+    hour < 0 ||
+    hour > 23 ||
+    !Number.isInteger(minute) ||
+    minute < 0 ||
+    minute > 59 ||
+    !Number.isInteger(second) ||
+    second < 0 ||
+    second > 59
+  ) {
+    return "";
+  }
+
+  return `${date}T${parts.join(":")}`;
+}
+
+// Đồng bộ dữ liệu vào form hiện tại
+watch(
+  [startDate, startTime],
+  () => {
+    form.value.start = combineDateTime(startDate.value, startTime.value);
+  },
+  { immediate: true },
+);
+
+watch(
+  [endDate, endTime],
+  () => {
+    form.value.end = combineDateTime(endDate.value, endTime.value);
+  },
+  { immediate: true },
+);
 
 // =====================================================
 // DỮ LIỆU SẢN PHẨM THẬT TỪ BACKEND
@@ -438,23 +493,59 @@ onBeforeRouteLeave(() => {
             />
           </div>
 
-          <div class="two">
-            <div class="ss-field">
-              <label class="ss-label">
-                Từ ngày
-                <span class="req">*</span>
-              </label>
-
-              <input class="ss-input" type="date" v-model="form.start" />
+          <!-- THỜI GIAN ÁP DỤNG ĐỢT GIẢM GIÁ -->
+          <div class="campaign-datetime">
+            <div class="datetime-heading">
+              <i class="bi bi-calendar2-week"></i>
+              <span>Thời gian áp dụng</span>
             </div>
 
-            <div class="ss-field">
+            <!-- BẮT ĐẦU -->
+            <div class="datetime-group">
               <label class="ss-label">
-                Đến ngày
-                <span class="req">*</span>
+                Thời gian bắt đầu <span class="req">*</span>
               </label>
 
-              <input class="ss-input" type="date" v-model="form.end" />
+              <div class="datetime-inputs">
+                <div class="datetime-item">
+                  <span class="datetime-label">Ngày bắt đầu</span>
+                  <input class="ss-input" type="date" v-model="startDate" />
+                </div>
+
+                <div class="datetime-item">
+                  <span class="datetime-label">Giờ bắt đầu</span>
+                  <input
+                    class="ss-input"
+                    type="time"
+                    step="1"
+                    v-model="startTime"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <!-- KẾT THÚC -->
+            <div class="datetime-group">
+              <label class="ss-label">
+                Thời gian kết thúc <span class="req">*</span>
+              </label>
+
+              <div class="datetime-inputs">
+                <div class="datetime-item">
+                  <span class="datetime-label">Ngày kết thúc</span>
+                  <input class="ss-input" type="date" v-model="endDate" />
+                </div>
+
+                <div class="datetime-item">
+                  <span class="datetime-label">Giờ kết thúc</span>
+                  <input
+                    class="ss-input"
+                    type="time"
+                    step="1"
+                    v-model="endTime"
+                  />
+                </div>
+              </div>
             </div>
           </div>
 
@@ -980,5 +1071,53 @@ button:disabled {
 
 .ss-summary-row strong {
   text-align: right;
+}
+
+/* Thời gian áp dụng */
+.campaign-datetime {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 16px 0;
+}
+
+.datetime-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #1e40af;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.datetime-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.datetime-inputs {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+
+.datetime-item {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.datetime-label {
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.datetime-item .ss-input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 </style>

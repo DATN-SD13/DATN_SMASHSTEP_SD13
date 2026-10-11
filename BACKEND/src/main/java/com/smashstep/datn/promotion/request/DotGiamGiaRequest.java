@@ -1,3 +1,4 @@
+
 package com.smashstep.datn.promotion.request;
 
 import jakarta.validation.constraints.DecimalMax;
@@ -7,11 +8,12 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
+
 import lombok.Getter;
 import lombok.Setter;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Getter
@@ -36,14 +38,17 @@ public class DotGiamGiaRequest {
     )
     private BigDecimal discountValue;
 
-    @NotNull(message = "Ngày bắt đầu không được để trống")
-    private LocalDate startDate;
+    // Ngày + giờ + phút + giây
+    @NotNull(message = "Thời gian bắt đầu không được để trống")
+    private LocalDateTime startDate;
 
-    @NotNull(message = "Ngày kết thúc không được để trống")
-    private LocalDate endDate;
+    @NotNull(message = "Thời gian kết thúc không được để trống")
+    private LocalDateTime endDate;
 
-    @Size(max = 1000) private String description;
+    @Size(max = 1000)
+    private String description;
 
     @NotEmpty(message = "Vui lòng chọn ít nhất một biến thể sản phẩm")
-    @Size(max = 1000) private List<@NotNull @Positive Long> productDetailIds;
+    @Size(max = 1000)
+    private List<@NotNull @Positive Long> productDetailIds;
 }
