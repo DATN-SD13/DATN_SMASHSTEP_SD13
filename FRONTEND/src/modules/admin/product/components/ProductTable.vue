@@ -17,7 +17,7 @@ defineEmits(['status'])
         <template v-else>
           <tr v-for="(p, i) in rows" :key="p.id">
             <td>{{ (offset || 0) + i + 1 }}</td>
-            <td><ProductThumbnail :url="p.anhChinh" :alt="p.tenSanPham" /></td>
+            <td><ProductThumbnail :url="p.anhChinh" :alt="p.tenSanPham" :item="p" range /></td>
             <td><strong>{{ p.maSanPham }}</strong></td>
             <td class="p-name">{{ p.tenSanPham }}</td>
             <td>{{ p.tenDanhMuc || '—' }}</td>

@@ -1,4 +1,5 @@
 <script setup>
+import SaleImageBadge from './SaleImageBadge.vue'
 import { useProductFeedback } from '../composables/useProductToast'
 import { ref, computed, watch } from 'vue'
 import { productService, variantService, errorMessage } from '../services/productService'
@@ -8,6 +9,7 @@ import ConfirmModal from './ConfirmModal.vue'
 import { useConfirmation } from '../composables/useConfirmation'
 
 const props = defineProps({
+  saleItem: Object,
   variantId: Number, productId: Number, productCode: String, images: { type: Array, default: () => [] },
   modelValue: Array, deferred: Boolean, loading: Boolean
 })
@@ -88,8 +90,11 @@ useProductFeedback(error, success)
     </div>
     <div class="p-images" style="margin-top:18px">
       <div v-for="image in images" :key="image.id" class="p-image">
-        <img v-if="imageUrl(image.urlAnh) && !failed[image.id]" :src="imageUrl(image.urlAnh)" alt="Ảnh sản phẩm" loading="lazy" referrerpolicy="no-referrer" @error="failed[image.id] = true" />
-        <div v-else class="p-image-error">Không tải được ảnh</div>
+        <div class="p-product-image-wrap">
+          <img v-if="imageUrl(image.urlAnh) && !failed[image.id]" :src="imageUrl(image.urlAnh)" alt="Ảnh sản phẩm" loading="lazy" referrerpolicy="no-referrer" @error="failed[image.id] = true" />
+          <div v-else class="p-image-error">Không tải được ảnh</div>
+          <SaleImageBadge v-if="image.isAnhChinh && imageUrl(image.urlAnh) && !failed[image.id]" :item="saleItem" range />
+        </div>
         <span v-if="image.isAnhChinh" class="p-badge active">Ảnh chính</span>
         <div class="p-actions">
           <button v-if="!image.isAnhChinh" class="p-btn" type="button" :disabled="locked" @click="askImage('Xác nhận chọn ảnh chính', image, 'chọn ảnh này làm ảnh chính')">Chọn ảnh chính</button>
@@ -103,3 +108,8 @@ useProductFeedback(error, success)
     </ConfirmModal>
   </section>
 </template>
+
+<style scoped>
+.p-product-image-wrap{position:relative;display:block}
+.p-product-image-wrap img{display:block}
+</style>

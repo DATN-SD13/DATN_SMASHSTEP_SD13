@@ -1,3 +1,4 @@
+import { discountPercent, hasDiscount } from '../src/modules/admin/product/services/discountBadge.js'
 import fs from 'node:fs'
 import vm from 'node:vm'
 import assert from 'node:assert/strict'
@@ -70,3 +71,20 @@ first.success('Lưu thành công'); assert.equal(first.toast.value.id, id)
 first.error('Không lưu được'); assert.equal(afterNavigation.toast.value.type, 'error')
 first.close(); assert.equal(afterNavigation.toast.value, null)
 console.log('PASS: shared toast persists across consumers, suppresses duplicate notices and displays errors.')
+
+for (const [value, expected] of [[20, 20], ['20.0', 20], ['20.00', 20], [12.5, 12.5], ['12.50', 12.5]]) {
+  const product = { dangGiamGia: true, phanTramGiamCaoNhat: value }
+  assert.equal(hasDiscount(product, true), true)
+  assert.equal(discountPercent(product, true), expected)
+}
+for (const value of [null, undefined, 0, -1, 'NaN', Infinity]) {
+  assert.equal(hasDiscount({ dangGiamGia: true, phanTramGiamCaoNhat: value }, true), false)
+}
+for (const flag of [false, null, undefined, 1, 'true']) {
+  assert.equal(hasDiscount({ dangGiamGia: flag, phanTramGiamCaoNhat: 20 }, true), false)
+}
+const variant = { dangGiamGia: true, phanTramGiamCaoNhat: 20, phanTramGiamHienTai: 10 }
+assert.equal(discountPercent(variant), 10)
+assert.equal(discountPercent(variant, true), 20)
+assert.equal(hasDiscount({ ...variant, phanTramGiamHienTai: 0 }), false)
+console.log('PASS: sale image badge canonical percentage, decimal formatting, invalid/inactive hiding, product maximum and variant own percentage regressions.')

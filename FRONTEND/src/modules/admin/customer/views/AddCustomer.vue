@@ -2,14 +2,11 @@
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import AvatarCard from '../../../../components/AvatarCard.vue'
 import { persistAvatar } from '../../../../utils/avatar'
-import { computed, ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import {
-  provinceNames,
-  wardsOf
-} from '../../../../utils/address'
+import { useAddressApi } from '../../../../composables/useAddressApi'
 import customerService from '../services/customerService'
-import { showSuccess, showError } from '../../../../utils/feedback'
+import { confirmAction, showSuccess, showError } from '../../../../utils/feedback'
 
 const router = useRouter()
 
@@ -31,9 +28,15 @@ const f = ref({
   addressType: 1
 })
 
-const wards = computed(
-  () => wardsOf(f.value.province)
-)
+const { provinces, wards, loadingProvinces, loadingWards, addressError, changeProvince, resetAddress } = useAddressApi(f)
+// Use customer details for the default recipient until the user enters a different recipient.
+watch(() => f.value.name, (name, previous) => {
+  if (!f.value.rName || f.value.rName === previous) f.value.rName = name
+})
+watch(() => f.value.phone, (phone, previous) => {
+  if (!f.value.rPhone || f.value.rPhone === previous) f.value.rPhone = phone
+})
+
 
 const err = ref('')
 const saving = ref(false)
@@ -42,6 +45,76 @@ const errorMessage = (e) =>
   e?.response?.data?.message || e?.message ||
   'Không thể tạo khách hàng, vui lòng thử lại.'
 
+function getMaxDob() {
+  const today = new Date()
+
+  const date = new Date(
+    today.getFullYear() - 15,
+    today.getMonth(),
+    today.getDate()
+  )
+
+  const year = date.getFullYear()
+
+  const month = String(
+    date.getMonth() + 1
+  ).padStart(2, '0')
+
+  const day = String(
+    date.getDate()
+  ).padStart(2, '0')
+
+  return `${year}-${month}-${day}`
+}
+
+const maxDob = getMaxDob()
+
+function validateAge(dobValue) {
+  if (!dobValue) {
+    return false
+  }
+
+  const dob = new Date(
+    `${dobValue}T00:00:00`
+  )
+
+  if (
+    Number.isNaN(
+      dob.getTime()
+    )
+  ) {
+    return false
+  }
+
+  const today = new Date()
+
+  const minimumDob = new Date(
+    today.getFullYear() - 15,
+    today.getMonth(),
+    today.getDate()
+  )
+
+  dob.setHours(
+    0,
+    0,
+    0,
+    0
+  )
+
+  minimumDob.setHours(
+    0,
+    0,
+    0,
+    0
+  )
+
+  return dob <= minimumDob
+}
+
+/* ================================
+   ERROR
+-------------------------------- */
+
 async function save() {
   if (saving.value) return
   const v = f.value
@@ -49,6 +122,8 @@ async function save() {
   if (
     !v.name.trim() ||
     !v.email.trim() ||
+    !v.phone.trim() ||
+    !v.dob ||
     !v.rName.trim() ||
     !v.rPhone.trim() ||
     !v.province ||
@@ -85,15 +160,19 @@ async function save() {
     return
   }
 
-  if (
-    v.dob &&
-    new Date(v.dob) > new Date()
-  ) {
-    err.value =
-      'Ngày sinh không được lớn hơn ngày hiện tại.'
+  if (!validateAge(v.dob)) {
+    err.value = 'Khách hàng phải đủ 15 tuổi trở lên.'
+    showError(err.value)
     return
   }
-
+  if (v.gender !== '' && ![0, 1, 2].includes(Number(v.gender))) {
+    err.value = 'Giới tính không hợp lệ.'; return
+  }
+  if (![1, 2].includes(Number(v.addressType))) {
+    err.value = 'Loại địa chỉ không hợp lệ.'; return
+  }
+  confirmAction('Xác nhận thêm khách hàng?', async () => {
+  if (saving.value) return
   saving.value = true
   err.value = ''
 
@@ -159,6 +238,7 @@ async function save() {
   } finally {
     saving.value = false
   }
+  })
 }
 </script>
 
@@ -167,6 +247,7 @@ async function save() {
     <main class="ss-page">
 
       <div>
+    <p v-if="addressError" class="ss-alert error" role="alert">{{ addressError }}</p>
         <button
           class="ss-back"
           aria-label="Quay lại"
@@ -240,7 +321,7 @@ async function save() {
 
               <div class="ss-field">
                 <label class="ss-label">
-                  Số điện thoại
+                  Số điện thoại <span class="req">*</span>
                 </label>
 
                 <input
@@ -283,13 +364,13 @@ async function save() {
               <div class="ss-field">
 
                 <label class="ss-label">
-                  Ngày sinh
+                  Ngày sinh <span class="req">*</span>
                 </label>
 
                 <input
                   class="ss-input"
                   type="date"
-                  v-model="f.dob"
+                  v-model="f.dob" :max="maxDob"
                 />
 
               </div>
@@ -339,7 +420,7 @@ async function save() {
               <div class="ss-field">
 
                 <label class="ss-label">
-                  Số điện thoại
+                  Số điện thoại <span class="req">*</span>
                   <span class="req">*</span>
                 </label>
 
@@ -358,25 +439,10 @@ async function save() {
                   <span class="req">*</span>
                 </label>
 
-                <select
-                  class="ss-select"
-                  v-model="f.province"
-                  @change="f.ward = ''"
-                >
-
-                  <option value="">
-                    -- Chọn tỉnh/thành --
-                  </option>
-
-                  <option
-                    v-for="p in provinceNames"
-                    :key="p"
-                    :value="p"
-                  >
-                    {{ p }}
-                  </option>
-
-                </select>
+                <select class="ss-select" v-model="f.province" :disabled="loadingProvinces" @change="changeProvince">
+              <option value="">Chọn tỉnh/thành</option>
+              <option v-for="p in provinces" :key="p.code" :value="p.name">{{ p.name }}</option>
+            </select>
 
               </div>
 
@@ -387,25 +453,10 @@ async function save() {
                   <span class="req">*</span>
                 </label>
 
-                <select
-                  class="ss-select"
-                  v-model="f.ward"
-                  :disabled="!f.province"
-                >
-
-                  <option value="">
-                    -- Chọn phường/xã --
-                  </option>
-
-                  <option
-                    v-for="w in wards"
-                    :key="w"
-                    :value="w"
-                  >
-                    {{ w }}
-                  </option>
-
-                </select>
+                <select class="ss-select" v-model="f.ward" :disabled="loadingWards || !f.province">
+              <option value="">Chọn phường/xã</option>
+              <option v-for="w in wards" :key="w.code" :value="w.name">{{ w.name }}</option>
+            </select>
 
               </div>
 

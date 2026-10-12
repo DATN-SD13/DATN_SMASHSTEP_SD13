@@ -5,10 +5,7 @@ import {
   ref
 } from 'vue'
 
-import {
-  provinceNames,
-  wardsOf
-} from '../../../../utils/address'
+import { useAddressApi } from '../../../../composables/useAddressApi'
 
 import customerService
   from '../services/customerService'
@@ -48,11 +45,7 @@ const f = ref(
   emptyForm()
 )
 
-const wards = computed(
-  () => wardsOf(
-    f.value.province
-  )
-)
+const { provinces, wards, loadingProvinces, loadingWards, addressError, changeProvince, resetAddress } = useAddressApi(f)
 
 const errorMessage = (e) =>
   e?.response?.data?.message ||
@@ -78,6 +71,7 @@ function resetForm() {
   if (saving.value) return
   editingId.value = null
   f.value = emptyForm()
+    resetAddress()
   err.value = ''
   msg.value = ''
 }
@@ -187,6 +181,7 @@ async function save() {
 
     editingId.value = null
     f.value = emptyForm()
+    resetAddress()
 
     await load()
     msg.value = 'Đã lưu địa chỉ thành công.'
@@ -238,6 +233,7 @@ async function stop(a) {
       if (editingId.value === a.id) {
         editingId.value = null
         f.value = emptyForm()
+    resetAddress()
       }
       await load()
       msg.value = 'Đã ngừng sử dụng địa chỉ.'
@@ -260,6 +256,7 @@ onMounted(load)
     class="modal-mask"
     @click.self="$emit('close')"
   >
+    <p v-if="addressError" class="ss-alert error" role="alert">{{ addressError }}</p>
     <section class="modal-card">
 
       <div class="modal-head">
@@ -420,34 +417,9 @@ onMounted(load)
               <span class="req">*</span>
             </label>
 
-            <select
-              class="ss-select"
-              v-model="f.province"
-              @change="f.ward = ''"
-            >
-              <option value="">
-                -- Chọn tỉnh/thành --
-              </option>
-
-              <option
-                v-if="
-                  f.province
-                  && !provinceNames.includes(
-                    f.province
-                  )
-                "
-                :value="f.province"
-              >
-                {{ f.province }}
-              </option>
-
-              <option
-                v-for="p in provinceNames"
-                :key="p"
-                :value="p"
-              >
-                {{ p }}
-              </option>
+            <select class="ss-select" v-model="f.province" :disabled="loadingProvinces" @change="changeProvince">
+              <option value="">Chọn tỉnh/thành</option>
+              <option v-for="p in provinces" :key="p.code" :value="p.name">{{ p.name }}</option>
             </select>
           </div>
 
@@ -458,34 +430,9 @@ onMounted(load)
               <span class="req">*</span>
             </label>
 
-            <select
-              class="ss-select"
-              v-model="f.ward"
-              :disabled="!f.province"
-            >
-              <option value="">
-                -- Chọn phường/xã --
-              </option>
-
-              <option
-                v-if="
-                  f.ward
-                  && !wards.includes(
-                    f.ward
-                  )
-                "
-                :value="f.ward"
-              >
-                {{ f.ward }}
-              </option>
-
-              <option
-                v-for="w in wards"
-                :key="w"
-                :value="w"
-              >
-                {{ w }}
-              </option>
+            <select class="ss-select" v-model="f.ward" :disabled="loadingWards || !f.province">
+              <option value="">Chọn phường/xã</option>
+              <option v-for="w in wards" :key="w.code" :value="w.name">{{ w.name }}</option>
             </select>
           </div>
 
