@@ -12,6 +12,11 @@ public class HinhAnhSanPhamResponse {
     private String urlAnh;
     private Boolean isAnhChinh;
     private Long sanPhamId;
+    private Long sanPhamChiTietId;
+
+    public HinhAnhSanPhamResponse(Long id, String urlAnh, Boolean isAnhChinh, Long sanPhamId) {
+        this(id, urlAnh, isAnhChinh, sanPhamId, null);
+    }
 
     public HinhAnhSanPhamResponse(Long id, String urlAnh, Boolean isAnhChinh) {
         this(id, urlAnh, isAnhChinh, null);

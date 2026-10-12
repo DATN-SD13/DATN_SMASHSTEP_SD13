@@ -1,4 +1,5 @@
 <script setup>
+import { useProductToast } from '../../product/composables/useProductToast'
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -27,34 +28,12 @@ const form = ref({
   status: 1,
   description: '',
   customerIds: []
-  
+
 })
 
-const toast = ref({
-  visible: false,
-  type: 'success',
-  title: '',
-  message: ''
-})
+const { show: showToast } = useProductToast()
 
-let toastTimer = null
-  
-function showLocalToast(type, title, message) {
-  toast.value = {
-    visible: true,
-    type,
-    title,
-    message
-  }
-
-  if (toastTimer) {
-    window.clearTimeout(toastTimer)
-  }
-
-  toastTimer = window.setTimeout(() => {
-    toast.value.visible = false
-  }, 3000)
-}
+function showLocalToast(type, title, message) { showToast(type, message, title) }
 
 
 function generateCode() {
@@ -209,17 +188,17 @@ async function handleConfirm() {
   saving.value = true
 
   try {
-    await createDiscount({
+    const response = await createDiscount({
       ...form.value
     })
 
     showConfirm.value = false
 
-    showLocalToast(
-      'success',
-      'Tạo thành công',
-      'Tạo phiếu giảm giá thành công!'
-    )
+    if (response.data?.success !== true) throw new Error(response.data?.message || 'Lưu phiếu thất bại')
+    const email = response.data?.data?.emailResult
+    showLocalToast(email?.failed > 0 ? 'warning' : 'success',
+      email?.failed > 0 ? 'Đã lưu phiếu; email chưa gửi đủ' : 'Thành công',
+      'Tạo phiếu giảm giá thành công!' + (email && email.status !== 'NOT_REQUESTED' ? ' ' + email.message : ''))
 
     setTimeout(() => {
       router.push('/giam-gia')
@@ -283,52 +262,6 @@ async function handleConfirm() {
 
     <!-- thong bao popup -->
 
-    <div
-      v-if="toast.visible"
-      class="ss-toast"
-      :class="`ss-toast-${toast.type}`"
-    >
-
-      <!-- Icon -->
-      <div class="ss-toast-icon">
-
-        <i
-          v-if="toast.type === 'success'"
-          class="bi bi-check-circle-fill"
-        ></i>
-
-        <i
-          v-else
-          class="bi bi-x-circle-fill"
-        ></i>
-
-      </div>
-
-      <!-- noi dung -->
-      <div class="ss-toast-content">
-
-        <strong>
-          {{ toast.title }}
-        </strong>
-
-        <span>
-          {{ toast.message }}
-        </span>
-
-      </div>
-
-      <!-- dong -->
-      <button
-        type="button"
-        class="ss-toast-close"
-        @click="toast.visible = false"
-      >
-        ×
-      </button>
-
-      
-    </div>
-    
     <ConfirmModal
             :visible="showConfirm"
             title="Xác nhận thêm"

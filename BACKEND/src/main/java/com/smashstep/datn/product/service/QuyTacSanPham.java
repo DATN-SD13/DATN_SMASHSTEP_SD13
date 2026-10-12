@@ -14,6 +14,17 @@ public final class QuyTacSanPham {
         return giaTri == null ? "" : giaTri.trim();
     }
 
+    public static String normalizeBusinessName(String value) {
+        return boKhoangTrang(value).replaceAll("(?U)\\s+", " ").trim().toLowerCase(Locale.ROOT);
+    }
+
+    public static String businessNamePattern(String value) {
+        // LIKE narrows candidates; Java performs the exact, accent-preserving comparison.
+        return "%" + normalizeBusinessName(value).replace("\\", "\\\\")
+                .replace("%", "\\%").replace("_", "\\_").replace("[", "\\[")
+                .replace(" ", "%") + "%";
+    }
+
     public static void kiemTraTrangThai(Integer trangThai) {
         if (trangThai != null && trangThai != 0 && trangThai != 1) {
             throw AppException.badRequest("Trạng thái phải là 0 hoặc 1");

@@ -8,11 +8,9 @@ import com.smashstep.datn.promotion.entity.PhieuGiamGiaKhachHang;
 import com.smashstep.datn.promotion.repository.PhieuGiamGiaKhachHangRepository;
 import com.smashstep.datn.promotion.repository.PhieuGiamGiaRepository;
 import com.smashstep.datn.promotion.response.PhieuGiamGiaRequest;
-import com.smashstep.datn.promotion.service.EmailService;
 import com.smashstep.datn.promotion.service.PhieuGiamGiaService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 import org.springframework.http.HttpStatus;
 
 import java.math.BigDecimal;
@@ -23,7 +21,6 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
-
 
 class PhieuGiamGiaServiceTest {
     @Test void zeroDiscountAndPercentOver100AreRejected() {
@@ -54,14 +51,14 @@ class PhieuGiamGiaServiceTest {
     private final PhieuGiamGiaKhachHangRepository assignments = mock(PhieuGiamGiaKhachHangRepository.class);
     private final KhachHangRepository customers = mock(KhachHangRepository.class);
     private final com.smashstep.datn.common.config.DatabaseCapabilities database = mock(com.smashstep.datn.common.config.DatabaseCapabilities.class);
-    EmailService emailService = Mockito.mock(EmailService.class);
+    private final com.smashstep.datn.promotion.service.EmailService emailService = mock(com.smashstep.datn.promotion.service.EmailService.class);
     private final PhieuGiamGiaService service = new PhieuGiamGiaService(vouchers, assignments, customers, database, emailService);
     private final List<PhieuGiamGiaKhachHang> links = new ArrayList<>();
 
     @BeforeEach
     void setup() {
         links.clear();
-        Mockito.reset(emailService);
+        reset(emailService);
         when(database.hasColumn("phieu_giam_gia", "hinh_thuc_phieu")).thenReturn(true);
         when(vouchers.save(any())).thenAnswer(call -> {
             PhieuGiamGia voucher = call.getArgument(0);
@@ -92,8 +89,10 @@ class PhieuGiamGiaServiceTest {
         request.setMinOrderValue(BigDecimal.ZERO);
         request.setMaxDiscount(new BigDecimal("200000"));
         request.setQuantity(10);
-        request.setStartDate("2026-10-01T00:00:00");
-        request.setEndDate("2026-10-31T00:00:00");
+        request.setStartDate("2097-10-01T08:00");
+        request.setMinOrderValue(BigDecimal.ZERO);
+        request.setMaxDiscount(new BigDecimal("100000"));
+        request.setEndDate("2097-10-31T23:59");
         return request;
     }
 
@@ -194,6 +193,22 @@ class PhieuGiamGiaServiceTest {
         verify(vouchers, times(4)).findByIdForUpdate(2L);
         verify(vouchers, never()).findById(anyLong());
     }
+
+    @Test void latestValidationRejectsMissingMinimumAndPercentCap() {
+        var request = request(); request.setMinOrderValue(null);
+        assertEquals(HttpStatus.BAD_REQUEST, assertThrows(AppException.class, () -> service.create(request)).getStatus());
+        request.setMinOrderValue(BigDecimal.ZERO); request.setMaxDiscount(null);
+        assertEquals(HttpStatus.BAD_REQUEST, assertThrows(AppException.class, () -> service.create(request)).getStatus());
+        verify(vouchers, never()).save(any());
+    }
+    @Test void latestValidationRejectsEqualDateTimeAndWrongPrivateQuantity() {
+        var request = request(); request.setEndDate(request.getStartDate());
+        assertEquals(HttpStatus.BAD_REQUEST, assertThrows(AppException.class, () -> service.create(request)).getStatus());
+        var privateRequest = request(); privateRequest.setForm(2); privateRequest.setCustomerIds(List.of(10L));
+        assertEquals(HttpStatus.BAD_REQUEST, assertThrows(AppException.class, () -> service.create(privateRequest)).getStatus());
+        verify(vouchers, never()).save(any());
+    }
+
 
     @Test
     void updateTH1_onlyVoucherInfoChanged_sendsUpdatedEmailToRetainedCustomers() {

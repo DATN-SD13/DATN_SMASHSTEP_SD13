@@ -2,6 +2,8 @@ package com.smashstep.datn.product.controller;
 
 import com.smashstep.datn.common.response.PageResponse;
 import com.smashstep.datn.product.dto.DuLieuSanPham.*;
+import com.smashstep.datn.product.dto.KiemTraTrungResponse;
+import com.smashstep.datn.product.dto.ThuocTinhTrungRequest;
 import com.smashstep.datn.product.service.ThuocTinhSanPhamService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -39,6 +41,12 @@ public class ThuocTinhSanPhamController {
     @GetMapping("/{type}/{id}")
     public ThuocTinhResponse layChiTiet(@PathVariable("type") String loai, @PathVariable Long id) {
         return thuocTinhService.layChiTiet(loai, id);
+    }
+
+    @PostMapping("/{type}/check-duplicate")
+    public KiemTraTrungResponse.Attribute kiemTraTrung(@PathVariable("type") String loai,
+            @Valid @RequestBody ThuocTinhTrungRequest request) {
+        return thuocTinhService.kiemTraTrung(loai, request);
     }
 
     @PostMapping("/{type}")

@@ -38,6 +38,7 @@ public class DotGiamGiaService {
     private final ChiTietDotGiamGiaRepository chiTietDotGiamGiaRepository;
 
     private final SanPhamChiTietRepository sanPhamChiTietRepository;
+    private final com.smashstep.datn.product.service.KhoaGhiSanPham writeLock;
     private final DatabaseCapabilities database;
 
     @PersistenceContext
@@ -139,6 +140,7 @@ public class DotGiamGiaService {
     public DotGiamGiaResponse create(
             DotGiamGiaRequest request
     ) {
+        writeLock.khoa("campaigns");
         validateCampaignRequest(request);
         validateDescription(request);
 
@@ -189,17 +191,10 @@ public class DotGiamGiaService {
                 request.getDiscountValue()
         );
 
-        entity.setNgayBatDau(
-                request
-                        .getStartDate()
-                        .atStartOfDay()
-        );
 
-        entity.setNgayKetThuc(
-                request
-                        .getEndDate()
-                        .atTime(23, 59, 59)
-        );
+        entity.setNgayBatDau(request.getStartDate());
+        entity.setNgayKetThuc(request.getEndDate());
+
 
         entity.setMoTa(
                 request.getDescription()
@@ -312,9 +307,9 @@ public class DotGiamGiaService {
             var product = root.join("idSanPham");
             return cb.and(cb.equal(root.get("trangThai"), 1), cb.isTrue(root.get("kichHoat")),
                     cb.equal(product.get("trangThai"), 1), cb.or(
-                    cb.like(cb.lower(product.get("maSanPham")), search),
-                    cb.like(cb.lower(product.get("tenSanPham")), search),
-                    cb.like(cb.lower(root.get("maChiTietSanPham")), search), cb.like(cb.lower(root.get("sku")), search)));
+                            cb.like(cb.lower(product.get("maSanPham")), search),
+                            cb.like(cb.lower(product.get("tenSanPham")), search),
+                            cb.like(cb.lower(root.get("maChiTietSanPham")), search), cb.like(cb.lower(root.get("sku")), search)));
         };
         var result = sanPhamChiTietRepository.findAll(eligible, PageRequest.of(0, 1000, Sort.by("id")));
         if (result.hasNext()) throw AppException.badRequest("Có hơn 1000 biến thể phù hợp. Hãy thu hẹp từ khóa tìm kiếm");
@@ -395,6 +390,8 @@ public class DotGiamGiaService {
             String ma,
             DotGiamGiaRequest request
     ) {
+        writeLock.khoa("campaigns");
+        validateCampaignRequest(request);
         validateDescription(request);
 
         // 1. Tìm đợt giảm giá cần sửa
@@ -413,7 +410,7 @@ public class DotGiamGiaService {
         }
 
         // 2. Kiểm tra ngày
-        if (request.getEndDate().isBefore(request.getStartDate())) {
+        if (!request.getEndDate().isAfter(request.getStartDate())) {
             throw AppException.badRequest(
                     "Ngày kết thúc không được nhỏ hơn ngày bắt đầu"
             );
@@ -438,13 +435,10 @@ public class DotGiamGiaService {
                 request.getDiscountValue()
         );
 
-        entity.setNgayBatDau(
-                request.getStartDate().atStartOfDay()
-        );
 
-        entity.setNgayKetThuc(
-                request.getEndDate().atTime(23, 59, 59)
-        );
+        entity.setNgayBatDau(request.getStartDate());
+        entity.setNgayKetThuc(request.getEndDate());
+
 
         entity.setMoTa(
                 request.getDescription()
@@ -518,6 +512,7 @@ public class DotGiamGiaService {
     }
     @Transactional
     public DotGiamGiaResponse delete(String ma) {
+        writeLock.khoa("campaigns");
 
         DotGiamGia entity = dotGiamGiaRepository
                 .findByMaDotGiamGia(ma)
@@ -569,7 +564,7 @@ public class DotGiamGiaService {
                 || request.getDiscountValue().compareTo(new java.math.BigDecimal("100")) > 0
                 || request.getDiscountValue().scale() > 2
                 || request.getStartDate() == null || request.getEndDate() == null
-                || request.getEndDate().isBefore(request.getStartDate())
+                || !request.getEndDate().isAfter(request.getStartDate())
                 || (request.getDescription() != null && request.getDescription().length() > 1000)) {
             throw AppException.badRequest("Thông tin đợt giảm giá không hợp lệ");
         }
@@ -590,74 +585,66 @@ public class DotGiamGiaService {
         }
     }
 
+
     private void validateProductPromotionConflict(
             List<Long> productDetailIds,
-            LocalDate startDate,
-            LocalDate endDate,
+            LocalDateTime startDate,
+            LocalDateTime endDate,
             Long currentPromotionId
     ) {
-
         if (productDetailIds == null || productDetailIds.isEmpty()) {
             return;
         }
 
+        if (startDate == null || endDate == null || !endDate.isAfter(startDate)) {
+            throw AppException.badRequest("Khoảng thời gian không hợp lệ");
+        }
+
         validateVariants(productDetailIds);
-        for (Long productDetailId :
-                productDetailIds.stream().distinct().toList()) {
+
+        for (Long productDetailId : productDetailIds.stream().distinct().toList()) {
 
             List<ChiTietDotGiamGia> activePromotions =
                     chiTietDotGiamGiaRepository
                             .findActiveByProductDetailId(productDetailId);
 
             for (ChiTietDotGiamGia chiTiet : activePromotions) {
+                DotGiamGia otherPromotion = chiTiet.getIdDotGiamGia();
 
-                DotGiamGia otherPromotion =
-                        chiTiet.getIdDotGiamGia();
-
-                if (otherPromotion == null || otherPromotion.getNgayBatDau() == null
+                if (otherPromotion == null
+                        || otherPromotion.getNgayBatDau() == null
                         || otherPromotion.getNgayKetThuc() == null) {
                     continue;
                 }
 
-                // Khi UPDATE:
-                // bỏ qua chính đợt giảm giá đang sửa
+                // Khi cập nhật: bỏ qua chính đợt đang sửa
                 if (currentPromotionId != null
                         && currentPromotionId.equals(otherPromotion.getId())) {
                     continue;
                 }
 
-                LocalDate otherStart =
-                        otherPromotion
-                                .getNgayBatDau()
-                                .toLocalDate();
+                LocalDateTime otherStart = otherPromotion.getNgayBatDau();
+                LocalDateTime otherEnd = otherPromotion.getNgayKetThuc();
 
-                LocalDate otherEnd =
-                        otherPromotion
-                                .getNgayKetThuc()
-                                .toLocalDate();
-
-                // Hai khoảng thời gian bị giao nhau khi:
-                // start <= otherEnd
-                // và end >= otherStart
+                // Hai khoảng thời gian giao nhau khi:
+                // startDate <= otherEnd && endDate >= otherStart
                 boolean overlap =
                         !startDate.isAfter(otherEnd)
                                 && !endDate.isBefore(otherStart);
 
                 if (overlap) {
                     throw AppException.conflict(
-                            "Biến thể sản phẩm ID "
-                                    + productDetailId
+                            "Biến thể sản phẩm ID " + productDetailId
                                     + " đang thuộc đợt giảm giá "
                                     + otherPromotion.getMaDotGiamGia()
-                                    + " trong khoảng "
-                                    + otherStart
-                                    + " đến "
-                                    + otherEnd
+                                    + " từ " + otherStart
+                                    + " đến " + otherEnd
                     );
                 }
             }
         }
     }
+
 
     private DotGiamGiaResponse toResponse(DotGiamGia entity) {
 
@@ -676,17 +663,10 @@ public class DotGiamGiaService {
                 .name(entity.getTenDotGiamGia())
                 .discountValue(entity.getPhanTramGiamDot())
 
-                .startDate(
-                        entity.getNgayBatDau() == null
-                                ? null
-                                : entity.getNgayBatDau().toLocalDate()
-                )
 
-                .endDate(
-                        entity.getNgayKetThuc() == null
-                                ? null
-                                : entity.getNgayKetThuc().toLocalDate()
-                )
+                .startDate(entity.getNgayBatDau())
+                .endDate(entity.getNgayKetThuc())
+
 
                 .status(entity.getTrangThai())
 
@@ -712,6 +692,7 @@ public class DotGiamGiaService {
             String ma,
             Integer status
     ) {
+        writeLock.khoa("campaigns");
 
         // Chỉ cho phép trạng thái 0 hoặc 1
         if (status == null || (status != 0 && status != 1)) {
@@ -758,15 +739,10 @@ public class DotGiamGiaService {
                             .distinct()
                             .toList();
 
-            LocalDate startDate =
-                    entity
-                            .getNgayBatDau()
-                            .toLocalDate();
 
-            LocalDate endDate =
-                    entity
-                            .getNgayKetThuc()
-                            .toLocalDate();
+            LocalDateTime startDate = entity.getNgayBatDau();
+            LocalDateTime endDate = entity.getNgayKetThuc();
+
 
             validateVariants(productDetailIds);
             // Kiểm tra xem các biến thể có đang nằm
@@ -805,34 +781,33 @@ public class DotGiamGiaService {
         return toResponse(saved);
     }
 
+
     private String getTimeStatus(DotGiamGia entity) {
 
         if (!Integer.valueOf(1).equals(entity.getTrangThai())) {
             return "NGUNG_HOAT_DONG";
         }
 
-        if (entity.getNgayBatDau() == null || entity.getNgayKetThuc() == null) {
+        LocalDateTime start = entity.getNgayBatDau();
+        LocalDateTime end = entity.getNgayKetThuc();
+
+        if (start == null || end == null) {
             return "KHONG_XAC_DINH";
         }
 
-        LocalDate today = LocalDate.now();
+        LocalDateTime now = LocalDateTime.now();
 
-        LocalDate startDate =
-                entity.getNgayBatDau().toLocalDate();
-
-        LocalDate endDate =
-                entity.getNgayKetThuc().toLocalDate();
-
-        if (today.isBefore(startDate)) {
+        if (now.isBefore(start)) {
             return "SAP_DIEN_RA";
         }
 
-        if (today.isAfter(endDate)) {
+        if (now.isAfter(end)) {
             return "DA_KET_THUC";
         }
 
         return "DANG_DIEN_RA";
     }
+
     private String getStatusLabel(
             Integer status
     ) {
@@ -852,5 +827,301 @@ public class DotGiamGiaService {
             default ->
                     "Không xác định";
         };
+    }
+    private void validateTeamCampaign(com.smashstep.datn.promotion.dto.DotGiamGiaRequest request) {
+        if (request.getNgayBatDau() == null || request.getNgayKetThuc() == null
+                || !request.getNgayKetThuc().isAfter(request.getNgayBatDau())) throw AppException.badRequest("Ngày kết thúc phải sau ngày bắt đầu");
+        if (request.getChiTiet() == null || request.getChiTiet().isEmpty()) throw AppException.badRequest("Vui lòng chọn biến thể sản phẩm");
+        var ids = request.getChiTiet().stream().map(com.smashstep.datn.promotion.dto.ChiTietDotGiamGiaRequest::getIdSanPhamChiTiet).toList();
+        if (ids.stream().distinct().count() != ids.size()) throw AppException.badRequest("Biến thể bị trùng trong đợt giảm giá");
+        validateVariants(ids);
+    }
+
+    @Transactional
+    public DotGiamGia create(com.smashstep.datn.promotion.dto.DotGiamGiaRequest request) {
+        writeLock.khoa("campaigns");
+
+        validateTeamCampaign(request);
+        if (!Boolean.FALSE.equals(request.getKichHoat())) {
+            validateProductPromotionConflict(request.getChiTiet().stream().map(
+                            com.smashstep.datn.promotion.dto.ChiTietDotGiamGiaRequest::getIdSanPhamChiTiet).toList(),
+                    request.getNgayBatDau(), request.getNgayKetThuc(), null);
+        }
+        if (request.getMaDotGiamGia() == null || request.getMaDotGiamGia().isBlank()) request.setMaDotGiamGia(generateCode());
+        if (dotGiamGiaRepository.existsByMaDotGiamGia(request.getMaDotGiamGia())) throw AppException.conflict("Mã đợt giảm giá đã tồn tại");
+        DotGiamGia dotGiamGia = new DotGiamGia();
+
+        if (request.getMaDotGiamGia() != null && !request.getMaDotGiamGia().isBlank()) dotGiamGia.setMaDotGiamGia(request.getMaDotGiamGia());
+        dotGiamGia.setTenDotGiamGia(request.getTenDotGiamGia());
+        dotGiamGia.setPhanTramGiamDot(request.getPhanTramGiamDot());
+        dotGiamGia.setNgayBatDau(request.getNgayBatDau());
+        dotGiamGia.setNgayKetThuc(request.getNgayKetThuc());
+        dotGiamGia.setKichHoat(
+                request.getKichHoat() != null
+                        ? request.getKichHoat()
+                        : true
+        );
+        dotGiamGia.setMoTa(request.getMoTa());
+        dotGiamGia.setNgayTao(LocalDateTime.now());
+        dotGiamGia.setNgayCapNhat(LocalDateTime.now());
+        dotGiamGia.setTrangThai(1);
+
+        DotGiamGia saved = dotGiamGiaRepository.save(dotGiamGia);
+
+        if (request.getChiTiet() != null) {
+            for (var item : request.getChiTiet()) {
+
+                SanPhamChiTiet sanPhamChiTiet =
+                        sanPhamChiTietRepository.findById(item.getIdSanPhamChiTiet())
+                                .orElseThrow(() ->
+                                        AppException.notFound(
+                                                "Không tìm thấy biến thể sản phẩm: "
+                                                        + item.getIdSanPhamChiTiet()
+                                        )
+                                );
+
+                ChiTietDotGiamGia chiTiet = new ChiTietDotGiamGia();
+
+                chiTiet.setIdDotGiamGia(saved);
+                chiTiet.setIdSanPhamChiTiet(sanPhamChiTiet);
+                chiTiet.setPhanTramGiamBienThe(
+                        item.getPhanTramGiamBienThe()
+                );
+                chiTiet.setTrangThai(1);
+                chiTiet.setNgayTao(LocalDateTime.now());
+
+                chiTietDotGiamGiaRepository.save(chiTiet);
+            }
+        }
+
+        return saved;
+    }
+    @Transactional
+    public void delete(Long id) {
+        writeLock.khoa("campaigns");
+
+        DotGiamGia dotGiamGia = dotGiamGiaRepository.findById(id)
+                .orElseThrow(() ->
+                        AppException.notFound(
+                                "Không tìm thấy đợt giảm giá: " + id
+                        )
+                );
+
+        // Xóa mềm đợt giảm giá
+        dotGiamGia.setTrangThai(0);
+        dotGiamGia.setKichHoat(false);
+        dotGiamGia.setNgayCapNhat(LocalDateTime.now());
+
+        dotGiamGiaRepository.save(dotGiamGia);
+
+        // Xóa mềm các biến thể thuộc đợt giảm giá
+        var chiTietList =
+                chiTietDotGiamGiaRepository
+                        .findByIdDotGiamGiaIdAndTrangThai(id, 1);
+
+        for (ChiTietDotGiamGia chiTiet : chiTietList) {
+            chiTiet.setTrangThai(0);
+        }
+
+        chiTietDotGiamGiaRepository.saveAll(chiTietList);
+    }
+    @Transactional
+    public DotGiamGia update(Long id, com.smashstep.datn.promotion.dto.DotGiamGiaRequest request) {
+        writeLock.khoa("campaigns");
+        validateTeamCampaign(request);
+
+        DotGiamGia dotGiamGia = dotGiamGiaRepository.findById(id)
+                .orElseThrow(() ->
+                        AppException.notFound(
+                                "Không tìm thấy đợt giảm giá: " + id
+                        )
+                );
+
+        if (Integer.valueOf(1).equals(dotGiamGia.getTrangThai()) &&
+                (request.getKichHoat() == null ? Boolean.TRUE.equals(dotGiamGia.getKichHoat()) : request.getKichHoat())) {
+            validateProductPromotionConflict(request.getChiTiet().stream().map(
+                            com.smashstep.datn.promotion.dto.ChiTietDotGiamGiaRequest::getIdSanPhamChiTiet).toList(),
+                    request.getNgayBatDau(), request.getNgayKetThuc(), id);
+        }
+        if (request.getMaDotGiamGia() != null) {
+            var owner = dotGiamGiaRepository.findByMaDotGiamGia(request.getMaDotGiamGia());
+            if (owner.isPresent() && !owner.get().getId().equals(id)) throw AppException.conflict("Mã đợt giảm giá đã tồn tại");
+        }
+        if (request.getMaDotGiamGia() != null && !request.getMaDotGiamGia().isBlank()) dotGiamGia.setMaDotGiamGia(request.getMaDotGiamGia());
+        dotGiamGia.setTenDotGiamGia(request.getTenDotGiamGia());
+        dotGiamGia.setPhanTramGiamDot(request.getPhanTramGiamDot());
+        dotGiamGia.setNgayBatDau(request.getNgayBatDau());
+        dotGiamGia.setNgayKetThuc(request.getNgayKetThuc());
+        dotGiamGia.setKichHoat(
+                request.getKichHoat() != null
+                        ? request.getKichHoat()
+                        : dotGiamGia.getKichHoat()
+        );
+        dotGiamGia.setMoTa(request.getMoTa());
+        dotGiamGia.setNgayCapNhat(LocalDateTime.now());
+
+        // Tắt các chi tiết cũ
+        var chiTietCu =
+                chiTietDotGiamGiaRepository
+                        .findByIdDotGiamGia_Id(id);
+
+        for (ChiTietDotGiamGia chiTiet : chiTietCu) {
+            chiTiet.setTrangThai(0);
+        }
+
+        chiTietDotGiamGiaRepository.saveAll(chiTietCu);
+
+        // Thêm lại danh sách chi tiết mới
+        if (request.getChiTiet() != null) {
+
+            for (var item : request.getChiTiet()) {
+
+                SanPhamChiTiet sanPhamChiTiet =
+                        sanPhamChiTietRepository.findById(
+                                item.getIdSanPhamChiTiet()
+                        ).orElseThrow(() ->
+                                AppException.notFound(
+                                        "Không tìm thấy biến thể sản phẩm: "
+                                                + item.getIdSanPhamChiTiet()
+                                )
+                        );
+
+                ChiTietDotGiamGia chiTiet = chiTietCu.stream()
+                        .filter(existing -> existing.getIdSanPhamChiTiet().getId().equals(item.getIdSanPhamChiTiet()))
+                        .findFirst().orElseGet(ChiTietDotGiamGia::new);
+
+                chiTiet.setIdDotGiamGia(dotGiamGia);
+                chiTiet.setIdSanPhamChiTiet(sanPhamChiTiet);
+                chiTiet.setPhanTramGiamBienThe(
+                        item.getPhanTramGiamBienThe()
+                );
+                chiTiet.setTrangThai(1);
+                if (chiTiet.getNgayTao() == null) chiTiet.setNgayTao(LocalDateTime.now());
+
+                chiTietDotGiamGiaRepository.save(chiTiet);
+            }
+        }
+
+        return dotGiamGiaRepository.save(dotGiamGia);
+    }
+    public com.smashstep.datn.common.response.PageResponse<com.smashstep.datn.promotion.dto.DotGiamGiaResponse> search(
+            String ma,
+            String ten,
+            Integer trangThai,
+            LocalDateTime tuNgay,
+            LocalDateTime denNgay,
+            int page,
+            int size
+    ) {
+        if (page < 1) {
+            page = 1;
+        }
+
+        if (size < 1) {
+            size = 10;
+        }
+
+        if (tuNgay != null && denNgay != null && denNgay.isBefore(tuNgay)) throw AppException.badRequest("Khoảng ngày không hợp lệ");
+        size = Math.min(size, 100);
+        if ((long) (page - 1) * size > Integer.MAX_VALUE) throw AppException.badRequest("Trang yêu cầu vượt giới hạn phân trang");
+        Pageable pageable = PageRequest.of(page - 1, size);
+
+        Page<DotGiamGia> result = dotGiamGiaRepository.search(
+                ma,
+                ten,
+                trangThai,
+                tuNgay,
+                denNgay,
+                pageable
+        );
+
+        Page<com.smashstep.datn.promotion.dto.DotGiamGiaResponse> responsePage =
+                result.map(this::toTeamResponse);
+
+        return com.smashstep.datn.common.response.PageResponse.from(responsePage);
+    }
+    @Transactional(readOnly = true)
+    public com.smashstep.datn.promotion.dto.DotGiamGiaDetailResponse getDetail(Long id) {
+
+        DotGiamGia dotGiamGia = dotGiamGiaRepository.findById(id)
+                .orElseThrow(() ->
+                        AppException.notFound(
+                                "Không tìm thấy đợt giảm giá: " + id
+                        )
+                );
+
+        var chiTietList =
+                chiTietDotGiamGiaRepository
+                        .findByIdDotGiamGiaIdAndTrangThai(id, 1)
+                        .stream()
+                        .map(this::toChiTietResponse)
+                        .toList();
+
+        String trangThaiText;
+
+        if (dotGiamGia.getTrangThai() != null
+                && dotGiamGia.getTrangThai() == 1) {
+            trangThaiText = "Đang hoạt động";
+        } else {
+            trangThaiText = "Ngừng hoạt động";
+        }
+
+        return new com.smashstep.datn.promotion.dto.DotGiamGiaDetailResponse(
+                dotGiamGia.getId(),
+                dotGiamGia.getMaDotGiamGia(),
+                dotGiamGia.getTenDotGiamGia(),
+                dotGiamGia.getPhanTramGiamDot(),
+                dotGiamGia.getNgayBatDau(),
+                dotGiamGia.getNgayKetThuc(),
+                dotGiamGia.getKichHoat(),
+                dotGiamGia.getTrangThai(),
+                trangThaiText,
+                dotGiamGia.getMoTa(),
+                dotGiamGia.getNgayTao(),
+                dotGiamGia.getNgayCapNhat(),
+                chiTietList
+        );
+    }
+
+    private com.smashstep.datn.promotion.dto.ChiTietDotGiamGiaResponse toChiTietResponse(
+            ChiTietDotGiamGia entity
+    ) {
+        SanPhamChiTiet sanPhamChiTiet = entity.getIdSanPhamChiTiet();
+
+        return new com.smashstep.datn.promotion.dto.ChiTietDotGiamGiaResponse(
+                entity.getId(),
+                sanPhamChiTiet.getId(),
+                sanPhamChiTiet.getMaChiTietSanPham(),
+                sanPhamChiTiet.getSku(),
+                sanPhamChiTiet.getGiaBan(),
+                entity.getPhanTramGiamBienThe(),
+                entity.getTrangThai()
+        );
+    }
+
+    private com.smashstep.datn.promotion.dto.DotGiamGiaResponse toTeamResponse(DotGiamGia entity) {
+
+        String trangThaiText;
+
+        if (entity.getTrangThai() != null && entity.getTrangThai() == 1) {
+            trangThaiText = "Đang hoạt động";
+        } else {
+            trangThaiText = "Ngừng hoạt động";
+        }
+
+        return new com.smashstep.datn.promotion.dto.DotGiamGiaResponse(
+                entity.getId(),
+                entity.getMaDotGiamGia(),
+                entity.getTenDotGiamGia(),
+                entity.getPhanTramGiamDot(),
+                entity.getNgayBatDau(),
+                entity.getNgayKetThuc(),
+                entity.getKichHoat(),
+                entity.getTrangThai(),
+                trangThaiText,
+                entity.getMoTa(),
+                entity.getNgayTao(),
+                entity.getNgayCapNhat()
+        );
     }
 }

@@ -62,4 +62,29 @@ public class HinhAnhSanPhamController {
     public void xoaAnh(@PathVariable("productId") Long sanPhamId, @PathVariable("imageId") Long anhId) {
         hinhAnhService.xoaAnh(sanPhamId, anhId);
     }
+    @GetMapping("/product-details/{variantId}/images")
+    public List<HinhAnhSanPhamResponse> layAnhBienThe(@PathVariable("variantId") Long variantId) {
+        return hinhAnhService.layAnhBienThe(variantId);
+    }
+
+    @PostMapping(value = "/product-details/{variantId}/images/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @ResponseStatus(HttpStatus.CREATED)
+    public HinhAnhSanPhamResponse taiAnhBienThe(@PathVariable("variantId") Long variantId,
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "isAnhChinh", defaultValue = "false") Boolean isAnhChinh) {
+        return hinhAnhService.taiAnhBienThe(variantId, file, isAnhChinh);
+    }
+
+    @PutMapping("/product-details/{variantId}/images/{imageId}")
+    public HinhAnhSanPhamResponse suaAnhBienThe(@PathVariable("variantId") Long variantId,
+            @PathVariable("imageId") Long imageId, @Valid @RequestBody HinhAnhSanPhamRequest request) {
+        return hinhAnhService.suaAnhBienThe(variantId, imageId, request);
+    }
+
+    @DeleteMapping("/product-details/{variantId}/images/{imageId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void xoaAnhBienThe(@PathVariable("variantId") Long variantId, @PathVariable("imageId") Long imageId) {
+        hinhAnhService.xoaAnhBienThe(variantId, imageId);
+    }
+
 }

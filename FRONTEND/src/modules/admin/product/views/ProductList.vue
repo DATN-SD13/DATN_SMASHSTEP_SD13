@@ -1,4 +1,5 @@
 <script setup>
+import { useCampaignPriceRefresh } from '../composables/useCampaignPriceRefresh'
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ProductShell from '../components/ProductShell.vue'
@@ -7,7 +8,7 @@ import ProductTable from '../components/ProductTable.vue'
 import ProductPagination from '../components/ProductPagination.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
 import { useConfirmation, statusConfirmation } from '../composables/useConfirmation'
-import { productService, errorMessage } from '../services/productService'
+import { productService, mergeCurrentPriceFields, errorMessage } from '../services/productService'
 import { productAttributeService, attributeTypes } from '../services/productAttributeService'
 
 const route = useRoute(), router = useRouter()
@@ -17,7 +18,7 @@ const optionsBusy = ref(false)
 const optionsError = ref('')
 const busy = ref(true)
 const error = ref('')
-const success = ref(typeof route.query.created === 'string' ? `Thêm sản phẩm ${route.query.created} thành công.` : '')
+const success = ref('')
 const page = ref({ content: [], number: 0, size: 10, totalElements: 0, totalPages: 0 })
 let applied = {}
 let loadVersion = 0
@@ -69,9 +70,7 @@ async function openCreate() {
   error.value = ''
   try {
     const code = await productService.nextCode()
-    askConfirmation({ title: 'Tạo sản phẩm mới',
-      message: 'Bạn có chắc muốn tạo một sản phẩm mới?\nMã này được hệ thống tự động tạo theo thứ tự hiện tại.',
-      details: [{ label: 'Mã sản phẩm dự kiến', value: code }] }, () => router.push({ path: '/san-pham/them', query: { code } }))
+    await router.push({ path: '/san-pham/them', query: { code } })
   } catch (e) { error.value = errorMessage(e) }
   finally { codeBusy.value = false }
 }
@@ -87,6 +86,12 @@ function changeStatus(product) {
   })
 }
 
+useCampaignPriceRefresh(async () => {
+  if (busy.value || !page.value.content.length) return
+  const current = page.value
+  const fresh = await productService.list({ ...applied, page: current.number, size: current.size })
+  if (current === page.value) mergeCurrentPriceFields(current.content, fresh.content)
+})
 onMounted(() => {
   load()
   loadOptions()

@@ -1,4 +1,5 @@
 <script setup>
+import { useProductToast } from '../composables/useProductToast'
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import { computed, nextTick, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -92,7 +93,7 @@ function save() {
   if (!sel.length) { saveErr.value = 'Chọn ít nhất 1 biến thể để lưu.'; return }
   if (sel.some(r => !r.price)) { saveErr.value = 'Mỗi biến thể được chọn phải có giá bán lớn hơn 0.'; return }
   saveErr.value = ''
-  alert(`Đã lưu sản phẩm "${f.value.name}" và ${sel.length} chi tiết sản phẩm`)
+  useProductToast().info('Trang này là form cũ; hãy dùng chức năng Thêm sản phẩm trong menu để lưu qua API.')
   router.push('/bien-the-san-pham')
 }
 </script>

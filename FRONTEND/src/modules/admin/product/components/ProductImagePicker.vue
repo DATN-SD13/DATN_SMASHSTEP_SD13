@@ -1,4 +1,5 @@
 <script setup>
+import { useProductFeedback } from '../composables/useProductToast'
 import { ref, watch, onBeforeUnmount } from 'vue'
 import { imageTypes, validateImageFile } from '../services/imageUtils'
 
@@ -47,6 +48,7 @@ function failed(image) {
   error.value = 'Tệp ảnh không hợp lệ: ' + image.file.name
   emit('update:modelValue', props.modelValue.filter(item => item.key !== image.key))
 }
+useProductFeedback(error)
 </script>
 
 <template>
@@ -54,7 +56,6 @@ function failed(image) {
     <input ref="input" type="file" :accept="imageTypes" multiple :disabled="disabled" class="visually-hidden" aria-label="Tệp ảnh sản phẩm" @change="choose" />
     <button type="button" class="p-btn" :disabled="disabled" @click="input.click()"><i class="bi bi-folder2-open"></i> Chọn ảnh từ máy</button>
     <small class="p-image-help">JPG, PNG, WEBP · Tối đa 5 MB/ảnh. Có thể chọn nhiều ảnh.</small>
-    <div v-if="error" class="alert alert-danger" role="alert">{{ error }}</div>
     <div v-if="modelValue.length" class="p-images p-image-previews">
       <div v-for="image in modelValue" :key="image.key" class="p-image">
         <img :src="image.previewUrl" :alt="'Xem trước ' + image.file.name" @error="failed(image)" />

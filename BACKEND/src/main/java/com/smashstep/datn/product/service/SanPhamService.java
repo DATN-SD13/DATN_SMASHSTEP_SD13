@@ -18,6 +18,8 @@ import java.util.*;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class SanPhamService {
+    private final KhoaGhiSanPham khoaGhi;
+    private final com.smashstep.datn.common.pricing.CurrentPriceService currentPrices;
     private final SanPhamRepository sanPhamRepository;
     private final SanPhamChiTietRepository sanPhamChiTietRepository;
     private final HinhAnhSanPhamRepository hinhAnhRepository;
@@ -68,8 +70,12 @@ public class SanPhamService {
         List<Long> danhSachId = ketQua.getContent().stream().map(SanPham::getId).toList();
         Map<Long, TongHopSanPham> tongHop = layTongHop(danhSachId);
         Map<Long, String> anhChinh = HinhAnhSanPhamService.layAnhChinh(hinhAnhRepository, danhSachId);
-        return PageResponse.from(ketQua.map(sanPham ->
-                chuyenSangResponse(sanPham, tongHop.get(sanPham.getId()), anhChinh.get(sanPham.getId()))));
+        var variants = currentPrices.getProductVariants(danhSachId);
+        var prices = currentPrices.getPrices(variants, LocalDateTime.now());
+        var grouped = variants.stream().collect(java.util.stream.Collectors.groupingBy(v -> v.getIdSanPham().getId()));
+        return PageResponse.from(ketQua.map(sanPham -> priceSummary(
+                chuyenSangResponse(sanPham, tongHop.get(sanPham.getId()), anhChinh.get(sanPham.getId())),
+                grouped.getOrDefault(sanPham.getId(), List.of()), prices)));
     }
 
     public SanPhamChiTietResponse layChiTietSanPham(Long id) {
@@ -77,18 +83,23 @@ public class SanPhamService {
         TongHopSanPham tongHop = layTongHop(List.of(id)).get(id);
         String anhChinh = HinhAnhSanPhamService.layAnhChinh(hinhAnhRepository, List.of(id)).get(id);
         List<BienTheResponse> bienThe = new ArrayList<>();
-        for (SanPhamChiTiet chiTiet : sanPhamChiTietRepository.findByIdSanPham_IdOrderByIdAsc(id)) {
-            bienThe.add(SanPhamChiTietService.chuyenSangResponse(chiTiet, anhChinh));
+        var variants = sanPhamChiTietRepository.findByIdSanPham_IdOrderByIdAsc(id);
+        var prices = currentPrices.getPrices(variants, LocalDateTime.now());
+        var variantImages = HinhAnhSanPhamService.layAnhChinhBienThe(hinhAnhRepository, variants);
+        for (SanPhamChiTiet chiTiet : variants) {
+            bienThe.add(SanPhamChiTietService.chuyenSangResponse(chiTiet, variantImages.get(chiTiet.getId()), prices.get(chiTiet.getId())));
         }
         List<HinhAnhSanPhamResponse> hinhAnh = new ArrayList<>();
         for (HinhAnhSanPham anh : hinhAnhRepository.findByIdSanPham_IdOrderByIdAsc(id)) {
-            hinhAnh.add(HinhAnhSanPhamService.chuyenSangResponse(anh));
+            if (anh.getIdSanPhamChiTiet() == null) hinhAnh.add(HinhAnhSanPhamService.chuyenSangResponse(anh));
         }
-        return new SanPhamChiTietResponse(chuyenSangResponse(sanPham, tongHop, anhChinh), bienThe, hinhAnh);
+        return new SanPhamChiTietResponse(priceSummary(chuyenSangResponse(sanPham, tongHop, anhChinh), variants, prices), bienThe, hinhAnh);
     }
 
     @Transactional
     public SanPhamResponse themSanPham(SanPhamThemRequest yeuCau) {
+        khoaGhi.khoa("products");
+        kiemTraTrungKhiLuu(SanPhamTrungRequest.from(yeuCau, null));
         String maSanPham = QuyTacSanPham.boKhoangTrang(yeuCau.getMaSanPham());
         if (sanPhamRepository.existsByMaSanPhamIgnoreCase(maSanPham)) {
             throw AppException.conflict("Mã sản phẩm đã tồn tại");
@@ -102,12 +113,14 @@ public class SanPhamService {
 
     @Transactional
     public SanPhamResponse suaSanPham(Long id, SanPhamSuaRequest yeuCau) {
+        khoaGhi.khoa("products");
         SanPham sanPham = sanPhamRepository.timVaKhoaTheoId(id)
                 .orElseThrow(() -> AppException.notFound("Không tìm thấy sản phẩm"));
         if (yeuCau.getMaSanPham() != null
                 && !Objects.equals(sanPham.getMaSanPham(), QuyTacSanPham.boKhoangTrang(yeuCau.getMaSanPham()))) {
             throw AppException.badRequest("Mã sản phẩm không được thay đổi khi sửa");
         }
+        kiemTraTrungKhiLuu(SanPhamTrungRequest.from(yeuCau.chuyenSangThemRequest(), id));
         capNhatDuLieu(sanPham, yeuCau.chuyenSangThemRequest());
         sanPham.setNgayCapNhat(LocalDateTime.now());
         return chuyenSangResponse(sanPhamRepository.save(sanPham), layTongHop(List.of(id)).get(id));
@@ -121,6 +134,41 @@ public class SanPhamService {
         sanPham.setTrangThai(trangThai);
         sanPham.setNgayCapNhat(LocalDateTime.now());
         return chuyenSangResponse(sanPhamRepository.save(sanPham), layTongHop(List.of(id)).get(id));
+    }
+
+    public KiemTraTrungResponse.Product kiemTraTrung(SanPhamTrungRequest request) {
+        if (request.getExcludeId() != null) timSanPham(request.getExcludeId());
+        var existing = timSanPhamTrung(request);
+        return new KiemTraTrungResponse.Product(existing.isPresent(),
+                existing.map(item -> chuyenSangResponse(item, null, null)).orElse(null));
+    }
+
+    private Optional<SanPham> timSanPhamTrung(SanPhamTrungRequest request) {
+        Specification<SanPham> candidates = (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.equal(root.get("idDanhMuc").get("id"), request.getDanhMucId()));
+            predicates.add(cb.equal(root.get("idThuongHieu").get("id"), request.getThuongHieuId()));
+            predicates.add(cb.equal(root.get("idChatLieu").get("id"), request.getChatLieuId()));
+            predicates.add(cb.equal(root.get("idKieuDang").get("id"), request.getKieuDangId()));
+            predicates.add(cb.equal(root.get("idCoGiay").get("id"), request.getCoGiayId()));
+            predicates.add(cb.equal(root.get("idXuatXu").get("id"), request.getXuatXuId()));
+            predicates.add(cb.like(cb.lower(root.get("tenSanPham")),
+                    QuyTacSanPham.businessNamePattern(request.getTenSanPham()), '\\'));
+            if (request.getExcludeId() != null) predicates.add(cb.notEqual(root.get("id"), request.getExcludeId()));
+            return cb.and(predicates.toArray(Predicate[]::new));
+        };
+        String name = QuyTacSanPham.normalizeBusinessName(request.getTenSanPham());
+        return sanPhamRepository.findAll(candidates).stream()
+                .filter(item -> name.equals(QuyTacSanPham.normalizeBusinessName(item.getTenSanPham())))
+                .min(Comparator.comparing(SanPham::getId));
+    }
+
+    private void kiemTraTrungKhiLuu(SanPhamTrungRequest request) {
+        timSanPhamTrung(request).ifPresent(existing -> {
+            throw AppException.conflict(request.getExcludeId() == null
+                    ? "Sản phẩm với tên và bộ thuộc tính này đã tồn tại."
+                    : "Đã tồn tại sản phẩm " + existing.getMaSanPham() + " có cùng tên và bộ thuộc tính.");
+        });
     }
 
     private void capNhatDuLieu(SanPham sanPham, SanPhamThemRequest yeuCau) {
@@ -162,6 +210,16 @@ public class SanPhamService {
     private SanPham timSanPham(Long id) {
         return sanPhamRepository.findById(id)
                 .orElseThrow(() -> AppException.notFound("Không tìm thấy sản phẩm"));
+    }
+
+    private SanPhamResponse priceSummary(SanPhamResponse response, List<SanPhamChiTiet> variants,
+            Map<Long, com.smashstep.datn.common.pricing.CurrentPrice> prices) {
+        var values = variants.stream().map(v -> prices.get(v.getId())).filter(Objects::nonNull).toList();
+        response.setGiaSauGiamThapNhat(values.stream().map(com.smashstep.datn.common.pricing.CurrentPrice::getEffectivePrice).min(java.math.BigDecimal::compareTo).orElse(response.getGiaThapNhat()));
+        response.setGiaSauGiamCaoNhat(values.stream().map(com.smashstep.datn.common.pricing.CurrentPrice::getEffectivePrice).max(java.math.BigDecimal::compareTo).orElse(response.getGiaCaoNhat()));
+        response.setDangGiamGia(values.stream().anyMatch(com.smashstep.datn.common.pricing.CurrentPrice::isDiscounted));
+        response.setPhanTramGiamCaoNhat(values.stream().map(com.smashstep.datn.common.pricing.CurrentPrice::getDiscountPercent).max(java.math.BigDecimal::compareTo).orElse(java.math.BigDecimal.ZERO));
+        return response;
     }
 
     private Map<Long, TongHopSanPham> layTongHop(List<Long> danhSachId) {

@@ -497,7 +497,7 @@ const maxDiscountDisplay = computed({
 
         <span class="ss-hint warn">
           <i class="bi bi-exclamation-triangle"></i>
-          Nếu không giới hạn, để trống hoặc 0.
+          {{ isPercent ? "Giảm theo phần trăm cần mức giảm tối đa lớn hơn 0." : "Nếu không giới hạn, để trống hoặc 0." }}
         </span>
 
       </div>

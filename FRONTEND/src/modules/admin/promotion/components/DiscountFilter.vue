@@ -1,6 +1,6 @@
 <script setup>
 import { ref, watch } from 'vue'
-import Select2 from '../components/Select2.vue'
+import Select2 from './Select2.vue'
 
 const props = defineProps({
   formSupported: { type: Boolean, default: true },

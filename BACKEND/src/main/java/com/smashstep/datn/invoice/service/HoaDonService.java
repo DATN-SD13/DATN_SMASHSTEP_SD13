@@ -15,6 +15,7 @@ import com.smashstep.datn.invoice.entity.LichSuHoaDon;
 import com.smashstep.datn.invoice.enums.TrangThaiHoaDon;
 import com.smashstep.datn.invoice.enums.LoaiHoaDon;
 import com.smashstep.datn.invoice.enums.HinhThucNhan;
+import com.smashstep.datn.invoice.rules.HoaDonRules;
 import com.smashstep.datn.invoice.repository.HoaDonChiTietRepository;
 import com.smashstep.datn.invoice.repository.HoaDonRepository;
 import com.smashstep.datn.invoice.repository.LichSuHoaDonRepository;
@@ -109,6 +110,9 @@ public class HoaDonService {
         HoaDon hoaDon = hoaDonRepository.findByMaHoaDonForUpdate(ma.trim())
                 .orElseThrow(() -> AppException.notFound("Không tìm thấy hóa đơn: " + ma));
         Integer trangThaiHienTai = hoaDon.getTrangThai();
+        if (java.util.Objects.equals(trangThaiHienTai, request.getTrangThai())) {
+            throw AppException.badRequest("Trạng thái mới phải khác trạng thái hiện tại.");
+        }
 
         if (request.getTrangThai() == TrangThaiHoaDon.DA_HUY.getMa()) {
             if (trangThaiHienTai != null && trangThaiHienTai == TrangThaiHoaDon.HOAN_THANH.getMa()) {
@@ -120,11 +124,7 @@ public class HoaDonService {
             if (trangThaiHienTai != null && trangThaiHienTai == TrangThaiHoaDon.HOAN_TIEN.getMa()) {
                 throw AppException.badRequest("Đơn hàng đã hoàn tiền, không thể hủy.");
             }
-            HinhThucNhan hinhThucNhan = HinhThucNhan.tuMa(hoaDon.getHinhThucNhan());
-            if (hinhThucNhan == null) {
-                hinhThucNhan = hoaDon.getLoaiHoaDon() != null && hoaDon.getLoaiHoaDon() == LoaiHoaDon.TAI_QUAY.getMa()
-                        ? HinhThucNhan.NHAN_TAI_QUAY : HinhThucNhan.GIAO_HANG;
-            }
+            HinhThucNhan hinhThucNhan = HoaDonRules.resolveHinhThucNhan(hoaDon);
             // Hóa đơn chờ (8) là phiếu tạm giữ tại POS, cho phép hủy riêng để giải phóng phiếu.
             if (Integer.valueOf(TrangThaiHoaDon.HOA_DON_CHO.getMa()).equals(trangThaiHienTai)) {
                 // continue
@@ -147,11 +147,7 @@ public class HoaDonService {
             if (trangThaiHienTai != null && trangThaiHienTai == TrangThaiHoaDon.HOAN_TIEN.getMa()) {
                 throw AppException.badRequest("Đơn hàng đã hoàn tiền, không thể cập nhật trạng thái.");
             }
-            HinhThucNhan hinhThucNhan = HinhThucNhan.tuMa(hoaDon.getHinhThucNhan());
-            if (hinhThucNhan == null) {
-                hinhThucNhan = hoaDon.getLoaiHoaDon() != null && hoaDon.getLoaiHoaDon() == LoaiHoaDon.TAI_QUAY.getMa()
-                        ? HinhThucNhan.NHAN_TAI_QUAY : HinhThucNhan.GIAO_HANG;
-            }
+            HinhThucNhan hinhThucNhan = HoaDonRules.resolveHinhThucNhan(hoaDon);
             TrangThaiHoaDon trangThaiKeTiep = TrangThaiHoaDon.trangThaiTiepTheo(
                     trangThaiHienTai, hinhThucNhan == HinhThucNhan.GIAO_HANG);
             if (trangThaiKeTiep == null || request.getTrangThai() != trangThaiKeTiep.getMa()) {
@@ -163,13 +159,13 @@ public class HoaDonService {
         if (idNhanVienThaoTac == null && hoaDon.getIdNhanVien() != null) {
             idNhanVienThaoTac = hoaDon.getIdNhanVien().getId();
         }
-        if (idNhanVienThaoTac != null) {
+        if (request.getIdNhanVien() != null) {
             NhanVien nhanVien = nhanVienRepository.findById(idNhanVienThaoTac)
                     .orElseThrow(() -> AppException.notFound("Không tìm thấy nhân viên"));
             if (!Integer.valueOf(1).equals(nhanVien.getTrangThai())) {
                 throw AppException.badRequest("Nhân viên thao tác phải đang hoạt động");
             }
-            hoaDon.setIdNhanVien(nhanVien);
+            // Actor is recorded in history; the invoice owner remains unchanged.
         }
         hoaDon.setTrangThai(request.getTrangThai());
         hoaDon.setNgayCapNhat(LocalDateTime.now());
@@ -188,11 +184,7 @@ public class HoaDonService {
     private List<LichSuHoaDonDto> layLichSu(Long idHoaDon) {
         HoaDon hoaDon = hoaDonRepository.findById(idHoaDon)
                 .orElseThrow(() -> AppException.notFound("Không tìm thấy hóa đơn"));
-        HinhThucNhan hinhThucNhan = HinhThucNhan.tuMa(hoaDon.getHinhThucNhan());
-        if (hinhThucNhan == null) {
-            hinhThucNhan = hoaDon.getLoaiHoaDon() != null && hoaDon.getLoaiHoaDon() == LoaiHoaDon.TAI_QUAY.getMa()
-                    ? HinhThucNhan.NHAN_TAI_QUAY : HinhThucNhan.GIAO_HANG;
-        }
+        HinhThucNhan hinhThucNhan = HoaDonRules.resolveHinhThucNhan(hoaDon);
         final HinhThucNhan finalHinhThucNhan = hinhThucNhan;
 
         return lichSuHoaDonRepository

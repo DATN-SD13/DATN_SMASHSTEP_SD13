@@ -8,4 +8,13 @@ const api = axios.create({
   }
 })
 
+api.interceptors.response.use(response => {
+  if (/^\/(hoa-don|san-pham|san-pham-chi-tiet|thuoc-tinh|phieu-giam-gia|dot-giam-gia)(\/|$)/.test(response.config.url || '') && response.data?.success === false) {
+    const error = new Error(response.data.message || 'Thao tác thất bại')
+    error.response = response
+    throw error
+  }
+  return response
+})
+
 export default api

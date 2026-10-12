@@ -7,7 +7,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.mail.MailException;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import java.text.NumberFormat;
 import java.util.Locale;
@@ -16,10 +15,41 @@ import java.util.Locale;
 @RequiredArgsConstructor
 public class EmailService {
 
-    private final JavaMailSender mailSender;
+    private final org.springframework.beans.factory.ObjectProvider<JavaMailSender> mailSenderProvider;
 
-    @Value("${spring.mail.username:}")
-    private String fromEmail;
+    @org.springframework.beans.factory.annotation.Value("${spring.mail.username:}")
+    private String from;
+
+    @org.springframework.beans.factory.annotation.Value("${spring.mail.host:}")
+    private String host;
+    @org.springframework.beans.factory.annotation.Value("${spring.mail.password:}")
+    private String password;
+
+    public String configurationError() {
+        if (host == null || host.isBlank() || "localhost".equalsIgnoreCase(host) || "127.0.0.1".equals(host)) {
+            return "SMTP chưa hợp lệ: cấu hình MAIL_HOST=smtp.gmail.com.";
+        }
+        if (from == null || from.isBlank() || password == null || password.isBlank()) {
+            return "Đã lưu phiếu nhưng chưa gửi email: thiếu MAIL_USERNAME hoặc MAIL_PASSWORD (Google App Password).";
+        }
+        return mailSenderProvider.getIfAvailable() == null ? "SMTP chưa được cấu hình." : null;
+    }
+
+    private JavaMailSender senderFor(String to) {
+        JavaMailSender sender = mailSenderProvider.getIfAvailable();
+        if (sender == null) throw new IllegalStateException("SMTP chưa được cấu hình");
+        // Mock senders remain usable in unit tests; enforce credentials for the real transport.
+        if (sender instanceof org.springframework.mail.javamail.JavaMailSenderImpl) {
+            String error = configurationError();
+            if (error != null) throw new IllegalStateException(error);
+        }
+        try {
+            var address = new jakarta.mail.internet.InternetAddress(to, true);
+            address.validate();
+            if (!address.getAddress().contains("@")) throw new IllegalArgumentException();
+        } catch (Exception ex) { throw new IllegalArgumentException("Email khách hàng không hợp lệ"); }
+        return sender;
+    }
 
     public void sendVoucherEmail(
             String to,
@@ -33,20 +63,14 @@ public class EmailService {
             String endDate,
             String websiteUrl
     ) {
-        System.out.println("MAIL_USERNAME = " + System.getenv("MAIL_USERNAME"));
-
-        String password = System.getenv("MAIL_PASSWORD");
-        System.out.println("MAIL_PASSWORD tồn tại = "
-                + (password != null && !password.isBlank()));
-        System.out.println("Độ dài mật khẩu = "
-                + (password == null ? 0 : password.trim().length()));
+        JavaMailSender mailSender = senderFor(to);
         try {
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper =
                     new MimeMessageHelper(message, true, "UTF-8");
 
-            if (fromEmail != null && !fromEmail.isBlank()) {
-                helper.setFrom(fromEmail, "SmashStep");
+            if (from != null && !from.isBlank()) {
+                helper.setFrom(from, "SmashStep");
             }
             helper.setTo(to);
             helper.setSubject("SmashStep - Ưu đãi dành riêng cho bạn!");
@@ -176,11 +200,9 @@ public class EmailService {
             helper.setText(plainText, html);
             mailSender.send(message);
 
-            System.out.println("Gửi email thành công tới: " + to);
 
         } catch (Exception e) {
-            System.err.println("Gửi email thất bại tới: " + to + ". Lý do: " + e.getMessage());
-            e.printStackTrace();
+
             throw new IllegalStateException(
                     "Không thể gửi email phiếu giảm giá", e);
         }
@@ -198,13 +220,14 @@ public class EmailService {
             String endDate,
             String websiteUrl
     ) {
+        JavaMailSender mailSender = senderFor(to);
         try {
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper =
                     new MimeMessageHelper(message, true, "UTF-8");
 
-            if (fromEmail != null && !fromEmail.isBlank()) {
-                helper.setFrom(fromEmail, "SmashStep");
+            if (from != null && !from.isBlank()) {
+                helper.setFrom(from, "SmashStep");
             }
             helper.setTo(to);
             helper.setSubject("SmashStep - Cập nhật thông tin phiếu giảm giá!");
@@ -332,11 +355,9 @@ public class EmailService {
             helper.setText(plainText, html);
             mailSender.send(message);
 
-            System.out.println("Gửi email cập nhật voucher thành công tới: " + to);
 
         } catch (Exception e) {
-            System.err.println("Gửi email cập nhật voucher thất bại tới: " + to + ". Lý do: " + e.getMessage());
-            e.printStackTrace();
+
             throw new IllegalStateException(
                     "Không thể gửi email cập nhật phiếu giảm giá", e);
         }
@@ -348,13 +369,14 @@ public class EmailService {
             String voucherName,
             String voucherCode
     ) {
+        JavaMailSender mailSender = senderFor(to);
         try {
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper =
                     new MimeMessageHelper(message, true, "UTF-8");
 
-            if (fromEmail != null && !fromEmail.isBlank()) {
-                helper.setFrom(fromEmail, "SmashStep");
+            if (from != null && !from.isBlank()) {
+                helper.setFrom(from, "SmashStep");
             }
             helper.setTo(to);
             helper.setSubject("SmashStep - Thông báo về phiếu giảm giá");
@@ -447,11 +469,9 @@ public class EmailService {
             helper.setText(plainText, html);
             mailSender.send(message);
 
-            System.out.println("Gửi email hủy voucher thành công tới: " + to);
 
         } catch (Exception e) {
-            System.err.println("Gửi email hủy voucher thất bại tới: " + to + ". Lý do: " + e.getMessage());
-            e.printStackTrace();
+
             throw new IllegalStateException(
                     "Không thể gửi email thông báo hủy phiếu giảm giá", e);
         }
@@ -485,7 +505,7 @@ public class EmailService {
     private String formatCurrency(String value) {
         try {
             NumberFormat formatter = NumberFormat.getNumberInstance(
-                Locale.forLanguageTag("vi-VN")
+                    Locale.forLanguageTag("vi-VN")
             );
             formatter.setMaximumFractionDigits(0);
             return formatter.format(new java.math.BigDecimal(value)) + "đ";

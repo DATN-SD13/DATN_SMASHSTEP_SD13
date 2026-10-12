@@ -36,6 +36,11 @@ public class SanPhamController {
         return sanPhamService.layChiTietSanPham(id);
     }
 
+    @PostMapping("/check-duplicate")
+    public KiemTraTrungResponse.Product kiemTraTrung(@Valid @RequestBody SanPhamTrungRequest request) {
+        return sanPhamService.kiemTraTrung(request);
+    }
+
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public SanPhamResponse themSanPham(@Valid @RequestBody SanPhamThemRequest yeuCau) {

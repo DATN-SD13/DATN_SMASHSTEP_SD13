@@ -221,11 +221,13 @@ GO
 CREATE TABLE hinh_anh_san_pham (
     id BIGINT IDENTITY(1,1) PRIMARY KEY,
     id_san_pham BIGINT NOT NULL,
+    id_san_pham_chi_tiet BIGINT NULL, -- ảnh của đúng biến thể; NULL = ảnh chung/legacy
     id_mau_sac BIGINT,   -- ảnh theo màu (FE: "Ảnh sản phẩm chi tiết" theo từng màu); NULL = ảnh chung
     url_anh NVARCHAR(1000),
     is_anh_chinh BIT,
     CONSTRAINT FK_hinh_anh_san_pham FOREIGN KEY (id_san_pham) REFERENCES san_pham(id),
-    CONSTRAINT FK_hinh_anh_mau_sac FOREIGN KEY (id_mau_sac) REFERENCES mau_sac(id)
+    CONSTRAINT FK_hinh_anh_mau_sac FOREIGN KEY (id_mau_sac) REFERENCES mau_sac(id),
+    CONSTRAINT FK_hinh_anh_bien_the FOREIGN KEY (id_san_pham_chi_tiet) REFERENCES san_pham_chi_tiet(id)
 );
 GO
 

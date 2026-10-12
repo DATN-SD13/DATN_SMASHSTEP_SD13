@@ -23,7 +23,7 @@ class ThuocTinhSanPhamServiceTest {
     private final KieuDangRepository styles = mock(KieuDangRepository.class);
     private final MauSacRepository colors = mock(MauSacRepository.class);
     private final KichThuocRepository sizes = mock(KichThuocRepository.class);
-    private final ThuocTinhSanPhamService service = new ThuocTinhSanPhamService(categories, brands,
+    private final ThuocTinhSanPhamService service = new ThuocTinhSanPhamService(mock(KhoaGhiSanPham.class), categories, brands,
             materials, origins, collars, styles, colors, sizes);
 
     private void codes(String type, List<String> codes) {
@@ -122,4 +122,10 @@ class ThuocTinhSanPhamServiceTest {
         assertThrows(AppException.class, () -> service.layDanhSach("unknown", 0, 10, "", null));
         assertThrows(AppException.class, () -> service.luuThuocTinh("sizes", null, new ThuocTinhRequest(null, "x".repeat(51), "", null, 1)));
     }
+    @Test
+    void autoCodeIncludesLowercaseAndTrimmedHistoricalCodes() {
+        codes("brands", List.of("TH001", "th002", " Th009 "));
+        assertEquals("TH010", service.taoMaTiepTheo("brands"));
+    }
+
 }
