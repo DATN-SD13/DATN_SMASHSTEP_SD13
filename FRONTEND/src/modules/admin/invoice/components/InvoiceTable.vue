@@ -3,29 +3,16 @@ import { computed } from 'vue'
 
 const props = defineProps({
   invoices: { type: Array, default: () => [] },
-  stats: { type: Object, default: () => ({}) },
   loading: { type: Boolean, default: false },
   loadError: { type: String, default: '' },
   page: { type: Number, default: 1 },
   pageSize: { type: Number, default: 10 },
   totalPages: { type: Number, default: 1 },
   totalElements: { type: Number, default: 0 },
-  activeStatus: { type: String, default: 'all' },
   exporting: { type: Boolean, default: false }
 })
-const emit = defineEmits(['view', 'export', 'page-change', 'status-change'])
+const emit = defineEmits(['view', 'export', 'page-change'])
 
-const tabDefs = [
-  ['all', 'Tất cả'],
-  ['waiting', 'Chờ xác nhận'],
-  ['confirmed', 'Đã xác nhận'],
-  ['ready', 'Chờ giao hàng'],
-  ['shipping', 'Đang giao hàng'],
-  ['delivered', 'Đã giao hàng'],
-  ['done', 'Đã hoàn thành'],
-  // ['cancel', 'Đã hủy'],
-]
-const tabs = computed(() => tabDefs.map(([key, label]) => [key, label, Number(props.stats[key] || 0)]))
 const pageStart = computed(() => props.totalElements ? (props.page - 1) * props.pageSize + 1 : 0)
 const pageEnd = computed(() => Math.min(props.page * props.pageSize, props.totalElements))
 const pageNumbers = computed(() => {
@@ -60,11 +47,7 @@ function money(value) { return `${Number(value || 0).toLocaleString('vi-VN')} đ
           {{ exporting ? 'Đang xuất...' : 'Xuất Excel' }}
         </button>
       </div>
-      <div class="status-tabs">
-        <button v-for="tab in tabs" :key="tab[0]" type="button" :class="{ active: activeStatus === tab[0] }" @click="emit('status-change', tab[0])">
-          {{ tab[1] }} <b v-if="tab[2]">{{ tab[2] }}</b>
-        </button>
-      </div>
+
     </div>
 
     <div class="table-wrap table-responsive">
@@ -128,10 +111,8 @@ function money(value) { return `${Number(value || 0).toLocaleString('vi-VN')} đ
 
 <style scoped>
 .table-card{background:#fff;border:1px solid #e7eef4!important;border-radius:14px;overflow:hidden}
-.table-head{padding:20px 22px 0}.list-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}.list-heading h2{margin:0;color:#203744;font-size:15px;font-weight:700}
+.table-head{padding:20px 22px}.list-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}.list-heading h2{margin:0;color:#203744;font-size:15px;font-weight:700}
 .export-btn{height:36px;min-width:122px;padding:0 15px;border-radius:9px;font-size:12px;font-weight:600;display:inline-flex;align-items:center;justify-content:center;gap:7px;--bs-btn-color:#137fb7;--bs-btn-border-color:#b9d9ec;--bs-btn-hover-bg:#1689cf;--bs-btn-hover-border-color:#1689cf}.export-btn:disabled{opacity:.7;cursor:not-allowed}
-.status-tabs{display:flex;gap:8px;overflow-x:auto;padding:18px 0 15px}.status-tabs::-webkit-scrollbar{height:4px}.status-tabs::-webkit-scrollbar-thumb{background:#dce8ef;border-radius:5px}
-.status-tabs button{flex:0 0 auto;border:1px solid #dfe6eb;background:#fff;color:#697d87;border-radius:9px;padding:8px 13px;white-space:nowrap;font-size:11px;font-weight:600;cursor:pointer;transition:.15s}.status-tabs button b{font-size:10px;margin-left:3px;font-weight:700}.status-tabs button:hover{border-color:#8fc5e7;color:#0878bd;background:#f5fbff}.status-tabs button.active{background:#1689cf;border-color:#1689cf;color:#fff;box-shadow:0 3px 9px rgba(22,137,207,.15)}
 .table-wrap{overflow-x:auto}table{width:100%;min-width:1080px;border-collapse:collapse;border-spacing:0;table-layout:fixed;margin:0!important}.col-stt{width:52px}.col-code{width:96px}.col-employee{width:78px}.col-customer{width:150px}.col-phone{width:108px}.col-total{width:126px}.col-type{width:100px}.col-date{width:112px}.col-status{width:124px}.col-action{width:86px}thead{background:#eaf4fa;vertical-align:middle}th{height:46px;padding:0 12px!important;vertical-align:middle!important;text-align:left;color:#536c7b!important;font-size:11px;font-weight:700!important;white-space:nowrap;border-bottom:1px solid #dce7ee!important;background:#eaf4fa!important}td{height:52px;padding:0 12px!important;color:#4f626d;font-size:11px;white-space:nowrap;border-bottom:1px solid #edf1f4}tbody tr{transition:background .12s}tbody tr:hover>*{background:#f5faff!important}
 .stt{text-align:center;color:#72838c}.code{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;color:#293e49;font-size:11px;font-weight:700}.customer{max-width:180px;overflow:hidden;text-overflow:ellipsis}.money{white-space:nowrap;color:#1681c3;font-size:11px;font-weight:750}
 .type-tag{display:inline-flex;align-items:center;justify-content:center;min-height:28px;padding:5px 10px;border:1px solid transparent;border-radius:7px;font-size:10px;font-weight:700;line-height:1;white-space:nowrap}.type-tag.online{background:#e6f4ff;color:#147bb8;border-color:#cfe9f9}.type-tag.store{background:#edf0ff;color:#5b68b4;border-color:#dfe3fb}.type-tag.delivery{background:#fff4df;color:#b87512;border-color:#f4dfb4}
@@ -139,5 +120,5 @@ function money(value) { return `${Number(value || 0).toLocaleString('vi-VN')} đ
 .view{width:32px;height:32px;border:1px solid #dcebf4;background:#f3faff;color:#1689cf;border-radius:9px;cursor:pointer;font-size:14px;transition:.15s}.view:hover{background:#1689cf;color:#fff;border-color:#1689cf}.action{text-align:center}.action .view{display:inline-grid;place-items:center}
 .empty{text-align:center;height:150px!important;color:#8d9da6}.empty i{display:block;font-size:24px;color:#a9cde2;margin-bottom:8px}.empty strong,.empty span{display:block}.empty strong{color:#5c707b;font-size:13px}.empty span{margin-top:5px;font-size:11px}
 .table-footer{min-height:58px;padding:0 22px;display:flex;align-items:center;justify-content:space-between;color:#8b9ba4;font-size:11px}.table-footer b{color:#526873}.pagination{display:flex;align-items:center;gap:5px}.pagination button{width:31px;height:31px;border:1px solid #dfe7ec;background:#fff;border-radius:8px;color:#6d818c;cursor:pointer}.pagination button.current{background:#1689cf;color:#fff;border-color:#1689cf}.pagination button:disabled{color:#c6d1d7;cursor:not-allowed}.pagination .ellipsis{width:20px;text-align:center;color:#8b9ba4;font-size:12px}
-@media(max-width:700px){.table-head{padding:15px 14px 0}.status-tabs{gap:6px}.status-tabs button{font-size:10px;padding:8px 10px}.table-footer{padding:0 14px}}
+@media(max-width:700px){.table-head{padding:15px 14px}.table-footer{padding:0 14px}}
 </style>
