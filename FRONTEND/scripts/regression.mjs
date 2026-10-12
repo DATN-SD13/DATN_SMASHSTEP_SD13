@@ -23,7 +23,8 @@ function walk(dir) {
 walk(root)
 let calls = 0, fail = false
 const notices = []
-const script = parse(fs.readFileSync(new URL('modules/admin/invoice/views/InvoiceDetail.vue', root), 'utf8')).descriptor.scriptSetup.content.replace(/^import .*\n/gm, '')
+const invoiceDescriptor = parse(fs.readFileSync(new URL('modules/admin/invoice/views/InvoiceDetail.vue', root), 'utf8')).descriptor
+const script = invoiceDescriptor.scriptSetup.content.replace(/^import .*\r?\n/gm, '')
 const context = vm.createContext({
   ...vue, onMounted: () => {}, onUnmounted: () => {}, watch: () => {},
   useRoute: () => ({ params: { code: 'HD01' } }), useRouter: () => ({ push: async () => {} }),
@@ -35,7 +36,7 @@ const context = vm.createContext({
   } },
   api: {}, imageUrl: x => x, window: { setTimeout, clearTimeout, addEventListener: () => {}, removeEventListener: () => {} }, console
 })
-vm.runInContext(script + '\nglobalThis.state = { invoice, selectedStatus, updatingStatus, saveStatus, cancelOrder, steps, notices: null };', context)
+vm.runInContext(script + '\nglobalThis.state = { invoice, selectedStatus, updatingStatus, saveStatus, steps, notices: null };', context)
 const state = context.state
 state.invoice.value = { code: 'HD01', statusCode: 1, nextStatusCode: 2, receiveMethodCode: 1, items: [] }
 state.selectedStatus.value = 1
@@ -48,12 +49,16 @@ assert.equal(notices.at(-1)[0], 'success')
 state.invoice.value = { code: 'HD01', statusCode: 2, nextStatusCode: 3, receiveMethodCode: 1, items: [] }
 state.selectedStatus.value = 3; fail = true
 await state.saveStatus(); assert.equal(state.invoice.value.statusCode, 2); assert.equal(notices.at(-1)[0], 'error')
-fail = false; await state.cancelOrder(); assert.equal(state.invoice.value.statusCode, 6)
+fail = false; await state.saveStatus(); assert.equal(state.invoice.value.statusCode, 3)
+// Latest main removed the cancellation UI in eec1937; its backend transition remains tested separately.
+const activeTemplate = invoiceDescriptor.template.content.replace(/<!--[\s\S]*?-->/g, '')
+assert.equal(activeTemplate.includes('@click="cancelOrder"'), false)
+assert.equal(activeTemplate.includes('@click="openCancelModal"'), false)
 state.invoice.value = { code: 'HD01', statusCode: 0, nextStatusCode: 1, receiveMethodCode: 0, items: [] }
 assert.deepEqual(Array.from(state.steps.value, s => s.value), [0, 1, 5])
 state.invoice.value = { code: 'HD01', statusCode: 8, nextStatusCode: 5, receiveMethodCode: 0, items: [] }
 assert.deepEqual(Array.from(state.steps.value, s => s.value), [8, 5])
-console.log(`PASS: ${count} Vue SFCs compiled; invoice unchanged-state, duplicate-submit, failure preservation, returned history, cancellation and pickup timeline regressions.`)
+console.log(`PASS: ${count} Vue SFCs compiled; invoice unchanged-state, duplicate-submit, failure preservation, returned history, recovery after failure, current cancellation UI contract and pickup timeline regressions.`)
 
 const { useProductToast } = await import('../src/modules/admin/product/composables/useProductToast.js')
 const first = useProductToast(), afterNavigation = useProductToast()

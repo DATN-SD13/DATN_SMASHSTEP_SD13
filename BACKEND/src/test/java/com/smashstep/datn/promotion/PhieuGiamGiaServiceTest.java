@@ -52,7 +52,8 @@ class PhieuGiamGiaServiceTest {
     private final KhachHangRepository customers = mock(KhachHangRepository.class);
     private final com.smashstep.datn.common.config.DatabaseCapabilities database = mock(com.smashstep.datn.common.config.DatabaseCapabilities.class);
     private final com.smashstep.datn.promotion.service.EmailService emailService = mock(com.smashstep.datn.promotion.service.EmailService.class);
-    private final PhieuGiamGiaService service = new PhieuGiamGiaService(vouchers, assignments, customers, database, emailService, null);
+    private final com.smashstep.datn.product.service.KhoaGhiSanPham writeLock = mock(com.smashstep.datn.product.service.KhoaGhiSanPham.class);
+    private final PhieuGiamGiaService service = new PhieuGiamGiaService(vouchers, assignments, customers, database, emailService, writeLock);
     private final List<PhieuGiamGiaKhachHang> links = new ArrayList<>();
 
     @BeforeEach
