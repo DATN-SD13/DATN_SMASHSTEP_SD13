@@ -1,7 +1,11 @@
 <script setup>
 import { ref } from 'vue'
-import AvatarCard from '../../../../components/AvatarCard.vue'
-import customerService from '../services/customerService'
+
+import AvatarCard
+  from '../../../../components/AvatarCard.vue'
+
+import customerService
+  from '../services/customerService'
 
 const props = defineProps({
   customer: {
@@ -16,12 +20,23 @@ const emit = defineEmits([
 ])
 
 const f = ref({
-  name: props.customer.name || '',
-  email: props.customer.email || '',
-  phone: props.customer.phone || '',
-  gender: props.customer.gender ?? '',
-  dob: props.customer.dob || '',
-  image: props.customer.image || ''
+  name:
+    props.customer.name || '',
+
+  email:
+    props.customer.email || '',
+
+  phone:
+    props.customer.phone || '',
+
+  gender:
+    props.customer.gender ?? '',
+
+  dob:
+    props.customer.dob || '',
+
+  image:
+    props.customer.image || ''
 })
 
 const err = ref('')
@@ -29,36 +44,55 @@ const saving = ref(false)
 
 const errorMessage = (e) =>
   e?.response?.data?.message ||
+  e?.message ||
   'Có lỗi xảy ra, vui lòng thử lại.'
 
 async function save() {
   const v = f.value
 
-  if (!v.name.trim() || !v.email.trim()) {
-    err.value = 'Vui lòng nhập họ tên và email.'
+  if (
+    !v.name.trim() ||
+    !v.email.trim()
+  ) {
+    err.value =
+      'Vui lòng nhập họ tên và email.'
+
     return
   }
 
-  if (!/^\S+@\S+\.\S+$/.test(v.email)) {
-    err.value = 'Email không hợp lệ.'
+  if (
+    !/^\S+@\S+\.\S+$/.test(
+      v.email.trim()
+    )
+  ) {
+    err.value =
+      'Email không hợp lệ.'
+
     return
   }
 
   if (
     v.phone &&
-    !/^0\d{9}$/.test(v.phone)
+    !/^0\d{9}$/.test(
+      v.phone.trim()
+    )
   ) {
     err.value =
       'Số điện thoại phải gồm 10 số và bắt đầu bằng 0.'
+
     return
   }
 
   if (
     v.dob &&
-    new Date(v.dob) > new Date()
+    new Date(
+      `${v.dob}T00:00:00`
+    ) >
+    new Date()
   ) {
     err.value =
       'Ngày sinh không được lớn hơn ngày hiện tại.'
+
     return
   }
 
@@ -67,29 +101,50 @@ async function save() {
 
   try {
     const image =
-      v.image?.startsWith('data:image/')
+      v.image?.startsWith(
+        'data:image/'
+      )
         ? null
-        : (v.image || null)
+        : v.image || null
 
     const data =
-      await customerService.updateCustomer(
-        props.customer.code,
-        {
-          name: v.name.trim(),
-          email: v.email.trim(),
-          phone: v.phone.trim() || null,
-          gender:
-            v.gender === ''
-              ? null
-              : Number(v.gender),
-          dob: v.dob || null,
-          image
-        }
-      )
+      await customerService
+        .updateCustomer(
+          props.customer.code,
+          {
+            name:
+              v.name.trim(),
 
-    emit('saved', data)
+            email:
+              v.email.trim(),
+
+            phone:
+              v.phone.trim() ||
+              null,
+
+            gender:
+              v.gender === ''
+                ? null
+                : Number(
+                    v.gender
+                  ),
+
+            dob:
+              v.dob || null,
+
+            image
+          }
+        )
+
+    emit(
+      'saved',
+      data
+    )
+
   } catch (e) {
-    err.value = errorMessage(e)
+    err.value =
+      errorMessage(e)
+
   } finally {
     saving.value = false
   }
@@ -210,26 +265,31 @@ async function save() {
             {{ err }}
           </p>
 
-          <div class="ss-actions left">
-            <button
-              class="ss-btn primary"
-              :disabled="saving"
-              @click="save"
-            >
-              {{
-                saving
-                  ? 'Đang lưu...'
-                  : 'Lưu thay đổi'
-              }}
-            </button>
+          <div class="ss-actions left edit-actions">
 
-            <button
-              class="ss-btn"
-              @click="$emit('close')"
-            >
-              Hủy
-            </button>
-          </div>
+  <button
+    class="ss-btn primary"
+    type="button"
+    :disabled="saving"
+    @click="save"
+  >
+    {{
+      saving
+        ? 'Đang lưu...'
+        : 'Lưu thay đổi'
+    }}
+  </button>
+
+  <button
+    class="ss-btn"
+    type="button"
+    :disabled="saving"
+    @click="$emit('close')"
+  >
+    Hủy
+  </button>
+
+</div>
         </div>
       </div>
     </section>
@@ -288,5 +348,10 @@ async function save() {
   .edit-layout {
     flex-direction: column;
   }
+}
+
+.edit-actions {
+  margin-top: 18px;
+  gap: 12px;
 }
 </style>

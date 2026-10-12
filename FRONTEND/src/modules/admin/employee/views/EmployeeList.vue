@@ -3,11 +3,32 @@ import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import SsPager from '../../../../components/SsPager.vue'
 import { initials } from '../../../../utils/paging'
 import employeeService from '../services/employeeService'
+import AppToast from '../../../../components/AppToast.vue'
+import ConfirmModal from '../../../../components/ConfirmModal.vue'
+import { useToast } from '../../../../composables/useToast'
 
 import { onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
+import * as XLSX from 'xlsx'
+
 const router = useRouter()
+
+const {
+  toast,
+  success,
+  error: showError,
+  closeToast
+} = useToast()
+
+const confirmModal = ref({
+  show: false,
+  title: '',
+  message: '',
+  action: null
+})
+
+const confirmLoading = ref(false)
 
 const rows = ref([])
 const roles = ref([])
@@ -36,12 +57,124 @@ function getErrorMessage(err) {
   )
 }
 
+function askConfirm(title, message, action) {
+  confirmModal.value = {
+    show: true,
+    title,
+    message,
+    action
+  }
+}
+
+function closeConfirm() {
+  if (confirmLoading.value) return
+
+  confirmModal.value.show = false
+  confirmModal.value.action = null
+}
+
+async function executeConfirm() {
+  if (!confirmModal.value.action) return
+
+  confirmLoading.value = true
+
+  try {
+    await confirmModal.value.action()
+  } finally {
+    confirmLoading.value = false
+    confirmModal.value.show = false
+    confirmModal.value.action = null
+  }
+}
+
+function exportExcel() {
+  if (!rows.value?.length) {
+    showError(
+      'Không có dữ liệu nhân viên để xuất.',
+      'Không thể xuất Excel'
+    )
+    return
+  }
+
+  const data = rows.value.map(
+    (e, index) => ({
+      STT:
+        (page.value - 1) * size.value +
+        index +
+        1,
+
+      'Mã nhân viên': e.code || '',
+      'Họ và tên': e.name || '',
+      'Email': e.email || '',
+      'Số điện thoại': e.phone || '',
+      'Giới tính': e.genderLabel || '',
+      'Ngày sinh': e.dob || '',
+      'Địa chỉ': e.address || '',
+      'Vai trò': e.role || '',
+
+      'Trạng thái':
+        e.active
+          ? 'Hoạt động'
+          : 'Đã khóa'
+    })
+  )
+
+  const worksheet =
+    XLSX.utils.json_to_sheet(data)
+
+  worksheet['!cols'] = [
+    { wch: 7 },
+    { wch: 16 },
+    { wch: 25 },
+    { wch: 30 },
+    { wch: 16 },
+    { wch: 12 },
+    { wch: 15 },
+    { wch: 45 },
+    { wch: 20 },
+    { wch: 20 }
+  ]
+
+  const workbook =
+    XLSX.utils.book_new()
+
+  XLSX.utils.book_append_sheet(
+    workbook,
+    worksheet,
+    'Nhân viên'
+  )
+
+  const now = new Date()
+
+  const fileDate =
+    `${now.getFullYear()}-` +
+    `${String(
+      now.getMonth() + 1
+    ).padStart(2, '0')}-` +
+    `${String(
+      now.getDate()
+    ).padStart(2, '0')}`
+
+  XLSX.writeFile(
+    workbook,
+    `Danh_sach_nhan_vien_${fileDate}.xlsx`
+  )
+}
+
 async function loadRoles() {
   try {
-    const data = await employeeService.getRoles()
-    roles.value = Array.isArray(data) ? data : []
+    const data =
+      await employeeService.getRoles()
+
+    roles.value =
+      Array.isArray(data)
+        ? data
+        : []
   } catch (err) {
-    console.error('Không tải được vai trò:', err)
+    console.error(
+      'Không tải được vai trò:',
+      err
+    )
   }
 }
 
@@ -55,61 +188,102 @@ async function loadEmployees() {
       size: size.value
     }
 
-    const keyword = f.value.q.trim()
+    const keyword =
+      f.value.q.trim()
 
     if (keyword) {
       params.tuKhoa = keyword
     }
 
     if (f.value.roleId !== 'all') {
-      params.vaiTroId = Number(f.value.roleId)
+      params.vaiTroId =
+        Number(f.value.roleId)
     }
 
     if (f.value.status !== 'all') {
-      params.trangThai = Number(f.value.status)
+      params.trangThai =
+        Number(f.value.status)
     }
 
-    const data = await employeeService.getEmployees(params)
+    const data =
+      await employeeService.getEmployees(
+        params
+      )
 
-    rows.value = data?.content ?? []
-    pages.value = Math.max(data?.totalPages ?? 0, 1)
-    totalElements.value = data?.totalElements ?? 0
+    rows.value =
+      data?.content ?? []
+
+    pages.value =
+      Math.max(
+        data?.totalPages ?? 0,
+        1
+      )
+
+    totalElements.value =
+      data?.totalElements ?? 0
 
     if (page.value > pages.value) {
       page.value = pages.value
     }
   } catch (err) {
     console.error(err)
+
     rows.value = []
     pages.value = 1
     totalElements.value = 0
-    error.value = getErrorMessage(err)
+
+    error.value =
+      getErrorMessage(err)
+
+    showError(
+      error.value,
+      'Không thể tải dữ liệu'
+    )
   } finally {
     loading.value = false
   }
 }
 
-async function toggleStatus(employee) {
-  const nextStatus = employee.active ? 0 : 1
+function toggleStatus(employee) {
+  const isActive =
+    employee.active === true ||
+    employee.status === 1
 
-  const action = employee.active
-    ? 'khóa tài khoản'
-    : 'mở khóa tài khoản'
+  const nextStatus =
+    isActive ? 0 : 1
 
-  if (!window.confirm(`Bạn có chắc muốn ${action} ${employee.name}?`)) {
-    return
-  }
+  askConfirm(
+    'Xác nhận cập nhật',
 
-  try {
-    await employeeService.updateStatus(
-      employee.code,
-      nextStatus
-    )
+    isActive
+      ? `Bạn có chắc chắn muốn khóa nhân viên ${employee.code} - ${employee.name} không?`
+      : `Bạn có chắc chắn muốn mở khóa nhân viên ${employee.code} - ${employee.name} không?`,
 
-    await loadEmployees()
-  } catch (err) {
-    window.alert(getErrorMessage(err))
-  }
+    async () => {
+      try {
+        await employeeService.updateStatus(
+          employee.code,
+          nextStatus
+        )
+
+        await loadEmployees()
+
+        success(
+          isActive
+            ? 'Khóa tài khoản nhân viên thành công'
+            : 'Mở khóa tài khoản nhân viên thành công',
+          'Cập nhật thành công'
+        )
+      } catch (err) {
+        console.error(err)
+
+        showError(
+          getErrorMessage(err),
+          'Cập nhật thất bại'
+        )
+      }
+    }
+  )
 }
 
 function reset() {
@@ -128,10 +302,13 @@ watch(
   () => {
     clearTimeout(searchTimer)
 
-    searchTimer = setTimeout(() => {
-      page.value = 1
-      loadEmployees()
-    }, 400)
+    searchTimer = setTimeout(
+      () => {
+        page.value = 1
+        loadEmployees()
+      },
+      400
+    )
   }
 )
 
@@ -151,17 +328,23 @@ watch(
   }
 )
 
-watch(page, () => {
-  loadEmployees()
-})
-
-watch(size, () => {
-  if (page.value !== 1) {
-    page.value = 1
-  } else {
+watch(
+  page,
+  () => {
     loadEmployees()
   }
-})
+)
+
+watch(
+  size,
+  () => {
+    if (page.value !== 1) {
+      page.value = 1
+    } else {
+      loadEmployees()
+    }
+  }
+)
 
 onMounted(async () => {
   await Promise.all([
@@ -172,6 +355,24 @@ onMounted(async () => {
 </script>
 
 <template>
+  <AppToast
+    :show="toast.show"
+    :type="toast.type"
+    :title="toast.title"
+    :message="toast.message"
+    @close="closeToast"
+  />
+
+  <ConfirmModal
+    :show="confirmModal.show"
+    :title="confirmModal.title"
+    :message="confirmModal.message"
+    :loading="confirmLoading"
+    confirm-text="Đồng ý"
+    cancel-text="Hủy"
+    @confirm="executeConfirm"
+    @cancel="closeConfirm"
+  />
   <AdminLayout>
     <main class="ss-page">
 
@@ -241,10 +442,14 @@ onMounted(async () => {
             Đặt lại bộ lọc
           </button>
 
-          <button class="ss-btn">
-            <i class="bi bi-file-earmark-excel"></i>
-            Xuất Excel
-          </button>
+          <button
+  type="button"
+  class="ss-btn"
+  @click="exportExcel"
+>
+  <i class="bi bi-file-earmark-excel"></i>
+  Xuất Excel
+</button>
 
           <button
             class="ss-btn primary"

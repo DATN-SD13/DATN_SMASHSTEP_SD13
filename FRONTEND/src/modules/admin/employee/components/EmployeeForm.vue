@@ -1,6 +1,10 @@
 <script setup>
 import AvatarCard from '../../../../components/AvatarCard.vue'
 import employeeService from '../services/employeeService'
+import CccdScanner from './CccdScanner.vue'
+import AppToast from '../../../../components/AppToast.vue'
+import ConfirmModal from '../../../../components/ConfirmModal.vue'
+import { useToast } from '../../../../composables/useToast'
 
 import {
   computed,
@@ -10,10 +14,62 @@ import {
 
 import { useRouter } from 'vue-router'
 
-import {
-  provinceNames,
-  wardsOf
-} from '../../../../utils/address'
+import { useAddressApi } from '../../../../composables/useAddressApi'
+
+const {
+  toast,
+  success,
+  error: showError,
+  closeToast
+} = useToast()
+
+const confirmModal = ref({
+  show: false,
+  title: '',
+  message: '',
+  action: null
+})
+
+const confirmLoading = ref(false)
+
+function askConfirm({
+  title = 'Xác nhận',
+  message,
+  action
+}) {
+  confirmModal.value = {
+    show: true,
+    title,
+    message,
+    action
+  }
+}
+
+function closeConfirm() {
+  if (confirmLoading.value) {
+    return
+  }
+
+  confirmModal.value.show = false
+  confirmModal.value.action = null
+}
+
+async function executeConfirm() {
+  if (!confirmModal.value.action) {
+    return
+  }
+
+  confirmLoading.value = true
+
+  try {
+    await confirmModal.value.action()
+
+    confirmModal.value.show = false
+    confirmModal.value.action = null
+  } finally {
+    confirmLoading.value = false
+  }
+}
 
 const props = defineProps({
   mode: {
@@ -72,12 +128,25 @@ const f = ref({
     props.employee?.image ?? ''
 })
 
-const wards = computed(
-  () => wardsOf(f.value.province)
-)
+const {
+  provinces,
+  wards,
+
+  provinceCode,
+  wardCode,
+
+  loadingProvinces,
+  loadingWards,
+
+  addressError,
+
+  changeProvince,
+  changeWard
+} = useAddressApi(f)
 
 const err = ref('')
 const msg = ref('')
+const showCccdScanner = ref(false)
 
 function getErrorMessage(error) {
   const response = error?.response?.data
@@ -249,54 +318,81 @@ async function submit() {
   err.value = ''
   msg.value = ''
 
-  const validationError =
-    validate()
+  const validationError = validate()
 
   if (validationError) {
     err.value = validationError
+    showError(
+      validationError,
+      'Dữ liệu không hợp lệ'
+    )
     return
   }
 
-  saving.value = true
+  askConfirm({
+    title: edit.value
+      ? 'Xác nhận cập nhật'
+      : 'Xác nhận thêm nhân viên',
 
-  try {
-    const payload =
-      buildPayload()
+    message: edit.value
+      ? `Bạn có chắc chắn muốn cập nhật thông tin nhân viên ${props.employee?.code || ''} - ${f.value.name} không?`
+      : `Bạn có chắc chắn muốn thêm nhân viên ${f.value.name} không?`,
 
-    if (edit.value) {
-      await employeeService.updateEmployee(
-        props.employee.code,
-        payload
-      )
+    action: async () => {
+      saving.value = true
 
-      msg.value =
-        'Đã lưu thay đổi thành công.'
+      try {
+        const payload = buildPayload()
 
-      setTimeout(() => {
-        router.push('/nhan-vien')
-      }, 700)
-    } else {
-      await employeeService.createEmployee(
-        payload
-      )
+        if (edit.value) {
+          await employeeService.updateEmployee(
+            props.employee.code,
+            payload
+          )
 
-      window.alert(
-        'Thêm nhân viên thành công.'
-      )
+          success(
+            'Cập nhật thông tin nhân viên thành công',
+            'Cập nhật thành công'
+          )
+        } else {
+          await employeeService.createEmployee(
+            payload
+          )
 
-      router.push('/nhan-vien')
+          success(
+            'Thêm nhân viên thành công',
+            'Thêm thành công'
+          )
+        }
+
+        setTimeout(() => {
+          router.push('/nhan-vien')
+        }, 1200)
+
+      } catch (error) {
+        console.error(error)
+
+        const message =
+          getErrorMessage(error)
+
+        err.value = message
+
+        showError(
+          message,
+          edit.value
+            ? 'Cập nhật thất bại'
+            : 'Thêm thất bại'
+        )
+
+        throw error
+      } finally {
+        saving.value = false
+      }
     }
-  } catch (error) {
-    console.error(error)
-
-    err.value =
-      getErrorMessage(error)
-  } finally {
-    saving.value = false
-  }
+  })
 }
 
-async function toggleStatus() {
+function toggleStatus() {
   if (!edit.value) {
     return
   }
@@ -304,49 +400,84 @@ async function toggleStatus() {
   const nextStatus =
     active.value ? 0 : 1
 
-  const action =
+  const actionText =
     active.value
       ? 'khóa tài khoản'
       : 'mở khóa tài khoản'
 
-  if (
-    !window.confirm(
-      `Bạn có chắc muốn ${action}?`
-    )
-  ) {
-    return
-  }
+  askConfirm({
+    title: 'Xác nhận cập nhật',
 
-  err.value = ''
-  msg.value = ''
+    message:
+      `Bạn có chắc chắn muốn ${actionText} ` +
+      `nhân viên ${props.employee?.code || ''} - ${f.value.name} không?`,
 
-  try {
-    const data =
-      await employeeService.updateStatus(
-        props.employee.code,
-        nextStatus
-      )
+    action: async () => {
+      err.value = ''
+      msg.value = ''
 
-    active.value =
-      data?.active ??
-      nextStatus === 1
+      try {
+        const data =
+          await employeeService.updateStatus(
+            props.employee.code,
+            nextStatus
+          )
 
-    msg.value =
-      nextStatus === 1
-        ? 'Đã mở khóa tài khoản.'
-        : 'Đã khóa tài khoản.'
-  } catch (error) {
-    console.error(error)
+        active.value =
+          data?.active ??
+          nextStatus === 1
 
-    err.value =
-      getErrorMessage(error)
-  }
+        success(
+          nextStatus === 1
+            ? 'Mở khóa tài khoản nhân viên thành công'
+            : 'Khóa tài khoản nhân viên thành công',
+          'Cập nhật thành công'
+        )
+
+      } catch (error) {
+        console.error(error)
+
+        const message =
+          getErrorMessage(error)
+
+        err.value = message
+
+        showError(
+          message,
+          'Cập nhật thất bại'
+        )
+
+        throw error
+      }
+    }
+  })
 }
 
 function scanCccd() {
-  window.alert(
-    'Chức năng quét mã CCCD chưa được tích hợp.'
-  )
+  showCccdScanner.value = true
+}
+
+function handleCccdScanned(data) {
+  showCccdScanner.value = false
+
+  if (data.name) {
+    f.value.name = data.name
+  }
+
+  if (data.dob) {
+    f.value.dob = data.dob
+  }
+
+  if (
+    data.gender === 0 ||
+    data.gender === 1 ||
+    data.gender === 2
+  ) {
+    f.value.gender = data.gender
+  }
+
+  msg.value =
+    'Quét CCCD thành công. Vui lòng kiểm tra lại thông tin.'
 }
 
 function changePassword() {
@@ -361,6 +492,32 @@ onMounted(() => {
 </script>
 
 <template>
+
+  <AppToast
+  :show="toast.show"
+  :type="toast.type"
+  :title="toast.title"
+  :message="toast.message"
+  @close="closeToast"
+/>
+
+<ConfirmModal
+  :show="confirmModal.show"
+  :title="confirmModal.title"
+  :message="confirmModal.message"
+  :loading="confirmLoading"
+  confirm-text="Đồng ý"
+  cancel-text="Hủy"
+  @confirm="executeConfirm"
+  @cancel="closeConfirm"
+/>
+
+  <CccdScanner
+    v-if="showCccdScanner"
+    @close="showCccdScanner = false"
+    @scanned="handleCccdScanned"
+  />
+
   <div class="ss-split">
 
     <div class="ss-stack">
@@ -591,59 +748,81 @@ onMounted(() => {
 
         <div class="ss-grid2">
 
-          <div class="ss-field">
+          <!-- TỈNH THÀNH -->
+  <div class="ss-field">
 
-            <label class="ss-label">
-              Tỉnh/Thành phố
-              <span class="req">*</span>
-            </label>
+    <label class="ss-label">
+      Tỉnh/Thành phố
+      <span class="req">*</span>
+    </label>
 
-            <select
-              class="ss-select"
-              v-model="f.province"
-              @change="f.ward = ''"
-            >
-              <option value="">
-                Chọn tỉnh thành
-              </option>
+    <select
+      class="ss-select"
+      v-model="provinceCode"
+      :disabled="loadingProvinces"
+      @change="changeProvince"
+    >
+      <option value="">
+        {{
+          loadingProvinces
+            ? 'Đang tải tỉnh/thành...'
+            : '-- Chọn tỉnh/thành --'
+        }}
+      </option>
 
-              <option
-                v-for="p in provinceNames"
-                :key="p"
-                :value="p"
-              >
-                {{ p }}
-              </option>
-            </select>
+      <option
+        v-for="p in provinces"
+        :key="p.code"
+        :value="String(p.code)"
+      >
+        {{ p.name }}
+      </option>
 
-          </div>
+    </select>
 
-          <div class="ss-field">
+  </div>
 
-            <label class="ss-label">
-              Xã/Phường/Thị trấn
-              <span class="req">*</span>
-            </label>
+          <!-- PHƯỜNG XÃ -->
+  <div class="ss-field">
 
-            <select
-              class="ss-select"
-              v-model="f.ward"
-              :disabled="!f.province"
-            >
-              <option value="">
-                Chọn xã phường
-              </option>
+    <label class="ss-label">
+      Phường/Xã
+      <span class="req">*</span>
+    </label>
 
-              <option
-                v-for="w in wards"
-                :key="w"
-                :value="w"
-              >
-                {{ w }}
-              </option>
-            </select>
+    <select
+      class="ss-select"
+      v-model="wardCode"
+      :disabled="!provinceCode || loadingWards"
+      @change="changeWard"
+    >
+      <option value="">
+        {{
+          loadingWards
+            ? 'Đang tải phường/xã...'
+            : '-- Chọn phường/xã --'
+        }}
+      </option>
 
-          </div>
+      <option
+        v-for="w in wards"
+        :key="w.code"
+        :value="String(w.code)"
+      >
+        {{ w.name }}
+      </option>
+
+    </select>
+
+  </div>
+
+  <div
+    v-if="addressError"
+    class="ss-field full"
+    style="color: #dc3545"
+  >
+    {{ addressError }}
+  </div>
 
           <div class="ss-field full">
 

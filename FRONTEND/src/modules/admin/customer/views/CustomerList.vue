@@ -1,7 +1,12 @@
 <script setup>
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import SsPager from '../../../../components/SsPager.vue'
+import AppToast from '../../../../components/AppToast.vue'
+import ConfirmModal from '../../../../components/ConfirmModal.vue'
+
 import { initials } from '../../../../utils/paging'
+import { useToast } from '../../../../composables/useToast'
+import * as XLSX from 'xlsx'
 
 import {
   onMounted,
@@ -25,41 +30,88 @@ import CustomerAddressModal
 
 const router = useRouter()
 
+const {
+  toast,
+  success,
+  error: showError,
+  closeToast
+} = useToast()
+
+const confirmModal = ref({
+  show: false,
+  title: '',
+  message: '',
+  action: null
+})
+
+const confirmLoading = ref(false)
+
 const rows = ref([])
-
 const q = ref('')
-
 const status = ref('')
 
 const page = ref(1)
-
 const size = ref(5)
 
 const pages = ref(1)
-
 const totalElements = ref(0)
 
 const loading = ref(false)
-
 const error = ref('')
 
 const selected = ref(null)
-
 const modal = ref('')
 
-let searchTimer
+let searchTimer = null
 
 const errorMessage = (e) =>
-  e?.response?.data?.message
-  || 'Không thể tải dữ liệu khách hàng.'
+  e?.response?.data?.message ||
+  e?.message ||
+  'Có lỗi xảy ra. Vui lòng thử lại.'
+
+function askConfirm(
+  title,
+  message,
+  action
+) {
+  confirmModal.value = {
+    show: true,
+    title,
+    message,
+    action
+  }
+}
+
+function closeConfirm() {
+  if (confirmLoading.value) {
+    return
+  }
+
+  confirmModal.value.show = false
+  confirmModal.value.action = null
+}
+
+async function executeConfirm() {
+  if (!confirmModal.value.action) {
+    return
+  }
+
+  confirmLoading.value = true
+
+  try {
+    await confirmModal.value.action()
+  } finally {
+    confirmLoading.value = false
+    confirmModal.value.show = false
+    confirmModal.value.action = null
+  }
+}
 
 async function loadCustomers() {
-
   loading.value = true
   error.value = ''
 
   try {
-
     const params = {
       page: page.value,
       size: size.value
@@ -91,19 +143,21 @@ async function loadCustomers() {
     totalElements.value =
       data?.totalElements || 0
 
-    if (
-      page.value > pages.value
-    ) {
+    if (page.value > pages.value) {
       page.value =
         pages.value
     }
 
   } catch (e) {
-
     error.value =
       errorMessage(e)
 
     rows.value = []
+
+    showError(
+      error.value,
+      'Không thể tải dữ liệu'
+    )
 
   } finally {
     loading.value = false
@@ -114,97 +168,193 @@ async function openModal(
   type,
   customer
 ) {
-
   try {
-
     selected.value =
       await customerService
         .getCustomer(
           customer.code
         )
 
-    modal.value =
-      type
+    modal.value = type
 
   } catch (e) {
-
-    alert(
-      errorMessage(e)
+    showError(
+      errorMessage(e),
+      'Không thể tải thông tin'
     )
   }
 }
 
-async function toggleStatus(
-  customer
-) {
+function toggleStatus(customer) {
+  const isActive =
+    customer.active === true ||
+    customer.status === 1
 
-  const next =
-    customer.active
-      ? 0
-      : 1
+  const nextStatus =
+    isActive ? 0 : 1
 
-  const text =
-    customer.active
-      ? 'khóa'
-      : 'mở khóa'
+  askConfirm(
+    'Xác nhận cập nhật',
 
-  if (
-    !confirm(
-      `Bạn có chắc muốn ${text} khách hàng ${customer.name}?`
+    isActive
+      ? `Bạn có chắc chắn muốn khóa khách hàng ${customer.code} - ${customer.name} không?`
+      : `Bạn có chắc chắn muốn mở khóa khách hàng ${customer.code} - ${customer.name} không?`,
+
+    async () => {
+      try {
+        await customerService
+          .updateStatus(
+            customer.code,
+            nextStatus
+          )
+
+        await loadCustomers()
+
+        success(
+          isActive
+            ? 'Khóa tài khoản khách hàng thành công'
+            : 'Mở khóa tài khoản khách hàng thành công',
+          'Cập nhật thành công'
+        )
+
+      } catch (e) {
+        showError(
+          errorMessage(e),
+          'Cập nhật thất bại'
+        )
+      }
+    }
+  )
+}
+
+function exportExcel() {
+  if (!rows.value?.length) {
+    showError(
+      'Không có dữ liệu khách hàng để xuất.',
+      'Không thể xuất Excel'
     )
-  ) {
     return
   }
 
-  try {
+  const data = rows.value.map(
+    (customer, index) => ({
+      STT:
+        (page.value - 1) * size.value +
+        index +
+        1,
 
-    await customerService
-      .updateStatus(
-        customer.code,
-        next
-      )
+      'Mã khách hàng':
+        customer.code || '',
 
-    await loadCustomers()
+      'Họ và tên':
+        customer.name || '',
 
-  } catch (e) {
+      'Email':
+        customer.email || '',
 
-    alert(
-      errorMessage(e)
-    )
-  }
+      'Số điện thoại':
+        customer.phone || '',
+
+      'Giới tính':
+        customer.genderLabel ||
+        (
+          customer.gender === 1
+            ? 'Nam'
+            : customer.gender === 2
+              ? 'Nữ'
+              : customer.gender === 0
+                ? 'Khác'
+                : ''
+        ),
+
+      'Ngày sinh':
+        customer.dob || '',
+
+      'Trạng thái':
+        customer.active === true ||
+        customer.status === 1
+          ? 'Hoạt động'
+          : 'Ngừng hoạt động'
+    })
+  )
+
+  const worksheet =
+    XLSX.utils.json_to_sheet(data)
+
+  /*
+   * Độ rộng các cột
+   */
+  worksheet['!cols'] = [
+    { wch: 7 },   // STT
+    { wch: 18 },  // Mã
+    { wch: 28 },  // Họ tên
+    { wch: 32 },  // Email
+    { wch: 16 },  // SĐT
+    { wch: 12 },  // Giới tính
+    { wch: 15 },  // Ngày sinh
+    { wch: 20 }   // Trạng thái
+  ]
+
+  const workbook =
+    XLSX.utils.book_new()
+
+  XLSX.utils.book_append_sheet(
+    workbook,
+    worksheet,
+    'Khách hàng'
+  )
+
+  const now =
+    new Date()
+
+  const fileDate =
+    `${now.getFullYear()}-` +
+    `${String(
+      now.getMonth() + 1
+    ).padStart(2, '0')}-` +
+    `${String(
+      now.getDate()
+    ).padStart(2, '0')}`
+
+  XLSX.writeFile(
+    workbook,
+    `Danh_sach_khach_hang_${fileDate}.xlsx`
+  )
+
+  success(
+    'Xuất danh sách khách hàng thành công',
+    'Xuất Excel thành công'
+  )
 }
 
 function reset() {
-
   q.value = ''
-
   status.value = ''
-
   page.value = 1
 
   loadCustomers()
 }
 
 function closeModal() {
-
   modal.value = ''
-
   selected.value = null
 }
 
 async function saved() {
-
   closeModal()
 
   await loadCustomers()
+
+  success(
+    'Cập nhật thông tin khách hàng thành công',
+    'Cập nhật thành công'
+  )
 }
 
 async function addressChanged() {
-
   await loadCustomers()
 
   if (selected.value) {
-
     selected.value =
       await customerService
         .getCustomer(
@@ -213,13 +363,9 @@ async function addressChanged() {
   }
 }
 
-/*
- * Search debounce 400ms.
- */
 watch(
   q,
   () => {
-
     clearTimeout(
       searchTimer
     )
@@ -262,6 +408,25 @@ onMounted(
 </script>
 
 <template>
+
+  <AppToast
+  :show="toast.show"
+  :type="toast.type"
+  :title="toast.title"
+  :message="toast.message"
+  @close="closeToast"
+/>
+
+<ConfirmModal
+  :show="confirmModal.show"
+  :title="confirmModal.title"
+  :message="confirmModal.message"
+  :loading="confirmLoading"
+  confirm-text="Đồng ý"
+  cancel-text="Hủy"
+  @confirm="executeConfirm"
+  @cancel="closeConfirm"
+/>
 
   <AdminLayout>
 
@@ -323,12 +488,14 @@ onMounted(
           </button>
 
           <button
-            class="ss-btn"
-            title="Chức năng xuất Excel sẽ làm riêng"
-          >
-            <i class="bi bi-file-earmark-excel"></i>
-            Xuất Excel
-          </button>
+  type="button"
+  class="ss-btn"
+  @click="exportExcel"
+>
+  <i class="bi bi-file-earmark-excel"></i>
+
+  Xuất Excel
+</button>
 
           <button
             class="ss-btn primary"

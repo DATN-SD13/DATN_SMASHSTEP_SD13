@@ -5,20 +5,66 @@ import {
   ref
 } from 'vue'
 
+import { useAddressApi } from '../../../../composables/useAddressApi'
+import AppToast
+  from '../../../../components/AppToast.vue'
+
+import ConfirmModal
+  from '../../../../components/ConfirmModal.vue'
+
 import {
-  provinceNames,
-  wardsOf
-} from '../../../../utils/address'
+  useToast
+} from '../../../../composables/useToast'
 
 import customerService
   from '../services/customerService'
-
-const props = defineProps({
+  const props = defineProps({
   customer: {
     type: Object,
     required: true
   }
 })
+
+const {
+  toast,
+  success,
+  error: showError,
+  closeToast
+} = useToast()
+
+const confirmModal = ref({
+  show: false,
+  title: '',
+  message: '',
+  action: null
+})
+
+const confirmLoading = ref(false)
+
+function closeConfirm() {
+  if (confirmLoading.value) {
+    return
+  }
+
+  confirmModal.value.show = false
+  confirmModal.value.action = null
+}
+
+async function executeConfirm() {
+  if (!confirmModal.value.action) {
+    return
+  }
+
+  confirmLoading.value = true
+
+  try {
+    await confirmModal.value.action()
+  } finally {
+    confirmLoading.value = false
+    confirmModal.value.show = false
+    confirmModal.value.action = null
+  }
+}
 
 const emit = defineEmits([
   'close',
@@ -30,6 +76,25 @@ const loading = ref(false)
 const saving = ref(false)
 const err = ref('')
 const editingId = ref(null)
+
+
+let toastTimer = null
+
+function showToast(message, type = 'success') {
+  if (toastTimer) {
+    clearTimeout(toastTimer)
+  }
+
+  toast.value = {
+    show: true,
+    message,
+    type
+  }
+
+  toastTimer = setTimeout(() => {
+    toast.value.show = false
+  }, 3000)
+}
 
 const emptyForm = () => ({
   receiverName: '',
@@ -46,11 +111,23 @@ const f = ref(
   emptyForm()
 )
 
-const wards = computed(
-  () => wardsOf(
-    f.value.province
-  )
-)
+const {
+  provinces,
+  wards,
+
+  provinceCode,
+  wardCode,
+
+  loadingProvinces,
+  loadingWards,
+
+  addressError,
+
+  changeProvince,
+  changeWard,
+  restoreAddress,
+  resetAddress
+} = useAddressApi(f)
 
 const errorMessage = (e) =>
   e?.response?.data?.message ||
@@ -74,7 +151,11 @@ async function load() {
 
 function resetForm() {
   editingId.value = null
+
   f.value = emptyForm()
+
+  resetAddress()
+
   err.value = ''
 }
 
@@ -82,30 +163,20 @@ function edit(a) {
   editingId.value = a.id
 
   f.value = {
-    receiverName:
-      a.receiverName || '',
+    receiverName: a.receiverName || '',
+    receiverPhone: a.receiverPhone || '',
 
-    receiverPhone:
-      a.receiverPhone || '',
+    province: a.province || '',
+    district: a.district || '',
+    ward: a.ward || '',
 
-    province:
-      a.province || '',
+    street: a.street || '',
 
-    district:
-      a.district || '',
-
-    ward:
-      a.ward || '',
-
-    street:
-      a.street || '',
-
-    addressType:
-      a.addressType ?? 1,
-
-    isDefault:
-      !!a.isDefault
+    addressType: a.addressType ?? 1,
+    isDefault: !!a.isDefault
   }
+
+  restoreAddress()
 }
 
 async function save() {
@@ -118,8 +189,16 @@ async function save() {
     !v.ward ||
     !v.street.trim()
   ) {
-    err.value =
+    const message =
       'Vui lòng nhập đầy đủ các trường bắt buộc.'
+
+    err.value = message
+
+    showError(
+      message,
+      'Dữ liệu không hợp lệ'
+    )
+
     return
   }
 
@@ -128,8 +207,16 @@ async function save() {
       v.receiverPhone.trim()
     )
   ) {
-    err.value =
+    const message =
       'Số điện thoại phải gồm 10 số và bắt đầu bằng 0.'
+
+    err.value = message
+
+    showError(
+      message,
+      'Dữ liệu không hợp lệ'
+    )
+
     return
   }
 
@@ -147,8 +234,7 @@ async function save() {
       province:
         v.province,
 
-      district:
-        v.district?.trim() || null,
+      district: null,
 
       ward:
         v.ward,
@@ -157,32 +243,59 @@ async function save() {
         v.street.trim(),
 
       addressType:
-        Number(v.addressType),
+        Number(
+          v.addressType
+        ),
 
       isDefault:
         !!v.isDefault
     }
 
-    if (editingId.value) {
-      await customerService.updateAddress(
-        props.customer.code,
-        editingId.value,
-        payload
-      )
+    const isEditing =
+      !!editingId.value
+
+    if (isEditing) {
+      await customerService
+        .updateAddress(
+          props.customer.code,
+          editingId.value,
+          payload
+        )
     } else {
-      await customerService.createAddress(
-        props.customer.code,
-        payload
-      )
+      await customerService
+        .createAddress(
+          props.customer.code,
+          payload
+        )
     }
 
     resetForm()
 
     await load()
 
+    success(
+      isEditing
+        ? 'Cập nhật địa chỉ thành công'
+        : 'Thêm địa chỉ thành công',
+
+      isEditing
+        ? 'Cập nhật thành công'
+        : 'Thêm thành công'
+    )
+
     emit('changed')
+
   } catch (e) {
-    err.value = errorMessage(e)
+    const message =
+      errorMessage(e)
+
+    err.value = message
+
+    showError(
+      message,
+      'Thao tác thất bại'
+    )
+
   } finally {
     saving.value = false
   }
@@ -194,45 +307,80 @@ async function makeDefault(a) {
   }
 
   try {
-    await customerService.setDefaultAddress(
-      props.customer.code,
-      a.id
-    )
+    await customerService
+      .setDefaultAddress(
+        props.customer.code,
+        a.id
+      )
 
     await load()
 
+    success(
+      'Đặt địa chỉ mặc định thành công',
+      'Cập nhật thành công'
+    )
+
     emit('changed')
+
   } catch (e) {
-    err.value = errorMessage(e)
+    const message =
+      errorMessage(e)
+
+    err.value = message
+
+    showError(
+      message,
+      'Cập nhật thất bại'
+    )
   }
 }
 
-async function stop(a) {
-  if (
-    !confirm(
-      'Ngừng sử dụng địa chỉ này?'
-    )
-  ) {
-    return
-  }
+function stop(a) {
+  confirmModal.value = {
+    show: true,
 
-  try {
-    await customerService.stopAddress(
-      props.customer.code,
-      a.id
-    )
+    title:
+      'Xác nhận cập nhật',
 
-    if (
-      editingId.value === a.id
-    ) {
-      resetForm()
+    message:
+      `Bạn có chắc chắn muốn ngừng sử dụng địa chỉ của ${a.receiverName || 'khách hàng'} không?`,
+
+    action: async () => {
+      try {
+        await customerService
+          .stopAddress(
+            props.customer.code,
+            a.id
+          )
+
+        if (
+          editingId.value ===
+          a.id
+        ) {
+          resetForm()
+        }
+
+        await load()
+
+        success(
+          'Ngừng sử dụng địa chỉ thành công',
+          'Cập nhật thành công'
+        )
+
+        emit('changed')
+
+      } catch (e) {
+        const message =
+          errorMessage(e)
+
+        err.value = message
+
+        showError(
+          message,
+          'Cập nhật thất bại'
+        )
+      }
     }
-
-    await load()
-
-    emit('changed')
-  } catch (e) {
-    err.value = errorMessage(e)
   }
 }
 
@@ -240,6 +388,27 @@ onMounted(load)
 </script>
 
 <template>
+
+  <AppToast
+  :show="toast.show"
+  :type="toast.type"
+  :title="toast.title"
+  :message="toast.message"
+  @close="closeToast"
+/>
+
+<ConfirmModal
+  :show="confirmModal.show"
+  :title="confirmModal.title"
+  :message="confirmModal.message"
+  :loading="confirmLoading"
+  confirm-text="Đồng ý"
+  cancel-text="Hủy"
+  @confirm="executeConfirm"
+  @cancel="closeConfirm"
+/>
+
+  
   <div
     class="modal-mask"
     @click.self="$emit('close')"
@@ -397,81 +566,69 @@ onMounted(load)
 
           <div class="ss-field">
 
-            <label class="ss-label">
-              Tỉnh/Thành phố
-              <span class="req">*</span>
-            </label>
+  <label class="ss-label">
+    Tỉnh/Thành phố
+    <span class="req">*</span>
+  </label>
 
-            <select
-              class="ss-select"
-              v-model="f.province"
-              @change="f.ward = ''"
-            >
-              <option value="">
-                -- Chọn tỉnh/thành --
-              </option>
+  <select
+    class="ss-select"
+    v-model="provinceCode"
+    :disabled="loadingProvinces"
+    @change="changeProvince"
+  >
 
-              <option
-                v-if="
-                  f.province
-                  && !provinceNames.includes(
-                    f.province
-                  )
-                "
-                :value="f.province"
-              >
-                {{ f.province }}
-              </option>
+    <option value="">
+      -- Chọn tỉnh/thành --
+    </option>
 
-              <option
-                v-for="p in provinceNames"
-                :key="p"
-                :value="p"
-              >
-                {{ p }}
-              </option>
-            </select>
-          </div>
+    <option
+      v-for="p in provinces"
+      :key="p.code"
+      :value="String(p.code)"
+    >
+      {{ p.name }}
+    </option>
+
+  </select>
+
+</div>
 
           <div class="ss-field">
 
-            <label class="ss-label">
-              Phường/Xã
-              <span class="req">*</span>
-            </label>
+  <label class="ss-label">
+    Phường/Xã
+    <span class="req">*</span>
+  </label>
 
-            <select
-              class="ss-select"
-              v-model="f.ward"
-              :disabled="!f.province"
-            >
-              <option value="">
-                -- Chọn phường/xã --
-              </option>
+  <select
+    class="ss-select"
+    v-model="wardCode"
+    :disabled="!provinceCode || loadingWards"
+    @change="changeWard"
+  >
 
-              <option
-                v-if="
-                  f.ward
-                  && !wards.includes(
-                    f.ward
-                  )
-                "
-                :value="f.ward"
-              >
-                {{ f.ward }}
-              </option>
+    <option value="">
+      -- Chọn phường/xã --
+    </option>
 
-              <option
-                v-for="w in wards"
-                :key="w"
-                :value="w"
-              >
-                {{ w }}
-              </option>
-            </select>
-          </div>
+    <option
+      v-for="w in wards"
+      :key="w.code"
+      :value="String(w.code)"
+    >
+      {{ w.name }}
+    </option>
 
-          <div class="ss-field">
+  </select>
+
+</div>
+
+<p v-if="addressError" class="text-danger">
+  {{ addressError }}
+</p>
+
+          <!-- <div class="ss-field">
 
             <label class="ss-label">
               Quận/Huyện
@@ -482,7 +639,7 @@ onMounted(load)
               v-model="f.district"
               placeholder="Không bắt buộc"
             />
-          </div>
+          </div> -->
 
           <div class="ss-field">
 
@@ -517,6 +674,7 @@ onMounted(load)
               placeholder="Số nhà, tên đường..."
             />
           </div>
+          
 
           <div class="ss-field check-field">
 
@@ -674,6 +832,140 @@ onMounted(load)
   .address-item {
     align-items: flex-start;
     flex-direction: column;
+  }
+}
+
+/* ================================
+   TOAST NOTIFICATION
+================================ */
+
+.app-toast {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+
+  z-index: 99999;
+
+  min-width: 330px;
+  max-width: 430px;
+
+  display: flex;
+  align-items: center;
+  gap: 12px;
+
+  padding: 14px 16px;
+
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+
+  box-shadow:
+    0 12px 35px rgba(15, 23, 42, 0.16);
+
+  color: #0f172a;
+}
+
+.app-toast.success {
+  border-left: 5px solid #22c55e;
+}
+
+.app-toast.error {
+  border-left: 5px solid #ef4444;
+}
+
+.toast-icon {
+  width: 38px;
+  height: 38px;
+
+  flex-shrink: 0;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 50%;
+
+  font-size: 18px;
+}
+
+.success .toast-icon {
+  color: #15803d;
+  background: #dcfce7;
+}
+
+.error .toast-icon {
+  color: #dc2626;
+  background: #fee2e2;
+}
+
+.toast-content {
+  flex: 1;
+
+  display: flex;
+  flex-direction: column;
+
+  gap: 2px;
+}
+
+.toast-content strong {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.toast-content span {
+  font-size: 13px;
+  color: #64748b;
+}
+
+.toast-close {
+  width: 30px;
+  height: 30px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border: 0;
+  border-radius: 8px;
+
+  background: transparent;
+  color: #94a3b8;
+
+  cursor: pointer;
+}
+
+.toast-close:hover {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+
+/* Animation */
+
+.toast-enter-active,
+.toast-leave-active {
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease;
+}
+
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translateX(30px);
+}
+
+
+/* Mobile */
+
+@media (max-width: 640px) {
+  .app-toast {
+    top: 16px;
+    left: 16px;
+    right: 16px;
+
+    min-width: 0;
+    max-width: none;
   }
 }
 </style>
