@@ -311,44 +311,42 @@ watch(
   }
 )
 
-const minOrderDisplay = computed({
-  get() {
-    const value = props.form.minOrderValue
-    if (value == null || value === '') return ''
-    return Number(value) / 1000
-  },
-  set(value) {
-    if (value === '' || value == null) {
-      props.form.minOrderValue = ''
-      return
-    }
+/* format khi nhap giam gia */
 
-    const number = Number(value)
-    if (Number.isFinite(number)) {
-      props.form.minOrderValue = number * 1000
-    }
-  }
-})
+function formatMoney(value) {
+  if (value == null || value === '') return ''
+  const num = Number(String(value).replace(/\./g, ''))
+  if (!Number.isFinite(num) || isNaN(num)) return ''
+  return num.toLocaleString('vi-VN')
+}
 
-const maxDiscountDisplay = computed({
-  get() {
-    const value = props.form.maxDiscount
-    if (value == null || value === '') return ''
-    return Number(value) / 1000
-  },
-  set(value) {
-    if (value === '' || value == null) {
-      props.form.maxDiscount = ''
-      return
-    }
+const minOrderRaw = ref(formatMoney(props.form.minOrderValue))
+const maxDiscountRaw = ref(formatMoney(props.form.maxDiscount))
 
-    const number = Number(value)
-    if (Number.isFinite(number)) {
-      props.form.maxDiscount = number * 1000
-    }
-  }
-})
+function onMinOrderInput(e) {
+  const digits = e.target.value.replace(/[^\d]/g, '')
+  const num = digits === '' ? '' : Number(digits)
+  props.form.minOrderValue = num === '' ? '' : num
+  minOrderRaw.value = num === '' ? '' : num.toLocaleString('vi-VN')
+  e.target.value = minOrderRaw.value
+}
 
+function onMaxDiscountInput(e) {
+  const digits = e.target.value.replace(/[^\d]/g, '')
+  const num = digits === '' ? '' : Number(digits)
+  props.form.maxDiscount = num === '' ? '' : num
+  maxDiscountRaw.value = num === '' ? '' : num.toLocaleString('vi-VN')
+  e.target.value = maxDiscountRaw.value
+}
+
+/* dong bo khi form duoc load tu ben ngoai */
+watch(() => props.form.minOrderValue, (val) => {
+  minOrderRaw.value = formatMoney(val)
+}, { immediate: true })
+
+watch(() => props.form.maxDiscount, (val) => {
+  maxDiscountRaw.value = formatMoney(val)
+}, { immediate: true })
 
 </script>
 
@@ -384,7 +382,7 @@ const maxDiscountDisplay = computed({
             placeholder="Tự động tạo"
           />
 
-          <button
+          <!-- <button
             v-if="!editMode"
             type="button"
             class="generate-code-btn"
@@ -392,7 +390,7 @@ const maxDiscountDisplay = computed({
             @click="emit('generate-code')"
           >
             <i class="bi bi-arrow-clockwise"></i>
-          </button>
+          </button>-->
           
         </div>
         <span class="ss-hint">
@@ -473,10 +471,11 @@ const maxDiscountDisplay = computed({
 
         <input
           class="ss-input"
-          type="number"
-          min="0"
-          step="1"
-          v-model.number="minOrderDisplay"
+          type="text"
+          inputmode="numeric"
+          :value="minOrderRaw"
+          @input="onMinOrderInput"
+          placeholder="0"
         />
 
       </div>
@@ -489,10 +488,11 @@ const maxDiscountDisplay = computed({
 
         <input
           class="ss-input"
-          type="number"
-          min="0"
-          step="1"
-          v-model.number="maxDiscountDisplay"
+          type="text"
+          inputmode="numeric"
+          :value="maxDiscountRaw"
+          @input="onMaxDiscountInput"
+          placeholder="0"
         />
 
         <span class="ss-hint warn">
