@@ -84,7 +84,7 @@ public class AuthService {
                 .build();
     }
 
-    /** id=2 = "Quản lý" theo seed DB */
+    
     private String resolveNhanVienRole(NhanVien nv) {
         if (nv.getIdVaiTro() == null) return "STAFF";
         if (Long.valueOf(2L).equals(nv.getIdVaiTro().getId())) return "ADMIN";
