@@ -139,4 +139,21 @@ class KhachHangTichHopTest {
                         .content(mapper.writeValueAsString(request)))
                 .andExpect(status().isConflict());
     }
+
+    @Test
+    void newCustomerRequiresPhoneDobAndMinimumAge() throws Exception {
+        Map<String, Object> request = request();
+        request.put("dob", java.time.LocalDate.now().minusYears(14).toString());
+        mvc.perform(post("/api/khach-hang").contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(request))).andExpect(status().isBadRequest());
+        request.put("dob", "2000-01-01"); request.remove("phone");
+        mvc.perform(post("/api/khach-hang").contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(request))).andExpect(status().isBadRequest());
+        request.put("phone", phone); request.remove("dob");
+        mvc.perform(post("/api/khach-hang").contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(request))).andExpect(status().isBadRequest());
+        request.put("dob", java.time.LocalDate.now().minusYears(15).toString());
+        mvc.perform(post("/api/khach-hang").contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(request))).andExpect(status().isOk());
+    }
 }

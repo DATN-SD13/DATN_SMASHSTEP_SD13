@@ -56,7 +56,8 @@ class DotGiamGiaServiceTest {
     private final DotGiamGiaRepository campaigns = mock(DotGiamGiaRepository.class);
     private final ChiTietDotGiamGiaRepository details = mock(ChiTietDotGiamGiaRepository.class);
     private final SanPhamChiTietRepository variants = mock(SanPhamChiTietRepository.class);
-    private final DotGiamGiaService service = new DotGiamGiaService(campaigns, details, variants, null, mock(com.smashstep.datn.common.config.DatabaseCapabilities.class));
+    private final com.smashstep.datn.product.service.KhoaGhiSanPham writeLock = mock(com.smashstep.datn.product.service.KhoaGhiSanPham.class);
+    private final DotGiamGiaService service = new DotGiamGiaService(campaigns, details, variants, writeLock, mock(com.smashstep.datn.common.config.DatabaseCapabilities.class));
 
     @Test
     void createsCodeFromMaximumValidCodeInsteadOfLastIdentity() {

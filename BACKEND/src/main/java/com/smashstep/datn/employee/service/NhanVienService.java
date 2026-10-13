@@ -10,7 +10,13 @@ import com.smashstep.datn.employee.entity.NhanVien;
 import com.smashstep.datn.employee.entity.VaiTro;
 import com.smashstep.datn.employee.repository.NhanVienRepository;
 import com.smashstep.datn.employee.repository.VaiTroRepository;
+import com.smashstep.datn.employee.mail.EmployeeMailService;
+import com.smashstep.datn.employee.util.PasswordGenerator;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -23,12 +29,15 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class NhanVienService {
 
     private final NhanVienRepository nhanVienRepository;
     private final VaiTroRepository vaiTroRepository;
+    private final EmployeeMailService employeeMailService;
+    private final PasswordEncoder passwordEncoder;
 
     // =========================================================
     // DANH SÁCH + TÌM KIẾM + LỌC + PHÂN TRANG
@@ -160,7 +169,13 @@ public class NhanVienService {
          */
         saved.setTenDangNhap(maNhanVien);
 
+        String temporaryPassword = isManager(vaiTro)
+                ? PasswordGenerator.generate() : null;
+        saved.setMatKhau(temporaryPassword == null ? null : passwordEncoder.encode(temporaryPassword));
         saved = nhanVienRepository.save(saved);
+        if (temporaryPassword != null) {
+            sendManagerAccountAfterCommit(saved, temporaryPassword);
+        }
 
         return toResponse(saved);
     }
@@ -270,6 +285,34 @@ public class NhanVienService {
     // =========================================================
     // FIND EMPLOYEE
     // =========================================================
+    private boolean isManager(VaiTro role) {
+        String name = normalizeNullable(role.getTenVaiTro());
+        return name != null && (name.equalsIgnoreCase("Quản lý")
+                || name.equalsIgnoreCase("Quan ly") || name.equalsIgnoreCase("Manager"));
+    }
+
+    private void sendManagerAccountAfterCommit(NhanVien employee, String temporaryPassword) {
+        String email = employee.getEmail();
+        String name = employee.getTenNhanVien();
+        String username = employee.getTenDangNhap();
+        Runnable send = () -> {
+            try {
+                employeeMailService.sendManagerAccountEmail(email, name, username, temporaryPassword);
+            } catch (RuntimeException ex) {
+                log.warn("Đã tạo tài khoản {} nhưng gửi email thất bại ({})", username,
+                        ex.getClass().getSimpleName());
+            }
+        };
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() { send.run(); }
+            });
+        } else {
+            send.run();
+        }
+    }
+
     private NhanVien findByMa(String ma) {
 
         if (ma == null || ma.isBlank()) {

@@ -58,7 +58,7 @@ async function save() {
 
   if (
     v.dob &&
-    new Date(v.dob) > new Date()
+    new Date(`${v.dob}T00:00:00`) > new Date()
   ) {
     err.value =
       'Ngày sinh không được lớn hơn ngày hiện tại.'
