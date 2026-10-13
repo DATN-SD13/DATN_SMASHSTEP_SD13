@@ -19,6 +19,8 @@ import DetailDiscount from '../modules/admin/promotion/views/DetailDiscount.vue'
 import EditCampaign from '../modules/admin/promotion/views/EditCampaign.vue'
 import AdminLogin from '../modules/auth/views/AdminLogin.vue'
 import CustomerLogin from '../modules/auth/views/CustomerLogin.vue'
+import CustomerHome from '../modules/auth/views/CustomerHome.vue'
+import LoginView from '../modules/auth/views/LoginView.vue'
 
 const promo = { label: 'Quản lý giảm giá', to: '/giam-gia' }
 const prod  = { label: 'Quản lý sản phẩm', to: '/san-pham' }
@@ -28,8 +30,8 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     // ── Auth (public) ───────────────────────────────────
-    { path: '/dang-nhap',              component: AdminLogin,    meta: { public: true, guestOnly: true } },
-    { path: '/khach-hang/dang-nhap',   component: CustomerLogin, meta: { public: true, guestOnly: true } },
+    { path: '/dang-nhap',            component: LoginView,     meta: { public: true, guestOnly: true } },
+    { path: '/khach-hang/trang-chu', component: CustomerHome,  meta: { requiresAuth: true, userType: 'KHACH_HANG' } },
 
     // ── Admin area (requiresAuth + NHAN_VIEN) ───────────
     { path: '/', redirect: '/hoa-don' },
@@ -93,17 +95,14 @@ router.beforeEach((to, _from, next) => {
     // Route không yêu cầu auth → cho qua
     if (!to.meta.requiresAuth) return next()
 
-    // Chưa đăng nhập → về trang login tương ứng
+    // Chưa đăng nhập → về trang login duy nhất
     if (!auth.isAuthenticated) {
-      const loginPath = to.meta.userType === 'KHACH_HANG'
-        ? '/khach-hang/dang-nhap'
-        : '/dang-nhap'
-      return next({ path: loginPath, query: { redirect: to.fullPath } })
+      return next({ path: '/dang-nhap', query: { redirect: to.fullPath } })
     }
 
-    // Sai loại tài khoản (nhân viên vào trang khách hàng và ngược lại)
-    if (to.meta.userType && to.meta.userType !== auth.userType) {
-      return next(auth.isCustomer ? '/khach-hang/dang-nhap' : '/dang-nhap')
+    // Khách hàng cố vào khu vực admin → về trang khách hàng
+    if (to.meta.userType === 'NHAN_VIEN' && auth.isCustomer) {
+      return next('/khach-hang/trang-chu')
     }
 
     // Kiểm tra role (ví dụ: trang nhân viên chỉ ADMIN mới vào được)

@@ -17,7 +17,6 @@ async function handleLogin() {
   loading.value = true
   try {
     await authStore.login(username.value.trim(), password.value, 'KHACH_HANG')
-    // Sau khi login thành công, về trang chủ khách hàng (hoặc trang trước đó)
     router.push(router.currentRoute.value.query.redirect || '/khach-hang/trang-chu')
   } catch (e) {
     error.value = e.response?.data?.message || 'Tên đăng nhập hoặc mật khẩu không đúng.'

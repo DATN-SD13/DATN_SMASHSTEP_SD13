@@ -14,12 +14,4 @@ public class LoginRequest {
 
     @NotBlank(message = "Mật khẩu không được để trống")
     private String password;
-
-    /**
-     * Phân biệt trang login:
-     *   "NHAN_VIEN" — trang Admin/Nhân viên
-     *   "KHACH_HANG" — trang Khách hàng
-     */
-    @NotBlank(message = "Loại người dùng không được để trống")
-    private String userType;
 }

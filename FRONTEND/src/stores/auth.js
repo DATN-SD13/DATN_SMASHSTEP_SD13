@@ -22,13 +22,12 @@ export const useAuthStore = defineStore('auth', () => {
   // ── Actions ────────────────────────────────────────────
 
   /**
-   * Đăng nhập.
+   * Đăng nhập — hệ thống tự nhận biết nhân viên hay khách hàng.
    * @param {string} username
    * @param {string} password
-   * @param {'NHAN_VIEN'|'KHACH_HANG'} userType
    */
-  async function login(username, password, userType) {
-    const response = await api.post('/auth/login', { username, password, userType })
+  async function login(username, password) {
+    const response = await api.post('/auth/login', { username, password })
     const data = response.data?.data
 
     token.value = data.accessToken
@@ -48,14 +47,13 @@ export const useAuthStore = defineStore('auth', () => {
 
   /** Đăng xuất — xóa token, gọi server, điều hướng về trang login tương ứng. */
   async function logout() {
-    const wasCustomer = isCustomer.value
     try {
       await api.post('/auth/logout')
     } catch {
-      // Bỏ qua lỗi server — vẫn xóa local state
+      // Bỏ qua lỗi server
     } finally {
       _clearState()
-      router.push(wasCustomer ? '/khach-hang/dang-nhap' : '/dang-nhap')
+      router.push('/dang-nhap')
     }
   }
 
@@ -69,9 +67,7 @@ export const useAuthStore = defineStore('auth', () => {
   /** Gọi bởi axios interceptor khi gặp 401. */
   function forceLogout() {
     _clearState()
-    const path = window.location.pathname
-    const isAdminArea = !path.startsWith('/khach-hang')
-    router.push(isAdminArea ? '/dang-nhap' : '/khach-hang/dang-nhap')
+    router.push('/dang-nhap')
   }
 
   return {
