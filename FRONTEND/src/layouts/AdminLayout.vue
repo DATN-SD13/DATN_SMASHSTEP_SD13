@@ -1,10 +1,23 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { useAuthStore } from '../stores/auth'
 
-const route = useRoute()
-const logo = new URL('../assets/logo3D.png', import.meta.url).href
+const route     = useRoute()
+const authStore = useAuthStore()
+const logo      = new URL('../assets/logo3D.png', import.meta.url).href
 const collapsed = ref(typeof window !== 'undefined' && window.innerWidth < 992)
+
+const userAvatarInitials = computed(() => {
+  const name = authStore.user?.name || ''
+  return name.split(' ').slice(-2).map(w => w[0]).join('').toUpperCase() || 'NV'
+})
+
+const userName = computed(() => authStore.user?.name || 'Nhân viên')
+
+async function handleLogout() {
+  await authStore.logout()
+}
 
 // Menu theo Figma: Thống kê → Bán hàng → Hóa đơn → Sản phẩm → Khách hàng → Nhân viên → Giảm giá
 const nav = [
@@ -97,9 +110,12 @@ const crumbs = computed(() => ({
           <button type="button" class="pill shift"><i class="bi bi-arrow-left-right"></i><span>Ca làm việc</span></button>
           <button type="button" class="bell" aria-label="Thông báo">4</button>
           <button type="button" class="pill user">
-            <span class="avatar">TA</span>
-            <span class="user-name">Vũ Chí Tuấn Anh</span>
+            <span class="avatar">{{ userAvatarInitials }}</span>
+            <span class="user-name">{{ userName }}</span>
             <i class="bi bi-chevron-down"></i>
+          </button>
+          <button type="button" class="pill logout" title="Đăng xuất" @click="handleLogout">
+            <i class="bi bi-box-arrow-right"></i>
           </button>
         </div>
       </header>
@@ -196,6 +212,12 @@ const crumbs = computed(() => ({
 .pill:hover { border-color: var(--ss-primary); }
 .shift { padding: 0 18px; }
 .shift i { color: var(--ss-primary); font-size: 13px; }
+.pill.logout {
+  padding: 0 14px;
+  color: #e53935;
+  border-color: #fcc;
+}
+.pill.logout:hover { background: #fff1f1; border-color: #e53935; }
 .bell {
   width: 38px; height: 38px; border-radius: 50%;
   border: 1px solid var(--ss-border); background: var(--ss-surface);

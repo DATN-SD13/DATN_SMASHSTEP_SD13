@@ -27,11 +27,17 @@ public class ApiResponse<T> {
         return new ApiResponse<>(true, message, null);
     }
 
-    public static <T> ApiResponse<T> error(String message, T data) {
-        return new ApiResponse<>(false, message, data);
+    /** Alias của ok(data) */
+    public static <T> ApiResponse<T> success(T data) {
+        return ok(data);
     }
 
-    public static ApiResponse<Void> error(String message) {
+    /** Generic error — caller tự suy kiểu T */
+    public static <T> ApiResponse<T> error(String message) {
         return new ApiResponse<>(false, message, null);
+    }
+
+    public static <T> ApiResponse<T> error(String message, T data) {
+        return new ApiResponse<>(false, message, data);
     }
 }

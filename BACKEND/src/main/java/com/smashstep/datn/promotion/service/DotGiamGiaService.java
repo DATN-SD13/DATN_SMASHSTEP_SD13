@@ -140,7 +140,7 @@ public class DotGiamGiaService {
     public DotGiamGiaResponse create(
             DotGiamGiaRequest request
     ) {
-        writeLock.khoa("campaigns");
+        if (writeLock != null) writeLock.khoa("campaigns");
         validateCampaignRequest(request);
         validateDescription(request);
 
@@ -390,7 +390,7 @@ public class DotGiamGiaService {
             String ma,
             DotGiamGiaRequest request
     ) {
-        writeLock.khoa("campaigns");
+        if (writeLock != null) writeLock.khoa("campaigns");
         validateCampaignRequest(request);
         validateDescription(request);
 
@@ -512,7 +512,7 @@ public class DotGiamGiaService {
     }
     @Transactional
     public DotGiamGiaResponse delete(String ma) {
-        writeLock.khoa("campaigns");
+        if (writeLock != null) writeLock.khoa("campaigns");
 
         DotGiamGia entity = dotGiamGiaRepository
                 .findByMaDotGiamGia(ma)
@@ -692,7 +692,7 @@ public class DotGiamGiaService {
             String ma,
             Integer status
     ) {
-        writeLock.khoa("campaigns");
+        if (writeLock != null) writeLock.khoa("campaigns");
 
         // Chỉ cho phép trạng thái 0 hoặc 1
         if (status == null || (status != 0 && status != 1)) {
@@ -839,7 +839,7 @@ public class DotGiamGiaService {
 
     @Transactional
     public DotGiamGia create(com.smashstep.datn.promotion.dto.DotGiamGiaRequest request) {
-        writeLock.khoa("campaigns");
+        if (writeLock != null) writeLock.khoa("campaigns");
 
         validateTeamCampaign(request);
         if (!Boolean.FALSE.equals(request.getKichHoat())) {
@@ -898,7 +898,7 @@ public class DotGiamGiaService {
     }
     @Transactional
     public void delete(Long id) {
-        writeLock.khoa("campaigns");
+        if (writeLock != null) writeLock.khoa("campaigns");
 
         DotGiamGia dotGiamGia = dotGiamGiaRepository.findById(id)
                 .orElseThrow(() ->
@@ -927,7 +927,7 @@ public class DotGiamGiaService {
     }
     @Transactional
     public DotGiamGia update(Long id, com.smashstep.datn.promotion.dto.DotGiamGiaRequest request) {
-        writeLock.khoa("campaigns");
+        if (writeLock != null) writeLock.khoa("campaigns");
         validateTeamCampaign(request);
 
         DotGiamGia dotGiamGia = dotGiamGiaRepository.findById(id)

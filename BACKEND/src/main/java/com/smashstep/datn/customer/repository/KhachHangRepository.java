@@ -27,6 +27,9 @@ public interface KhachHangRepository extends JpaRepository<KhachHang, Long> {
 
     boolean existsBySoDienThoaiAndIdNot(String soDienThoai, Long id);
 
+    Optional<KhachHang> findByTenTaiKhoanIgnoreCaseOrEmailIgnoreCase(
+            String tenTaiKhoan, String email);
+
     @Query("""
         SELECT k FROM KhachHang k
         WHERE (

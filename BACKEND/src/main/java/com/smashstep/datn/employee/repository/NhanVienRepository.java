@@ -51,4 +51,6 @@ public interface NhanVienRepository extends JpaRepository<NhanVien, Long> {
     boolean existsByMaNhanVien(String maNhanVien);
 
     boolean existsByTenDangNhap(String tenDangNhap);
+
+    Optional<NhanVien> findByTenDangNhap(String tenDangNhap);
 }
