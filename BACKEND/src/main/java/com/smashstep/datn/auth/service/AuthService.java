@@ -88,10 +88,14 @@ public class AuthService {
         if (nv.getIdVaiTro() == null) return "STAFF";
         String ten = nv.getIdVaiTro().getTenVaiTro();
         if (ten == null) return "STAFF";
-        return switch (ten.trim().toLowerCase()) {
-            case "quản lý", "quan ly", "admin" -> "ADMIN";
-            default -> "STAFF";
-        };
+        // Chuẩn hóa: bỏ dấu, lowercase, so sánh
+        String normalized = java.text.Normalizer
+                .normalize(ten.trim().toLowerCase(), java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{InCombiningDiacriticalMarks}+", "")
+                .replaceAll("[^a-z0-9 ]", "");
+        if (normalized.contains("quan ly") || normalized.contains("admin")
+                || normalized.contains("manager")) return "ADMIN";
+        return "STAFF";
     }
 
     // ===== KHÁCH HÀNG =====

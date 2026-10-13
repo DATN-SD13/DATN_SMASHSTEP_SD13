@@ -24,6 +24,7 @@ GO
 -- ============================================================
 
 
+<<<<<<< HEAD
 -- ============================================================
 -- PHẦN 1: CẬP NHẬT VAI TRÒ
 -- ============================================================
@@ -68,6 +69,12 @@ SET
     trang_thai = 1
 WHERE ma_nhan_vien <> 'NV0001';
 
+=======
+-- Set mật khẩu + đảm bảo ten_dang_nhap = ma_nhan_vien
+UPDATE nhan_vien
+SET    mat_khau      = @hashAdmin,
+       ten_dang_nhap = ma_nhan_vien;
+>>>>>>> 9c64ffc8dd8f626ce29770882140d11a4e61fd43
 GO
 
 
@@ -86,6 +93,7 @@ WHERE mat_khau IS NULL
 
 GO
 
+<<<<<<< HEAD
 
 -- ============================================================
 -- PHẦN 4: KIỂM TRA DANH SÁCH VAI TRÒ
@@ -103,10 +111,26 @@ GO
 -- ============================================================
 -- PHẦN 5: KIỂM TRA TÀI KHOẢN NHÂN VIÊN
 -- ============================================================
+=======
+-- Đảm bảo NV0001 có vai trò Quản lý (tìm theo tên, không hardcode id)
+UPDATE nhan_vien
+SET    id_vai_tro = (SELECT TOP 1 id FROM vai_tro WHERE ten_vai_tro LIKE N'%Qu%n l%')
+WHERE  ma_nhan_vien = 'NV0001';
+GO
+
+-- Kiểm tra
+SELECT nv.ma_nhan_vien, nv.ten_dang_nhap, vt.ten_vai_tro, nv.trang_thai
+FROM   nhan_vien nv
+LEFT JOIN vai_tro vt ON nv.id_vai_tro = vt.id
+ORDER  BY nv.id;
+GO
+
+>>>>>>> 9c64ffc8dd8f626ce29770882140d11a4e61fd43
 
 SELECT
     nv.ma_nhan_vien,
     nv.ten_dang_nhap,
+<<<<<<< HEAD
     nv.id_vai_tro,
     vt.ten_vai_tro,
     nv.trang_thai
@@ -121,3 +145,11 @@ ORDER BY
     nv.ma_nhan_vien;
 
 GO
+=======
+    vt.id        AS id_vai_tro,
+    vt.ten_vai_tro,
+    nv.trang_thai
+FROM nhan_vien nv
+LEFT JOIN vai_tro vt ON nv.id_vai_tro = vt.id
+ORDER BY nv.id;
+>>>>>>> 9c64ffc8dd8f626ce29770882140d11a4e61fd43
