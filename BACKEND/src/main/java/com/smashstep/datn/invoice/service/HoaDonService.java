@@ -86,7 +86,10 @@ public class HoaDonService {
                 .map(LichSuThanhToanDto::from)
                 .toList();
         List<LichSuHoaDonDto> history = layLichSu(hoaDon.getId());
-        return HoaDonDetailDto.from(hoaDon, items, paymentHistory, history);
+        var result = HoaDonDetailDto.from(hoaDon, items, paymentHistory, history);
+        com.smashstep.datn.invoice.rules.PosPriceSnapshot.apply(result,
+                lichSuHoaDonRepository.findByIdHoaDonIdOrderByNgayTaoDesc(hoaDon.getId()));
+        return result;
     }
 
     @Transactional(readOnly = true)
@@ -97,6 +100,8 @@ public class HoaDonService {
 
     @Transactional
     public HoaDonDetailDto capNhatTrangThai(String ma, CapNhatTrangThaiHoaDonDto request) {
+        if (request != null && com.smashstep.datn.invoice.rules.PosPriceSnapshot.metadata(request.getGhiChu()))
+            throw AppException.badRequest("Ghi chú chứa tiền tố dành riêng cho snapshot giá");
         if (request == null || request.getTrangThai() == null) {
             throw AppException.badRequest("Trạng thái không được để trống");
         }
@@ -109,6 +114,20 @@ public class HoaDonService {
         }
         HoaDon hoaDon = hoaDonRepository.findByMaHoaDonForUpdate(ma.trim())
                 .orElseThrow(() -> AppException.notFound("Không tìm thấy hóa đơn: " + ma));
+        if (com.smashstep.datn.invoice.rules.PosDraftRules.managed(hoaDon)) {
+            checkDraftOwner(hoaDon);
+            if (hoaDon.getNgayThanhToan() == null) {
+                if (!Integer.valueOf(8).equals(hoaDon.getTrangThai())
+                        || !lichSuThanhToanRepository.findByIdHoaDonIdOrderByThoiGianDesc(hoaDon.getId()).isEmpty())
+                    throw AppException.conflict("Hóa đơn không còn là đơn chờ chưa thanh toán");
+                if (request.getTrangThai() != 6)
+                    throw AppException.conflict("Hóa đơn chờ phải được thanh toán qua POS");
+            } else if (!com.smashstep.datn.invoice.rules.PosDraftRules.delivery(hoaDon)
+                    || request.getTrangThai() == 6 || request.getTrangThai() == 7) {
+                throw AppException.conflict("Hóa đơn đã thanh toán không được sửa/hủy qua luồng này; cần nghiệp vụ hoàn tiền riêng");
+            }
+            request.setIdNhanVien(com.smashstep.datn.sales.service.PosActor.employeeId());
+        }
         Integer trangThaiHienTai = hoaDon.getTrangThai();
         if (java.util.Objects.equals(trangThaiHienTai, request.getTrangThai())) {
             throw AppException.badRequest("Trạng thái mới phải khác trạng thái hiện tại.");
@@ -190,6 +209,8 @@ public class HoaDonService {
         return lichSuHoaDonRepository
                 .findByIdHoaDonIdOrderByNgayTaoDesc(idHoaDon)
                 .stream()
+                .filter(lichSu -> !com.smashstep.datn.invoice.rules.PosDraftRules.managed(hoaDon)
+                        || !com.smashstep.datn.invoice.rules.PosPriceSnapshot.metadata(lichSu.getGhiChu()))
                 // Đơn nhận tại quầy không có các trạng thái của quy trình giao hàng.
                 .filter(lichSu -> finalHinhThucNhan == HinhThucNhan.GIAO_HANG
                         || lichSu.getTrangThai() == null
@@ -213,8 +234,19 @@ public class HoaDonService {
         if (ma == null || ma.isBlank()) {
             throw AppException.badRequest("Mã hóa đơn không được để trống");
         }
-        return hoaDonRepository.findByMaHoaDon(ma.trim())
+        HoaDon found = hoaDonRepository.findByMaHoaDon(ma.trim())
                 .orElseThrow(() -> AppException.notFound("Không tìm thấy hóa đơn: " + ma));
+        checkDraftOwner(found);
+        return found;
+    }
+
+    private void checkDraftOwner(HoaDon h) {
+        if (!com.smashstep.datn.invoice.rules.PosDraftRules.managed(h)) return;
+        Long actor = com.smashstep.datn.sales.service.PosActor.employeeId();
+        if (h.getNgayThanhToan() == null && (h.getIdNhanVien() == null || !actor.equals(h.getIdNhanVien().getId())))
+            throw AppException.forbidden("Hóa đơn chờ thuộc nhân viên khác");
+        var employee = nhanVienRepository.findById(actor).orElseThrow(() -> AppException.forbidden("Nhân viên không tồn tại"));
+        if (!Integer.valueOf(1).equals(employee.getTrangThai())) throw AppException.forbidden("Nhân viên không hoạt động");
     }
 
     private Integer getTrangThai(String trangThai) {
@@ -240,8 +272,18 @@ public class HoaDonService {
             LocalDate denNgay,
             Integer trangThai,
             Integer loaiHoaDon) {
+        Long authenticatedEmployee = null;
+        try { authenticatedEmployee = com.smashstep.datn.sales.service.PosActor.employeeId(); }
+        catch (AppException ignored) { /* Legacy list access is unchanged; hide managed POS drafts. */ }
+        final Long draftOwner = authenticatedEmployee;
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
+            Predicate legacy = cb.or(cb.isNull(root.get("loaiHoaDon")), cb.notEqual(root.get("loaiHoaDon"), 0),
+                    cb.isNull(root.get("ghiChu")), cb.and(cb.notEqual(cb.locate(root.get("ghiChu"),
+                                    com.smashstep.datn.invoice.rules.PosDraftRules.PREFIX), 1),
+                            cb.notEqual(cb.locate(root.get("ghiChu"), com.smashstep.datn.invoice.rules.PosDraftRules.DELIVERY_PREFIX), 1)));
+            predicates.add(draftOwner == null ? legacy : cb.or(legacy,
+                    cb.isNotNull(root.get("ngayThanhToan")), cb.equal(root.get("idNhanVien").get("id"), draftOwner)));
             if (ma != null && !ma.isBlank()) {
                 predicates.add(cb.like(
                         cb.lower(root.get("maHoaDon")),

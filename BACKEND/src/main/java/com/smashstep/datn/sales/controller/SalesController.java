@@ -14,7 +14,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/sales")
 @RequiredArgsConstructor
-public class BanHangTQController {
+public class SalesController {
     private final SalesService service;
     private final com.smashstep.datn.sales.service.PendingSaleService pending;
 

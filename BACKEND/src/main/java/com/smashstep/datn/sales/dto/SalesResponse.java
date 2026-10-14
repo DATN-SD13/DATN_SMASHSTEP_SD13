@@ -7,6 +7,9 @@ public final class SalesResponse {
     private SalesResponse() {}
 
     public static final class CatalogItem {
+        private Long productId;
+        public Long getProductId() { return productId; }
+        public CatalogItem productId(Long value) { this.productId = value; return this; }
         private final Long id;
         private final String code;
         private final String productCode;
@@ -122,17 +125,34 @@ public final class SalesResponse {
         }
     }
 
+    public record VoucherOption(String code, String name, BigDecimal discount, java.time.LocalDateTime expiresAt,
+                                Integer type, BigDecimal value) {
+        public VoucherOption(String code, String name, BigDecimal discount, java.time.LocalDateTime expiresAt) {
+            this(code, name, discount, expiresAt, null, null);
+        }
+    }
+    public record ReceiptPayment(Long methodId, String methodCode, String methodName, BigDecimal amount, String transactionCode) {}
     public static final class Quote {
         private final BigDecimal subtotal;
         private final BigDecimal discount;
         private final BigDecimal total;
 
+        private final BigDecimal shippingFee;
+        private final java.util.List<VoucherOption> vouchers;
+        private final String selectedVoucherError;
         public Quote(BigDecimal subtotal, BigDecimal discount, BigDecimal total) {
+            this(subtotal, discount, total, BigDecimal.ZERO, java.util.List.of(), null);
+        }
+        public Quote(BigDecimal subtotal, BigDecimal discount, BigDecimal total, BigDecimal shippingFee, java.util.List<VoucherOption> vouchers, String selectedVoucherError) {
+            this.shippingFee = shippingFee; this.vouchers = java.util.List.copyOf(vouchers); this.selectedVoucherError = selectedVoucherError;
             this.subtotal = subtotal;
             this.discount = discount;
             this.total = total;
         }
 
+        public BigDecimal getShippingFee() { return shippingFee; }
+        public String getSelectedVoucherError() { return selectedVoucherError; }
+        public java.util.List<VoucherOption> getVouchers() { return vouchers; }
         public BigDecimal subtotal() { return subtotal; }
         public BigDecimal getSubtotal() { return subtotal; }
         public BigDecimal discount() { return discount; }
@@ -165,6 +185,16 @@ public final class SalesResponse {
     }
 
     public static final class Receipt {
+        private java.util.List<ReceiptPayment> payments = java.util.List.of();
+        private BigDecimal shippingFee = BigDecimal.ZERO;
+        private Integer status;
+        public java.util.List<ReceiptPayment> getPayments() { return payments; }
+        public BigDecimal getShippingFee() { return shippingFee; }
+        public Integer getStatus() { return status; }
+        public Receipt settlement(java.util.List<ReceiptPayment> payments, BigDecimal shippingFee, Integer status) {
+            this.payments = java.util.List.copyOf(payments); this.shippingFee = shippingFee; this.status = status; return this;
+        }
+
         private final Long invoiceId;
         private final String invoiceCode;
         private final BigDecimal subtotal;

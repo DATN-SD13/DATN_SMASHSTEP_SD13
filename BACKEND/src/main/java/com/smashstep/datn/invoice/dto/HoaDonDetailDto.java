@@ -41,6 +41,7 @@ public class HoaDonDetailDto {
 
     private String hinhThucNhan;
     private Integer maHinhThucNhan;
+    private Boolean posManaged;
 
     private String trangThai;
     private Integer maTrangThai;
@@ -56,6 +57,8 @@ public class HoaDonDetailDto {
     private String maPhieuGiamGia;
     private Integer loaiGiamGia;
     private BigDecimal giaTriGiam;
+    private Boolean voucherSnapshot;
+    public void voucherSnapshot(String code, Integer type, BigDecimal value) { this.maPhieuGiamGia = code; this.loaiGiamGia = type; this.giaTriGiam = value; this.voucherSnapshot = true; }
 
     private String trangThaiThanhToan;
     private Integer maTrangThaiThanhToan;
@@ -126,7 +129,7 @@ public class HoaDonDetailDto {
         HinhThucNhan hinhThucNhan = HoaDonRules.resolveHinhThucNhan(hoaDon);
 
         TrangThaiHoaDon trangThaiTiepTheo =
-                TrangThaiHoaDon.trangThaiTiepTheo(
+                com.smashstep.datn.invoice.rules.PosDraftRules.managed(hoaDon) && hoaDon.getNgayThanhToan() == null ? null : TrangThaiHoaDon.trangThaiTiepTheo(
                         hoaDon.getTrangThai(),
                         hinhThucNhan == HinhThucNhan.GIAO_HANG
                 );
@@ -151,6 +154,7 @@ public class HoaDonDetailDto {
         );
 
         return HoaDonDetailDto.builder()
+                .posManaged(com.smashstep.datn.invoice.rules.PosDraftRules.managed(hoaDon))
                 .id(hoaDon.getId())
                 .maHoaDon(hoaDon.getMaHoaDon())
 
@@ -235,7 +239,7 @@ public class HoaDonDetailDto {
                 .phuongThucThanhToan(
                         phuongThuc != null
                                 ? phuongThuc.getTenPhuongThuc()
-                                : null
+                                : com.smashstep.datn.invoice.rules.PosDraftRules.managed(hoaDon) && hoaDon.getNgayThanhToan() != null ? "Kết hợp" : null
                 )
                 .idPhuongThucThanhToan(
                         phuongThuc != null
@@ -305,7 +309,7 @@ public class HoaDonDetailDto {
                         hoaDon.getDiaChiGiaoHang()
                 )
                 .ghiChu(
-                        hoaDon.getGhiChu()
+                        com.smashstep.datn.invoice.rules.PosDraftRules.note(hoaDon)
                 )
 
                 .chiTietHoaDon(
@@ -357,3 +361,4 @@ public class HoaDonDetailDto {
                 : value;
     }
 }
+

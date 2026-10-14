@@ -10,6 +10,7 @@ public final class HoaDonRules {
 
     public static HinhThucNhan resolveHinhThucNhan(HoaDon invoice) {
         if (invoice == null) return HinhThucNhan.NHAN_TAI_QUAY;
+        if (PosDraftRules.managed(invoice)) return PosDraftRules.delivery(invoice) ? HinhThucNhan.GIAO_HANG : HinhThucNhan.NHAN_TAI_QUAY;
         Integer type = invoice.getLoaiHoaDon();
         if (Integer.valueOf(LoaiHoaDon.TRUC_TUYEN.getMa()).equals(type)
                 || Integer.valueOf(LoaiHoaDon.GIAO_HANG_LEGACY.getMa()).equals(type)) {
