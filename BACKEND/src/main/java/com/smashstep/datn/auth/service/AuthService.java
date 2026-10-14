@@ -32,26 +32,34 @@ public class AuthService {
     }
 
     /**
-     * Đăng nhập chung — tự động nhận biết nhân viên hay khách hàng.
-     * Ưu tiên tìm nhân viên trước, nếu không có thì tìm khách hàng.
+     * Đăng nhập chung — nếu có userType thì tìm đúng loại,
+     * nếu không thì tự động nhận biết (nhân viên trước, khách hàng sau).
      */
     public LoginResponse login(LoginRequest request) {
         String username = request.getUsername().trim();
         String password = request.getPassword();
+        String userType = request.getUserType(); // nullable
 
-        // 1. Thử tìm nhân viên theo ten_dang_nhap
+        if ("NHAN_VIEN".equals(userType)) {
+            return loginNhanVien(
+                nhanVienRepository.findByTenDangNhap(username)
+                    .orElseThrow(() -> AppException.unauthorized("Tên đăng nhập hoặc mật khẩu không đúng")),
+                password);
+        }
+        if ("KHACH_HANG".equals(userType)) {
+            return loginKhachHang(
+                khachHangRepository.findByTenTaiKhoanIgnoreCaseOrEmailIgnoreCase(username, username)
+                    .orElseThrow(() -> AppException.unauthorized("Tên đăng nhập hoặc mật khẩu không đúng")),
+                password);
+        }
+
+        // Không có userType — tự nhận biết
         var nvOpt = nhanVienRepository.findByTenDangNhap(username);
-        if (nvOpt.isPresent()) {
-            return loginNhanVien(nvOpt.get(), password);
-        }
+        if (nvOpt.isPresent()) return loginNhanVien(nvOpt.get(), password);
 
-        // 2. Thử tìm khách hàng theo ten_tai_khoan hoặc email
         var khOpt = khachHangRepository.findByTenTaiKhoanIgnoreCaseOrEmailIgnoreCase(username, username);
-        if (khOpt.isPresent()) {
-            return loginKhachHang(khOpt.get(), password);
-        }
+        if (khOpt.isPresent()) return loginKhachHang(khOpt.get(), password);
 
-        // Không tìm thấy tài khoản nào
         throw AppException.unauthorized("Tên đăng nhập hoặc mật khẩu không đúng");
     }
 

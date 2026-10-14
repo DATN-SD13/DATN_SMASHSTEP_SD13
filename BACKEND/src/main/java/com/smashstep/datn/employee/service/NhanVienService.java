@@ -256,6 +256,15 @@ public class NhanVienService {
 
         NhanVien nhanVien = findByMa(ma);
 
+        // Không cho phép admin tự khóa chính mình
+        String currentUsername = org.springframework.security.core.context.SecurityContextHolder
+                .getContext().getAuthentication().getName();
+        if (nhanVien.getMaNhanVien() != null
+                && nhanVien.getMaNhanVien().equalsIgnoreCase(currentUsername)
+                && Integer.valueOf(0).equals(request.getStatus())) {
+            throw AppException.badRequest("Không thể tự khóa tài khoản của chính mình");
+        }
+
         nhanVien.setTrangThai(request.getStatus());
         nhanVien.setNgayCapNhat(LocalDateTime.now());
 
