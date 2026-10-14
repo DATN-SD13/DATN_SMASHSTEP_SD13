@@ -1,9 +1,14 @@
 package com.smashstep.datn.sales.dto;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.annotation.JsonSetter;
+
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
+
 import lombok.Getter;
 import lombok.Setter;
+
 import java.math.BigDecimal;
 import java.util.List;
 
@@ -12,36 +17,102 @@ import java.util.List;
 public class SalesRequest {
     @NotBlank
     @Pattern(regexp = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
-    private String requestId;
-    @Positive private Long customerId;
-    private Long employeeId; // Legacy input accepted but always replaced by authenticated actor at the API boundary.
-    @Positive private Long paymentMethodId;
-    @Positive private Long invoiceId;
-    @Positive private Long revision;
-    @Valid private SalesDelivery delivery;
-    @Size(max = 2) @Valid private List<@NotNull Payment> payments;
-    private Boolean transferConfirmed;
-    @Size(max = 50) private String voucherCode;
-    @DecimalMin("0") @Digits(integer = 16, fraction = 2) private BigDecimal paidAmount;
-    @Size(max = 1000) private String note;
-    @NotEmpty @Size(max = 50) @Valid private List<@NotNull Item> items;
+    @JsonAlias("requestId")
+    private String maYeuCau;
+
+    @Positive
+    @JsonAlias("customerId")
+    private Long idKhachHang;
+
+    // Luôn lấy lại từ JWT tại controller, không tin giá trị client gửi lên.
+    @JsonAlias("employeeId")
+    private Long idNhanVien;
+
+    @Positive
+    @JsonAlias("paymentMethodId")
+    private Long idPhuongThucThanhToan;
+
+    @Positive
+    @JsonAlias("invoiceId")
+    private Long idHoaDon;
+
+    @Positive
+    @JsonAlias("revision")
+    private Long phienBan;
+
+    @Valid
+    @JsonAlias("delivery")
+    private SalesDelivery giaoHang;
+
+    @Size(max = 2)
+    @Valid
+    @JsonAlias("payments")
+    private List<@NotNull Payment> danhSachThanhToan;
+
+    @JsonAlias("transferConfirmed")
+    private Boolean daXacNhanChuyenKhoan;
+
+    @Size(max = 50)
+    @JsonAlias("voucherCode")
+    private String maPhieuGiamGia;
+
+    @DecimalMin("0")
+    @Digits(integer = 16, fraction = 2)
+    @JsonAlias("paidAmount")
+    private BigDecimal tienKhachDua;
+
+    @Size(max = 1000)
+    @JsonAlias("note")
+    private String ghiChu;
+
+    @NotEmpty
+    @Size(max = 50)
+    @Valid
+    @JsonAlias("items")
+    private List<@NotNull Item> danhSachSanPham;
 
     @Getter
     @Setter
     public static class Item {
-        @NotNull @Positive private Long variantId;
-        @NotNull @Min(1) @Max(10000) private Integer quantity;
-        @NotNull @DecimalMin("0") @Digits(integer = 16, fraction = 2)
-        private BigDecimal unitPrice;
-        @com.fasterxml.jackson.annotation.JsonSetter("quantity")
-        public void readQuantity(BigDecimal value) {
-            try { quantity = value == null ? null : value.intValueExact(); }
-            catch (ArithmeticException fractional) { throw new IllegalArgumentException("Số lượng phải là số nguyên", fractional); }
+        @NotNull
+        @Positive
+        @JsonAlias("variantId")
+        private Long idSanPhamChiTiet;
+
+        @NotNull
+        @Min(1)
+        @Max(10000)
+        private Integer soLuong;
+
+        @NotNull
+        @DecimalMin("0")
+        @Digits(integer = 16, fraction = 2)
+        @JsonAlias("unitPrice")
+        private BigDecimal donGia;
+
+        @JsonSetter("soLuong")
+        @JsonAlias("quantity")
+        public void docSoLuong(BigDecimal giaTri) {
+            try {
+                soLuong = giaTri == null ? null : giaTri.intValueExact();
+            } catch (ArithmeticException loi) {
+                throw new IllegalArgumentException("Số lượng phải là số nguyên", loi);
+            }
         }
     }
-    @Getter @Setter
+
+    @Getter
+    @Setter
     public static class Payment {
-        @NotNull @Positive private Long methodId;
-        @NotNull @DecimalMin("0") @Digits(integer = 16, fraction = 2) private BigDecimal amount;
+        @NotNull
+        @Positive
+        @JsonAlias("methodId")
+        private Long idPhuongThucThanhToan;
+
+        @NotNull
+        @DecimalMin("0")
+        @Digits(integer = 16, fraction = 2)
+        @JsonAlias("amount")
+        private BigDecimal soTien;
     }
 }

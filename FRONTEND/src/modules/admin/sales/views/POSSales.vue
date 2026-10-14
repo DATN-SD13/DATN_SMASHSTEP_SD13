@@ -101,7 +101,7 @@ async function calculateQuote(suggest = true) {
   const fingerprint = quoteSignature.value
   target.quoteError = ''
   try {
-    const result = await salesService.quote(quoteInput.value)
+    const result = await salesService.tinhTien(quoteInput.value)
     if (!alive || version !== quoteVersion || order.value?.id !== target.id || fingerprint !== quoteSignature.value) return
     target.quote = result; target.quotedSignature = fingerprint
     if (result.selectedVoucherError) {
@@ -139,7 +139,7 @@ async function applyVoucher(code, target = order.value, automatic = false) {
 }
 async function loadPaymentOptions() {
   try {
-    methods.value = (await salesService.paymentMethods()).filter(m => ['TIEN_MAT', 'CHUYEN_KHOAN'].includes(m.code))
+    methods.value = (await salesService.danhSachPhuongThucThanhToan()).filter(m => ['TIEN_MAT', 'CHUYEN_KHOAN'].includes(m.code))
     voucherSupported.value = true
     for (const o of orders.value) if (!paymentChoices.value.some(m => m.value === o.paymentMode)) o.paymentMode = paymentChoices.value[0]?.value || 'CASH'
   } catch (e) { error.value = message(e) }
@@ -307,7 +307,7 @@ async function performPayment(saved) {
   }
   pendingPayment.value = saved
   try {
-    const receipt = await salesService.checkout(saved.payload)
+    const receipt = await salesService.thanhToan(saved.payload)
     completedReceipt.value = receipt
     checkoutDialog.value = null
     clearCheckout()
@@ -337,7 +337,7 @@ function rememberCustomers(drafts) {
     customers.value.push({ id: d.customerId, code: d.customerCode, name: d.customerName, phone: d.customerPhone })
 }
 async function reloadOrders() {
-  const rows = await salesService.pending()
+  const rows = await salesService.danhSachHoaDonCho()
   if (!alive) return
   rememberCustomers(rows)
   orders.value = rows.map(d => hydrate(d, orders.value.find(o => o.id === d.id)))
@@ -349,7 +349,7 @@ async function saveOrder(target = order.value) {
   busy.value = true; error.value = ''
   const sent = payload(target)
   try {
-    const result = await salesService.savePending(target.id, sent)
+    const result = await salesService.luuHoaDonCho(target.id, sent)
     if (!alive) return false
     // Only replace this exact draft; UI edits and tab switches are locked during the request.
     const index = orders.value.findIndex(o => o.id === target.id)
@@ -369,7 +369,7 @@ async function addOrder() {
   if (locked.value || orders.value.length >= MAX_ORDERS || !(await saveOrder())) return
   busy.value = true; error.value = ''
   try {
-    const result = await salesService.createPending()
+    const result = await salesService.taoHoaDonCho()
     if (!alive) return
     orders.value.push(hydrate(result)); activeId.value = result.id
     showSuccess(`Đã tạo ${result.invoiceCode}`)
@@ -388,7 +388,7 @@ function removeOrder(id) {
     if (order.value?.id !== target.id && !(await saveOrder())) return
     busy.value = true; error.value = ''
     try {
-      await salesService.cancelPending(target.name)
+      await salesService.huyHoaDonCho(target.name)
       await reloadOrders()
       showSuccess(`Đã hủy ${target.name}`)
     } catch (e) { error.value = message(e); try { await reloadOrders() } catch {} }
@@ -419,7 +419,7 @@ async function refreshCart() {
   const target = order.value
   busy.value = true; error.value = ''
   try {
-    const results = await Promise.allSettled(target.items.map(i => salesService.catalogItem(i.id)))
+    const results = await Promise.allSettled(target.items.map(i => salesService.chiTietSanPhamBan(i.id)))
     if (!alive) return
     results.forEach((r, index) => {
       const item = target.items[index]
@@ -437,7 +437,7 @@ function reloadCurrent() {
     if (locked.value) return
     busy.value = true
     try {
-      const result = await salesService.pendingItem(target.id)
+      const result = await salesService.chiTietHoaDonCho(target.id)
       const index = orders.value.findIndex(o => o.id === target.id)
       if (alive && index >= 0) orders.value[index] = hydrate(result, target)
       error.value = ''
@@ -452,7 +452,7 @@ function openPicker() {
 async function loadCatalog() {
   const version = ++catalogVersion; loading.value = true
   try {
-    const result = await salesService.catalog({ page: catalogPage.value, size: 10, keyword: q.value.trim(),
+    const result = await salesService.danhSachSanPhamBan({ page: catalogPage.value, size: 10, keyword: q.value.trim(),
       color: colorFilter.value.trim(), variantSize: sizeFilter.value.trim(), categoryId: categoryFilter.value || undefined, brandId: brandFilter.value || undefined })
     if (!alive || version !== catalogVersion) return
     const rows = result.content || []

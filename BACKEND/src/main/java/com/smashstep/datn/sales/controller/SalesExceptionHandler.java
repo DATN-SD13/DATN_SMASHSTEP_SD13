@@ -1,6 +1,7 @@
 package com.smashstep.datn.sales.controller;
 
 import com.smashstep.datn.common.response.ApiResponse;
+
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.ResponseEntity;
@@ -13,7 +14,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice(assignableTypes = SalesController.class)
 public class SalesExceptionHandler {
     @ExceptionHandler(AccessDeniedException.class)
-    public ResponseEntity<ApiResponse<Void>> forbidden(AccessDeniedException ignored) {
-        return ResponseEntity.status(403).body(ApiResponse.error("Chỉ ADMIN/STAFF được sử dụng POS"));
+    public ResponseEntity<ApiResponse<Void>> tuChoiTruyCap(AccessDeniedException ignored) {
+        return ResponseEntity.status(403)
+                .body(ApiResponse.error("Chỉ ADMIN/STAFF được sử dụng POS"));
     }
 }

@@ -1,22 +1,33 @@
 package com.smashstep.datn.sales.dto;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
+
 import java.math.BigDecimal;
 import java.util.List;
 
 public record PendingSaleRequest(
-        @NotNull @Positive Long revision,
-        @Positive Long customerId,
-        @Size(max = 980) String note,
-        @NotNull @Size(max = 50) List<@NotNull @Valid Item> items,
-        @Valid SalesDelivery delivery,
-        @Size(max = 50) String voucherCode) {
-    public PendingSaleRequest(Long revision, Long customerId, String note, List<Item> items) {
-        this(revision, customerId, note, items, null, null);
+        @NotNull @Positive @JsonAlias("revision") Long phienBan,
+        @Positive @JsonAlias("customerId") Long idKhachHang,
+        @Size(max = 980) @JsonAlias("note") String ghiChu,
+        @NotNull @Size(max = 50) @JsonAlias("items") List<@NotNull @Valid Item> danhSachSanPham,
+        @Valid @JsonAlias("delivery") SalesDelivery giaoHang,
+        @Size(max = 50) @JsonAlias("voucherCode") String maPhieuGiamGia) {
+    public PendingSaleRequest(
+            Long phienBan, Long idKhachHang, String ghiChu, List<Item> danhSachSanPham) {
+        this(phienBan, idKhachHang, ghiChu, danhSachSanPham, null, null);
     }
-    // BigDecimal plus explicit exact conversion rejects fractional JSON quantities rather than truncating them.
-    public record Item(@NotNull @Positive Long variantId,
-                       @NotNull @DecimalMin("1") @DecimalMax("10000") @Digits(integer = 5, fraction = 0) BigDecimal quantity,
-                       @NotNull @DecimalMin("0") @Digits(integer = 16, fraction = 2) BigDecimal unitPrice) {}
+
+    public record Item(
+            @NotNull @Positive @JsonAlias("variantId") Long idSanPhamChiTiet,
+            @NotNull
+            @DecimalMin("1")
+            @DecimalMax("10000")
+            @Digits(integer = 5, fraction = 0)
+            @JsonAlias("quantity")
+            BigDecimal soLuong,
+            @NotNull @DecimalMin("0") @Digits(integer = 16, fraction = 2) @JsonAlias("unitPrice")
+            BigDecimal donGia) {}
 }
