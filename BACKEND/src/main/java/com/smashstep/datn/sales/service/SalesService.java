@@ -108,8 +108,20 @@ public class SalesService {
                         .getResultList();
         LocalDateTime thoiDiem = LocalDateTime.now();
         var bangGia = dichVuGiaHienTai.getPrices(danhSach, thoiDiem);
+        var giuHang =
+                GiuHangTaiQuay.daGiu(
+                        entityManager, danhSach.stream().map(SanPhamChiTiet::getId).toList(), null);
         List<CatalogItem> content =
-                danhSach.stream().map(v -> chuyenSanPhamBan(v, bangGia.get(v.getId()))).toList();
+                danhSach.stream()
+                        .map(
+                                v ->
+                                        chuyenSanPhamBan(v, bangGia.get(v.getId()))
+                                                .tonKhaDung(
+                                                        GiuHangTaiQuay.khaDung(
+                                                                v.getSoLuong(),
+                                                                giuHang.getOrDefault(
+                                                                        v.getId(), 0L))))
+                        .toList();
         return new PageResponse<>(
                 content,
                 trang,
@@ -143,7 +155,11 @@ public class SalesService {
             throw AppException.conflict(
                     "Biến thể không còn được bán. Hãy bỏ sản phẩm này khỏi giỏ hàng");
         }
-        return chuyenSanPhamBan(v, dichVuGiaHienTai.getPrice(v, LocalDateTime.now()));
+        var giuHang = GiuHangTaiQuay.daGiu(entityManager, List.of(v.getId()), null);
+        return chuyenSanPhamBan(v, dichVuGiaHienTai.getPrice(v, LocalDateTime.now()))
+                .tonKhaDung(
+                        GiuHangTaiQuay.khaDung(
+                                v.getSoLuong(), giuHang.getOrDefault(v.getId(), 0L)));
     }
 
     public Quote tinhTien(SalesRequest yeuCau) {
@@ -170,6 +186,8 @@ public class SalesService {
                 DeliveryRules.chuanHoa(
                         entityManager, yeuCau.getIdKhachHang(), yeuCau.getGiaoHang());
         List<VoucherOption> cacPhieuHopLe = new ArrayList<>();
+        List<VoucherOption> phieuChuaDu = new ArrayList<>();
+        Long idKhachDuocChon = duLieu.khachHang() == null ? null : duLieu.khachHang().getId();
         for (var phieuUngVien :
                 entityManager
                         .createQuery(
@@ -179,6 +197,26 @@ public class SalesService {
                                 PhieuGiamGia.class)
                         .setParameter("now", thoiDiem)
                         .getResultList()) {
+            if (phieuUngVien.getHinhThucPhieu() == null
+                    || !Set.of(1, 2).contains(phieuUngVien.getHinhThucPhieu())) continue;
+            if (Integer.valueOf(2).equals(phieuUngVien.getHinhThucPhieu())) {
+                if (duLieu.khachHang() == null) continue;
+                var links =
+                        entityManager
+                                .createQuery(
+                                        "select a from PhieuGiamGiaKhachHang a where"
+                                                + " a.idPhieuGiamGia.id = :id and a.trangThai = 1",
+                                        PhieuGiamGiaKhachHang.class)
+                                .setParameter("id", phieuUngVien.getId())
+                                .getResultList();
+                if (links.stream()
+                        .noneMatch(
+                                a ->
+                                        a.getIdKhachHang() != null
+                                                && Objects.equals(
+                                                a.getIdKhachHang().getId(),
+                                                idKhachDuocChon))) continue;
+            }
             try {
                 var valid =
                         kiemTraPhieu(
@@ -195,9 +233,20 @@ public class SalesService {
                                     valid.tienGiam(),
                                     phieuUngVien.getNgayKetThuc(),
                                     phieuUngVien.getLoaiGiamGia(),
-                                    phieuUngVien.getGiaTriGiam()));
+                                    phieuUngVien.getGiaTriGiam(),
+                                    phieuUngVien.getHinhThucPhieu(),
+                                    null));
             } catch (AppException invalidForCart) {
-                /* Ineligible vouchers are not advertised. */
+                phieuChuaDu.add(
+                        new VoucherOption(
+                                phieuUngVien.getMaPhieuGiamGia(),
+                                phieuUngVien.getTenPhieuGiamGia(),
+                                SO_KHONG,
+                                phieuUngVien.getNgayKetThuc(),
+                                phieuUngVien.getLoaiGiamGia(),
+                                phieuUngVien.getGiaTriGiam(),
+                                phieuUngVien.getHinhThucPhieu(),
+                                invalidForCart.getMessage()));
             }
         }
         cacPhieuHopLe.sort(
@@ -210,7 +259,8 @@ public class SalesService {
                 duLieu.ketQuaTinhTien().getThanhTien().add(giaoHang.phiVanChuyen()),
                 giaoHang.phiVanChuyen(),
                 cacPhieuHopLe,
-                loiPhieuDaChon);
+                loiPhieuDaChon)
+                .phieuChuaDuDieuKien(phieuChuaDu);
     }
 
     @Transactional
@@ -459,6 +509,10 @@ public class SalesService {
         BigDecimal thanhTien = duLieu.ketQuaTinhTien().getThanhTien().add(giaoHang.phiVanChuyen());
         if (thanhTien.precision() - thanhTien.scale() > 16)
             throw AppException.badRequest("Giá trị hóa đơn vượt giới hạn lưu trữ");
+        if (Integer.valueOf(2).equals(yeuCau.getPhienBanThanhToan())
+                && yeuCau.getDanhSachThanhToan().size() != 1)
+            throw AppException.badRequest(
+                    "POS chỉ hỗ trợ một phương thức: tiền mặt hoặc chuyển khoản");
         PaymentPlan plan = PaymentPlan.lapKeHoach(entityManager, yeuCau, thanhTien);
         // Locks may have waited: a campaign/voucher can expire while waiting even without a data
         // edit.
@@ -553,9 +607,10 @@ public class SalesService {
         ghiLichSu.setTrangThai(h.getTrangThai());
         ghiLichSu.setNgayTao(thoiDiem);
         ghiLichSu.setGhiChu(
-                giaoHang.apDung()
+                com.smashstep.datn.invoice.rules.PosHistoryRules.HOAN_TAT
+                        + (giaoHang.apDung()
                         ? "Đã thanh toán tại POS - giao hàng chờ xác nhận"
-                        : "Đã thanh toán và nhận hàng tại quầy");
+                        : "Đã thanh toán và nhận hàng tại quầy"));
         entityManager.persist(ghiLichSu);
         entityManager.flush();
         return ketQuaThanhToanHoaDonCho(h, danhSachThanhToan, yeuCau.getTienKhachDua());
@@ -656,6 +711,16 @@ public class SalesService {
                 throw AppException.conflict("Tồn kho không đủ");
             danhSachBienThe.put(bienThe.getId(), bienThe);
         }
+        var giuKhac =
+                GiuHangTaiQuay.daGiu(entityManager, danhSachBienThe.keySet(), yeuCau.getIdHoaDon());
+        for (var item : yeuCau.getDanhSachSanPham()) {
+            if (item.getSoLuong()
+                    > GiuHangTaiQuay.khaDung(
+                    danhSachBienThe.get(item.getIdSanPhamChiTiet()).getSoLuong(),
+                    giuKhac.getOrDefault(item.getIdSanPhamChiTiet(), 0L)))
+                throw AppException.conflict(
+                        "Không đủ tồn khả dụng; sản phẩm đang được giữ bởi hóa đơn khác");
+        }
         if (khoa) thoiDiem = LocalDateTime.now();
         var bangGia = dichVuGiaHienTai.getPrices(danhSachBienThe.values(), thoiDiem);
         for (SalesRequest.Item item : yeuCau.getDanhSachSanPham()) {
@@ -666,6 +731,8 @@ public class SalesService {
                         "Giá bán đã thay đổi. Hãy tải lại sản phẩm và xác nhận giá mới.");
             tongTienHang = tongTienHang.add(giaBan.multiply(BigDecimal.valueOf(item.getSoLuong())));
         }
+        if (tongTienHang.precision() - tongTienHang.scale() > 16)
+            throw AppException.badRequest("Tổng tiền hàng vượt giới hạn lưu trữ");
         var ketQuaPhieu =
                 kiemTraPhieu(yeuCau.getMaPhieuGiamGia(), khachHang, tongTienHang, khoa, thoiDiem);
         return new Prepared(
@@ -749,7 +816,7 @@ public class SalesService {
                             phieuGiamGia.getHinhThucPhieu() == null
                                     ? 0
                                     : phieuGiamGia.getHinhThucPhieu())) {
-                throw AppException.badRequest("Phiếu chưa có hình thức hợp lệ theo schema chuẩn");
+                throw AppException.badRequest("Phiếu chưa được cấu hình hình thức áp dụng hợp lệ");
             }
             if (Integer.valueOf(2).equals(phieuGiamGia.getHinhThucPhieu())) {
                 phieuKhachHang =
@@ -767,6 +834,14 @@ public class SalesService {
                                                         "Phiếu cá nhân không thuộc khách hàng"
                                                                 + " này"));
                 if (khoa) entityManager.refresh(phieuKhachHang, LockModeType.PESSIMISTIC_WRITE);
+                if (!Integer.valueOf(1).equals(phieuKhachHang.getTrangThai())
+                        || phieuKhachHang.getIdKhachHang() == null
+                        || !Objects.equals(
+                        phieuKhachHang.getIdKhachHang().getId(), khachHang.getId())
+                        || phieuKhachHang.getIdPhieuGiamGia() == null
+                        || !Objects.equals(
+                        phieuKhachHang.getIdPhieuGiamGia().getId(), phieuGiamGia.getId()))
+                    throw AppException.conflict("Quyền sử dụng phiếu cá nhân đã thay đổi");
                 if (phieuKhachHang.getNgaySuDung() != null)
                     throw AppException.conflict("Khách hàng đã sử dụng phiếu này");
             }

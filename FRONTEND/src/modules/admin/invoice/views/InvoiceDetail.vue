@@ -48,8 +48,9 @@ const pickupSteps = [
 ]
 
 const steps = computed(() => {
-  if (invoice.value?.posManaged && invoice.value?.receiveMethodCode === 1) {
-    return [{ key: 'pending', label: 'Hóa đơn chờ', icon: 'bi-hourglass-split', value: 8 }, ...deliverySteps]
+  if (invoice.value?.posManaged) {
+    const pending = { key: 'pending', label: 'Hóa đơn chờ', icon: 'bi-hourglass-split', value: 8 }
+    return invoice.value.receiveMethodCode === 1 ? [pending, ...deliverySteps] : [pending, pickupSteps.at(-1)]
   }
   if (invoice.value?.statusCode === 8 || invoice.value?.history?.some(item => Number(item.maTrangThai) === 8)) {
     return [{ key: 'pending', label: 'Hóa đơn chờ', icon: 'bi-hourglass-split', value: 8 }, pickupSteps.at(-1)]
@@ -556,7 +557,9 @@ window.addEventListener('afterprint', clearPrintMode)
 
 function stepDate(status) {
   const entry = invoice.value?.history?.find(item => Number(item?.maTrangThai) === status)
-  return entry?.ngayTao || '—'
+  if (entry?.ngayTao) return entry.ngayTao
+  if (status === 8 && invoice.value?.posManaged) return invoice.value.date || '—'
+  return '—'
 }
 
 onMounted(async () => {
@@ -692,8 +695,8 @@ onUnmounted(() => {
             <h2><i class="bi bi-calendar2-check"></i> Tổng kết thanh toán</h2>
             <div class="amount-row"><span>Tổng tiền hàng</span><strong>{{ money(subtotal) }}</strong></div>
             <div class="amount-row discount-row">
-              <span>Giảm giá <span v-if="hasVoucher" class="voucher-code">[{{ invoice.voucherCode }}]</span> <span v-if="voucherLabel" class="voucher-percent">{{ voucherLabel }}</span></span>
-              <strong class="discount">− {{ money(invoice.discount) }}</strong>
+              <span class="voucher-summary-label">Phiếu giảm giá <b v-if="hasVoucher">{{ invoice.voucherCode }}</b></span>
+              <strong class="discount voucher-summary-value"><template v-if="voucherLabel">{{ voucherLabel }} </template>(− {{ money(invoice.discount) }})</strong>
             </div>
             <div v-if="isDeliveryOrder" class="amount-row">
               <span>Phí vận chuyển</span>
@@ -862,7 +865,7 @@ onUnmounted(() => {
                   {{ invoice.date?.split(' ')[1] || invoice.date }}
                   <small>{{ invoice.date?.split(' ')[0] || '' }}</small>
                 </td>
-                <td><span v-if="item.discountPercent != null" class="voucher-percent">{{ item.discountPercent }}%</span><span v-else class="discount-empty">—</span></td>
+                <td><div v-if="item.discountPercent != null" class="line-discount"><span>{{ item.discountPercent }}%</span><small v-if="item.originalPrice > item.price">−{{ money((item.originalPrice - item.price) * item.quantity) }}</small></div><span v-else class="discount-empty">—</span></td>
                 <td class="nowrap"><del v-if="item.originalPrice > item.price" class="historical-price">{{ money(item.originalPrice) }}</del><strong :class="{ 'historical-sale': item.originalPrice > item.price }">{{ money(item.price) }}</strong></td>
                 <td class="product-total">{{ money(item.lineTotal) }}</td>
               </tr>
@@ -1201,6 +1204,8 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.voucher-summary-label{display:flex;gap:7px;align-items:baseline;flex-wrap:wrap}.voucher-summary-label b{color:#344e5b;font-size:11px;font-weight:650}.voucher-summary-value{color:#1a9a73!important;font-size:12px;white-space:normal!important;text-align:right}.line-discount{display:grid;justify-items:start;gap:5px}.line-discount>span{display:inline-flex;padding:4px 8px;background:#e5f7ef;color:#18865e;border-radius:6px;font-weight:700;font-size:11px}.line-discount small{font-size:10px;color:#18865e;white-space:nowrap}.payment-panel .grand-total{margin-top:12px;padding-top:16px}.payment-panel .grand-total strong{font-size:19px;color:var(--ss-primary,#1689cf)}
+
 .historical-price{display:block;color:#8b9aa2;font-size:11px}.historical-sale{color:#d32c50}
 .detail-page{max-width:1700px;margin:0 auto;padding:24px 24px 36px;color:#263943}
 .page-title-row{margin-bottom:20px}.breadcrumb{font-size:11px;color:#8c9ba5;margin-bottom:5px}.breadcrumb b{padding:0 9px;color:#c4d0d7}.breadcrumb a{color:#536c79;text-decoration:none}.breadcrumb strong{color:#1689cf;font-weight:600}.page-title-row h1{margin:0;font-size:23px;color:#203744;font-weight:750}

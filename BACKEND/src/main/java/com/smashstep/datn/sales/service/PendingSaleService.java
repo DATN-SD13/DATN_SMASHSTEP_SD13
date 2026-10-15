@@ -91,6 +91,7 @@ public class PendingSaleService {
 
     @Transactional
     public Draft capNhatHoaDonCho(Long id, PendingSaleRequest yeuCau) {
+        dichVuMaHoaDon.lockInvoiceCreation();
         var h = hoaDonThuocNhanVien(id, true);
         if (!Objects.equals(phienBan(h), yeuCau.phienBan()))
             throw AppException.conflict(
@@ -104,8 +105,18 @@ public class PendingSaleService {
             throw AppException.badRequest("Khách hàng không hoạt động");
         var giaoHang =
                 DeliveryRules.chuanHoa(entityManager, yeuCau.idKhachHang(), yeuCau.giaoHang());
+        var chiTietCu = chiTietHoaDon(h);
+        Map<Long, Integer> soLuongCu = new HashMap<>();
+        for (var dongCu : chiTietCu) {
+            if (dongCu.getIdSanPhamChiTiet() != null && dongCu.getSoLuong() != null)
+                soLuongCu.merge(
+                        dongCu.getIdSanPhamChiTiet().getId(), dongCu.getSoLuong(), Integer::sum);
+        }
         Map<Long, SanPhamChiTiet> danhSachBienThe = new LinkedHashMap<>();
-        for (var item : yeuCau.danhSachSanPham()) {
+        for (var item :
+                yeuCau.danhSachSanPham().stream()
+                        .sorted(Comparator.comparing(PendingSaleRequest.Item::idSanPhamChiTiet))
+                        .toList()) {
             int soLuong;
             try {
                 soLuong = item.soLuong().intValueExact();
@@ -117,11 +128,31 @@ public class PendingSaleService {
             if (danhSachBienThe.containsKey(item.idSanPhamChiTiet()))
                 throw AppException.badRequest("Biến thể bị trùng");
             var v = entityManager.find(SanPhamChiTiet.class, item.idSanPhamChiTiet());
-            if (!duocPhepBan(v))
+            if (v != null && v.getIdSanPham() != null) {
+                entityManager.lock(v.getIdSanPham(), LockModeType.PESSIMISTIC_WRITE);
+                entityManager.refresh(v.getIdSanPham(), LockModeType.PESSIMISTIC_WRITE);
+                entityManager.refresh(v, LockModeType.PESSIMISTIC_WRITE);
+            }
+            if (!duocPhepBan(v)
+                    && !(v != null
+                    && v.getIdSanPham() != null
+                    && soLuong < soLuongCu.getOrDefault(v.getId(), 0)))
                 throw AppException.conflict("Biến thể không còn được bán; hãy xóa khỏi giỏ");
-            if (v.getSoLuong() < soLuong)
+            if (GiuHangTaiQuay.khaDung(v.getSoLuong(), 0) < soLuong
+                    && soLuong > soLuongCu.getOrDefault(v.getId(), 0))
                 throw AppException.conflict("Tồn kho không đủ; kiểm tra lại giá và tồn kho");
             danhSachBienThe.put(v.getId(), v);
+        }
+        var giuKhac = GiuHangTaiQuay.daGiu(entityManager, danhSachBienThe.keySet(), h.getId());
+        for (var item : yeuCau.danhSachSanPham()) {
+            if (!GiuHangTaiQuay.choPhepLuu(
+                    item.soLuong().intValueExact(),
+                    soLuongCu.getOrDefault(item.idSanPhamChiTiet(), 0),
+                    GiuHangTaiQuay.khaDung(
+                            danhSachBienThe.get(item.idSanPhamChiTiet()).getSoLuong(),
+                            giuKhac.getOrDefault(item.idSanPhamChiTiet(), 0L))))
+                throw AppException.conflict(
+                        "Không đủ tồn khả dụng; sản phẩm đang được giữ bởi hóa đơn khác");
         }
         var hienTai = dichVuGiaHienTai.getPrices(danhSachBienThe.values(), LocalDateTime.now());
         BigDecimal thanhTien = SO_KHONG;
@@ -132,6 +163,8 @@ public class PendingSaleService {
                         "Giá đã thay đổi; kiểm tra lại giá và tồn kho trước khi lưu");
             thanhTien = thanhTien.add(giaBan.multiply(item.soLuong()));
         }
+        if (thanhTien.precision() - thanhTien.scale() > 16)
+            throw AppException.badRequest("Tổng tiền hàng vượt giới hạn lưu trữ");
         var phieuGiamGia =
                 yeuCau.maPhieuGiamGia() == null || yeuCau.maPhieuGiamGia().isBlank()
                         ? null
@@ -142,7 +175,7 @@ public class PendingSaleService {
             throw AppException.badRequest("Giá trị hóa đơn vượt giới hạn lưu trữ");
         // Validate the entire request before replacing lines. No stock/payment/voucher usage
         // writes.
-        for (var line : chiTietHoaDon(h)) entityManager.remove(line);
+        for (var line : chiTietCu) entityManager.remove(line);
         entityManager.flush();
         for (var item : yeuCau.danhSachSanPham()) {
             var d = new HoaDonChiTiet();
@@ -223,7 +256,7 @@ public class PendingSaleService {
         l.setIdHoaDon(h);
         l.setNguoiTao(h.getIdNhanVien().getId());
         l.setTrangThai(h.getTrangThai());
-        l.setGhiChu(ghiChu);
+        l.setGhiChu(com.smashstep.datn.invoice.rules.PosHistoryRules.KY_THUAT + ghiChu);
         l.setNgayTao(LocalDateTime.now());
         entityManager.persist(l);
     }
@@ -242,6 +275,11 @@ public class PendingSaleService {
 
     private Draft chuyenDuLieuHoaDonCho(HoaDon h) {
         var cacDong = chiTietHoaDon(h);
+        var giuKhac =
+                GiuHangTaiQuay.daGiu(
+                        entityManager,
+                        cacDong.stream().map(d -> d.getIdSanPhamChiTiet().getId()).toList(),
+                        h.getId());
         var hienTai =
                 dichVuGiaHienTai.getPrices(
                         cacDong.stream().map(HoaDonChiTiet::getIdSanPhamChiTiet).toList(),
@@ -266,7 +304,9 @@ public class PendingSaleService {
                                             d.getDonGia(),
                                             p.getOriginalPrice(),
                                             p.getEffectivePrice(),
-                                            v.getSoLuong(),
+                                            GiuHangTaiQuay.khaDung(
+                                                    v.getSoLuong(),
+                                                    giuKhac.getOrDefault(v.getId(), 0L)),
                                             duocPhepBan(v),
                                             v.getIdSanPham().getId(),
                                             v.getIdSanPham().getMaSanPham(),

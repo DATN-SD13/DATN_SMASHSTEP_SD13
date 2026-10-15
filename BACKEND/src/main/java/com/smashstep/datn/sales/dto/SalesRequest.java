@@ -20,11 +20,14 @@ public class SalesRequest {
     @JsonAlias("requestId")
     private String maYeuCau;
 
+    @Min(2)
+    @Max(2)
+    private Integer phienBanThanhToan;
+
     @Positive
     @JsonAlias("customerId")
     private Long idKhachHang;
 
-    // Luôn lấy lại từ JWT tại controller, không tin giá trị client gửi lên.
     @JsonAlias("employeeId")
     private Long idNhanVien;
 

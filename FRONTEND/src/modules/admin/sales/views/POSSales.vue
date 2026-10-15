@@ -21,12 +21,13 @@ const MAX_ORDERS = 5
 const catalog = ref([]), catalogPage = ref(0), catalogPages = ref(0)
 const loading = ref(false), busy = ref(false), ready = ref(false), error = ref('')
 const customers = ref([]), customerSearch = ref(''), employeeName = ref('')
-const choosingCustomer = ref(false)
+const choosingCustomer = ref(false), customerResults = ref([]), customerLoading = ref(false), customerSearchError = ref('')
 const employeeId = ref(null), methods = ref([]), voucherSupported = ref(false)
 let quoteVersion = 0, quoteTimer
 const orders = ref([]), activeId = ref(null)
 const order = computed(() => orders.value.find(o => o.id === activeId.value) || null)
-const locked = computed(() => Boolean(deliveryEditor.value) || busy.value || !ready.value || Boolean(checkoutDialog.value) || Boolean(pendingPayment.value) || recoveryBlocked.value)
+const deliveryLoading = ref(false)
+const locked = computed(() => deliveryLoading.value || Boolean(deliveryEditor.value) || busy.value || !ready.value || Boolean(checkoutDialog.value) || Boolean(pendingPayment.value) || recoveryBlocked.value)
 const picking = ref(false), q = ref(''), colorFilter = ref(''), sizeFilter = ref('')
 const categoryFilter = ref(''), brandFilter = ref(''), attributes = ref({})
 const shown = computed(() => catalog.value)
@@ -40,7 +41,7 @@ const hydrate = (d, previous = {}) => {
   const o = { ...d, name: d.invoiceCode,
     requestId: previous.requestId || crypto.randomUUID(),
     voucherCode: d.voucherCode ?? previous.voucherCode ?? '', paid: previous.paid ?? '',
-    paymentMode: previous.paymentMode || 'CASH', bankAmount: previous.bankAmount ?? '',
+    paymentMode: ['CASH', 'BANK'].includes(previous.paymentMode) ? previous.paymentMode : 'CASH',
     autoVoucher: previous.autoVoucher ?? true,
     delivery: d.delivery ?? previous.delivery ?? { enabled: false, addressId: null, recipientName: '', recipientPhone: '', address: '', shippingFee: 0 },
     paymentMethodId: previous.paymentMethodId ?? methods.value[0]?.id ?? null,
@@ -67,9 +68,31 @@ const method = code => methods.value.find(m => m.code === code)
 const roundMoney = value => Math.round((Number(value) + Number.EPSILON) * 100) / 100
 const paymentChoices = computed(() => [
   ...(method('TIEN_MAT') ? [{ value: 'CASH', name: 'Tiền mặt' }] : []),
-  ...(method('CHUYEN_KHOAN') ? [{ value: 'BANK', name: 'Chuyển khoản' }] : []),
-  ...(method('TIEN_MAT') && method('CHUYEN_KHOAN') ? [{ value: 'MIXED', name: 'Kết hợp' }] : [])
+  ...(method('CHUYEN_KHOAN') ? [{ value: 'BANK', name: 'Chuyển khoản' }] : [])
 ])
+const cashDisplay = computed(() => {
+  const raw = String(order.value?.paid ?? '')
+  if (!raw) return ''
+  const [whole, fraction] = raw.split('.')
+  return whole.replace(/\B(?=(\d{3})+(?!\d))/g, '.') + (fraction == null ? '' : ',' + fraction)
+})
+function inputCash(event) {
+  if (locked.value || !order.value) return
+  const input = event.target, typed = input.value
+  const cursor = input.selectionStart ?? typed.length
+  const significantBefore = typed.slice(0, cursor).replace(/[.\s]/g, '').length
+  const raw = typed.replace(/[.\s]/g, '').replace(',', '.')
+  if (raw && !/^\d{1,16}(?:\.\d{0,2})?$/.test(raw)) { input.value = cashDisplay.value; return }
+  order.value.paid = raw.replace(/^0+(?=\d)/, '')
+  const formatted = cashDisplay.value
+  input.value = formatted
+  let caret = 0, seen = 0
+  while (caret < formatted.length && seen < significantBefore) {
+    if (formatted[caret] !== '.') seen++
+    caret++
+  }
+  input.setSelectionRange?.(caret, caret)
+}
 const paidNum = computed(() => Number(order.value?.paid) || 0)
 const quoteInput = computed(() => order.value ? {
   requestId: order.value.requestId, invoiceId: order.value.id, revision: order.value.revision,
@@ -82,14 +105,17 @@ const quoteSignature = computed(() => JSON.stringify({ id: activeId.value, input
 const quoteReady = computed(() => Boolean(order.value?.quote && order.value.quotedSignature === quoteSignature.value))
 const payable = computed(() => quoteReady.value ? Number(order.value.quote.total)
   : roundMoney(total.value + (order.value?.delivery.enabled ? Number(order.value.delivery.shippingFee) || 0 : 0)))
-const transferred = computed(() => order.value?.paymentMode === 'BANK' ? payable.value
-  : order.value?.paymentMode === 'MIXED' ? Number(order.value.bankAmount) || 0 : 0)
+const transferred = computed(() => order.value?.paymentMode === 'BANK' ? payable.value : 0)
 const cashDue = computed(() => roundMoney(payable.value - transferred.value))
 const change = computed(() => order.value?.paymentMode === 'BANK' ? 0 : Math.max(0, roundMoney(paidNum.value - cashDue.value)))
-const canPay = computed(() => !locked.value && quoteReady.value && count.value > 0 && !cartWarnings.value.length
+const cashError = computed(() => {
+  if (!order.value || order.value.paymentMode === 'BANK' || order.value.paid === '') return ''
+  if (!/^(?:0|[1-9]\d{0,15})(?:\.\d{1,2})?$/.test(String(order.value.paid))) return 'Số tiền không âm, tối đa 16 chữ số và 2 số lẻ.'
+  return paidNum.value < cashDue.value ? 'Số tiền khách đưa chưa đủ.' : ''
+})
+const canPay = computed(() => !locked.value && quoteReady.value && count.value > 0 && deliveryReady.value && !cartWarnings.value.length
   && (order.value.paymentMode === 'BANK' ? !!method('CHUYEN_KHOAN') && payable.value > 0
-    : !!method('TIEN_MAT') && order.value.paid !== '' && Number.isFinite(Number(order.value.paid)) && paidNum.value >= cashDue.value)
-  && (order.value.paymentMode !== 'MIXED' || !!method('CHUYEN_KHOAN') && transferred.value > 0 && cashDue.value > 0))
+    : !!method('TIEN_MAT') && order.value.paid !== '' && Number.isFinite(Number(order.value.paid)) && paidNum.value >= cashDue.value && /^(?:0|[1-9]\d{0,15})(?:\.\d{1,2})?$/.test(String(order.value.paid))))
 const selectedVoucher = computed(() => validVouchers.value.find(v => v.code.toLowerCase() === order.value?.voucherCode?.toLowerCase()))
 const voucherLabel = v => v?.value == null ? '' : Number(v.type) === 1 ? `${Number(v.value)}%` : money(v.value)
 const bestSelected = computed(() => selectedVoucher.value && Number(selectedVoucher.value.discount) === Number(validVouchers.value[0]?.discount))
@@ -103,6 +129,7 @@ async function calculateQuote(suggest = true) {
   try {
     const result = await salesService.tinhTien(quoteInput.value)
     if (!alive || version !== quoteVersion || order.value?.id !== target.id || fingerprint !== quoteSignature.value) return
+    if (bankAccepted.value && Number(bankAccepted.value.total) !== Number(result.total)) bankAccepted.value = null
     target.quote = result; target.quotedSignature = fingerprint
     if (result.selectedVoucherError) {
       target.voucherCode = ''; target.quoteError = `Đã bỏ phiếu: ${result.selectedVoucherError}`
@@ -128,6 +155,7 @@ async function calculateQuote(suggest = true) {
   } catch (e) {
     if (alive && version === quoteVersion && order.value?.id === target.id && fingerprint === quoteSignature.value) {
       target.quote = null; target.quoteError = message(e)
+      if (e.response?.status === 409 && !busy.value && !locked.value) await reviewChangedCart(target)
     }
   }
 }
@@ -151,6 +179,10 @@ watch([quoteSignature, busy], () => {
 })
 
 const deliveryEditor = ref(null), deliveryError = ref(''), structuredAddress = ref(false)
+const completeDelivery = d => !d?.enabled || Boolean(d.recipientName?.trim() && /^0\d{9}$/.test(d.recipientPhone)
+  && d.address?.trim() && d.address.length <= 500 && d.shippingFee !== ''
+  && Number.isFinite(Number(d.shippingFee)) && Number(d.shippingFee) >= 0)
+const deliveryReady = computed(() => completeDelivery(order.value?.delivery))
 const addressForm = ref({ province: '', ward: '', district: '', street: '' })
 const { provinces, wards, loadingProvinces, loadingWards, addressError, changeProvince, resetAddress } = useAddressApi(addressForm)
 let deliveryOrderId
@@ -167,8 +199,30 @@ function selectDeliveryAddress(a) {
 }
 async function toggleDelivery(enabled) {
   if (locked.value || !order.value) return
-  if (!enabled) { order.value.delivery.enabled = false; await saveOrder(); return }
-  openDelivery(); deliveryEditor.value.enabled = true
+  const target = order.value
+  if (!enabled) { target.delivery.enabled = false; await saveOrder(target); return }
+  const customer = selectedCustomer.value
+  let defaultAddress
+  deliveryLoading.value = true; error.value = ''
+  try {
+    if (customer?.code) {
+      const result = await customerService.getAddresses(customer.code)
+      if (!alive || order.value?.id !== target.id || order.value?.customerId !== target.customerId) return
+      addresses.value = (result || []).filter(a => a.status === 1)
+      defaultAddress = addresses.value.find(a => a.isDefault === true)
+    }
+    const delivery = { ...target.delivery, enabled: true }
+    if (defaultAddress) Object.assign(delivery, { addressId: defaultAddress.id,
+      recipientName: defaultAddress.receiverName, recipientPhone: defaultAddress.receiverPhone, address: defaultAddress.fullAddress })
+    else if (!delivery.address?.trim()) Object.assign(delivery, { addressId: null,
+      recipientName: customer?.name || '', recipientPhone: customer?.phone || '', address: '' })
+    if (!alive || order.value?.id !== target.id) return
+    // Incomplete delivery stays in this tab until the operator edits it or disables delivery.
+    if (!completeDelivery(delivery)) { target.delivery = delivery; return }
+    deliveryLoading.value = false
+    await saveOrder({ ...target, delivery })
+  } catch (e) { if (alive && order.value?.id === target.id) error.value = message(e) }
+  finally { deliveryLoading.value = false }
 }
 async function saveDelivery() {
   if (busy.value || !deliveryEditor.value || order.value?.id !== deliveryOrderId) return
@@ -215,10 +269,11 @@ async function loadAddresses() {
   } catch (e) { if (version === addressVersion) error.value = message(e) }
   finally { if (version === addressVersion) addressLoading.value = false }
 }
-function changeCustomer() {
+async function changeCustomer() {
   if (locked.value || !order.value) return
+  order.value.voucherCode = ''; order.value.autoVoucher = true
   order.value.delivery = { enabled: false, addressId: null, recipientName: '', recipientPhone: '', address: '', shippingFee: 0 }
-  saveOrder()
+  return await saveOrder()
 }
 async function useAddress(event) {
   if (locked.value || !order.value) return
@@ -234,33 +289,41 @@ function checkoutPayload() {
   const o = order.value, payments = []
   if (o.paymentMode !== 'BANK') payments.push({ methodId: method('TIEN_MAT').id, amount: cashDue.value })
   if (o.paymentMode !== 'CASH') payments.push({ methodId: method('CHUYEN_KHOAN').id, amount: transferred.value })
-  return JSON.parse(JSON.stringify({ ...quoteInput.value, requestId: o.requestId, note: o.note || '',
+  return JSON.parse(JSON.stringify({ ...quoteInput.value, paymentVersion: 2, requestId: o.requestId, note: o.note || '',
     payments, paidAmount: o.paymentMode === 'BANK' ? 0 : paidNum.value,
     transferConfirmed: false }))
 }
-const paymentContext = () => JSON.stringify({ quote: quoteSignature.value, mode: order.value?.paymentMode, bank: order.value?.bankAmount, cash: order.value?.paid })
-async function pay() {
-  if (!canPay.value) return
+const bankAccepted = ref(null)
+const paymentContext = () => JSON.stringify({ quote: quoteSignature.value, cart: order.value ? signature(order.value) : null,
+  mode: order.value?.paymentMode, cash: order.value?.paid })
+watch(paymentContext, () => { bankAccepted.value = null })
+const bankConfirmed = computed(() => bankAccepted.value?.context === paymentContext()
+  && quoteReady.value && Number(bankAccepted.value?.total) === payable.value)
+async function readyCheckout() {
+  if (!canPay.value) return false
   const id = order.value.id
   if (dirty.value) {
-    if (!(await saveOrder()) || order.value?.id !== id) return
+    if (!(await saveOrder()) || order.value?.id !== id) return false
     await calculateQuote(false)
-    if (!canPay.value) return
   }
+  return canPay.value
+}
+async function openQr() {
+  if (!(await readyCheckout())) return
   qrFailed.value = false
   checkoutDialog.value = { payload: checkoutPayload(), invoiceCode: order.value.name,
-    total: payable.value, change: change.value, bank: transferred.value, context: paymentContext(), confirmed: false, qr: qrLink(bankConfig, transferred.value, order.value.name) }
+    total: payable.value, change: change.value, bank: transferred.value, context: paymentContext(), confirmed: false,
+    qr: qrLink(bankConfig, transferred.value, order.value.name) }
 }
-let lastAutoQr = ''
-watch([quoteReady, () => order.value?.paymentMode, transferred], () => {
-  if (order.value?.paymentMode !== 'BANK' || !quoteReady.value || !canPay.value) return
-  // Let the existing better-voucher confirmation finish before presenting bank payment.
-  if (Number(validVouchers.value[0]?.discount || 0) > Number(order.value.quote.discount)) return
-  const key = quoteSignature.value + ':' + transferred.value
-  if (lastAutoQr === key) return
-  lastAutoQr = key
-  pay()
-}, { flush: 'post' })
+async function pay() {
+  if (!(await readyCheckout())) return
+  if (order.value.paymentMode === 'BANK' && bankConfirmed.value) {
+    const request = checkoutPayload(); request.transferConfirmed = true
+    await performPayment({ employeeId: employeeId.value, invoiceCode: order.value.name, payload: request })
+    return
+  }
+  await openQr()
+}
 function validRecovery(saved) {
   const p = saved?.payload
   return saved?.employeeId === employeeId.value && typeof saved?.invoiceCode === 'string'
@@ -292,7 +355,12 @@ async function confirmPayment() {
   if (dialog.context !== paymentContext()) {
     checkoutDialog.value = null; error.value = 'Thông tin hóa đơn đã thay đổi. Vui lòng mở lại mã QR và kiểm tra số tiền.'; return
   }
-  dialog.payload.transferConfirmed = dialog.bank > 0
+  if (dialog.bank > 0) {
+    bankAccepted.value = { context: dialog.context, total: dialog.total }
+    checkoutDialog.value = null
+    return
+  }
+  dialog.payload.transferConfirmed = false
   await performPayment({ employeeId: employeeId.value, invoiceCode: dialog.invoiceCode, payload: dialog.payload })
 }
 async function performPayment(saved) {
@@ -308,6 +376,7 @@ async function performPayment(saved) {
   pendingPayment.value = saved
   try {
     const receipt = await salesService.thanhToan(saved.payload)
+    bankAccepted.value = null
     completedReceipt.value = receipt
     checkoutDialog.value = null
     clearCheckout()
@@ -344,8 +413,17 @@ async function reloadOrders() {
   if (!orders.value.some(o => o.id === activeId.value)) activeId.value = orders.value[0]?.id ?? null
 }
 async function saveOrder(target = order.value) {
-  if (!target || signature(target) === target.saved) return true
-  if (busy.value) return false
+  if (!target) return true
+  if (busy.value || deliveryLoading.value) return false
+  if (!target.items.length) {
+    target.voucherCode = ''; target.quote = null; target.quotedSignature = ''; target.quoteError = ''; target.paid = ''
+  }
+  if (!target.items.length && !completeDelivery(target.delivery)) target.delivery.enabled = false
+  if (!completeDelivery(target.delivery)) {
+    error.value = 'Thông tin giao hàng chưa đầy đủ. Bấm Chỉnh sửa để bổ sung hoặc bỏ tích Giao hàng.'
+    return false
+  }
+  if (signature(target) === target.saved) return true
   busy.value = true; error.value = ''
   const sent = payload(target)
   try {
@@ -354,12 +432,37 @@ async function saveOrder(target = order.value) {
     // Only replace this exact draft; UI edits and tab switches are locked during the request.
     const index = orders.value.findIndex(o => o.id === target.id)
     if (index >= 0) orders.value[index] = hydrate(result, target)
+    await loadCatalog()
     showSuccess(`Đã lưu ${target.name}`)
     return true
   } catch (e) {
-    if (alive) error.value = message(e) + ' Thay đổi chưa được lưu. Có thể thử lưu lại hoặc tải bản trên máy chủ.'
+    if (alive) error.value = message(e) + ' Thay đổi chưa được lưu.'
+    if (e.response?.status === 409 && !pendingPayment.value) await reviewChangedCart(target)
     return false
   } finally { busy.value = false }
+}
+async function reviewChangedCart(target) {
+  const results = await Promise.allSettled(target.items.map(i => salesService.chiTietSanPhamBan(i.id)))
+  let saved
+  try { saved = await salesService.chiTietHoaDonCho(target.id) } catch { return }
+  const changed = []
+  results.forEach((r, idx) => {
+    const item = target.items[idx]
+    if (r.status !== 'fulfilled') { item.available = false; return }
+    const current = r.value, previous = saved.items.find(i => i.id === item.id)
+    item.stock = Number(current.stock) + Number(previous?.qty || 0)
+    item.currentPrice = current.price; item.available = true
+    if (Number(item.price) !== Number(current.price)) changed.push({ item, current })
+  })
+  const priceKey = changed.map(({ item, current }) => `${item.id}:${current.price}`).join('|')
+  if (changed.length && target.lastPricePrompt !== priceKey) {
+    target.lastPricePrompt = priceKey
+    confirmAction('Giá sản phẩm đã thay đổi. Cập nhật giá mới rồi kiểm tra lại tổng tiền?', async () => {
+    if (locked.value || order.value?.id !== target.id) return
+    for (const { item, current } of changed) Object.assign(item, current, { qty: item.qty, currentPrice: current.price })
+    await saveOrder()
+  }, { title: 'Xác nhận giá mới', confirmText: 'Cập nhật giá' })
+  }
 }
 async function switchOrder(id) {
   if (locked.value || !(await saveOrder())) return
@@ -389,7 +492,7 @@ function removeOrder(id) {
     busy.value = true; error.value = ''
     try {
       await salesService.huyHoaDonCho(target.name)
-      await reloadOrders()
+      await reloadOrders(); await loadCatalog()
       showSuccess(`Đã hủy ${target.name}`)
     } catch (e) { error.value = message(e); try { await reloadOrders() } catch {} }
     finally { busy.value = false }
@@ -399,7 +502,7 @@ function cancelOrder() { if (order.value) removeOrder(order.value.id) }
 async function addItem(v) {
   if (locked.value || !order.value) return
   const cur = order.value.items.find(i => i.id === v.id)
-  if ((cur?.qty || 0) >= v.stock) { error.value = 'Số lượng đã đạt tồn kho hiện tại'; return }
+  if (v.stock < 1) { error.value = 'Số lượng đã đạt tồn kho hiện tại'; return }
   if (cur) cur.qty++
   else order.value.items.push({ ...v, qty: 1, currentPrice: v.price, available: true })
   await saveOrder()
@@ -463,24 +566,34 @@ async function loadCatalog() {
 }
 async function loadCustomers() {
   const version = ++customerVersion
+  customerLoading.value = true; customerSearchError.value = ''
   try {
     const result = await customerService.getCustomers({ page: 1, size: 20, trangThai: 1, tuKhoa: customerSearch.value.trim() })
     if (!alive || version !== customerVersion) return
     const found = result.content || []
+    customerResults.value = found
     const selectedIds = new Set(orders.value.map(o => o.customerId).filter(Boolean))
     customers.value = [...customers.value.filter(c => selectedIds.has(c.id) && !found.some(x => x.id === c.id)), ...found]
-  } catch (e) { if (version === customerVersion) error.value = message(e) }
+  } catch (e) {
+    if (alive && version === customerVersion) { customerResults.value = []; customerSearchError.value = message(e) }
+  } finally { if (alive && version === customerVersion) customerLoading.value = false }
 }
 async function selectCustomer(customer) {
   if (locked.value || !order.value) return
   order.value.customerId = customer?.id ?? null
-  if (await saveOrder()) choosingCustomer.value = false
+  choosingCustomer.value = false
+  await changeCustomer()
 }
 watch([q, colorFilter, sizeFilter, categoryFilter, brandFilter], () => {
   catalogPage.value = 0; ++catalogVersion; clearTimeout(searchTimer); searchTimer = setTimeout(loadCatalog, 250)
 })
 watch(catalogPage, loadCatalog)
-watch(customerSearch, () => { ++customerVersion; clearTimeout(customerTimer); customerTimer = setTimeout(loadCustomers, 250) })
+watch(customerSearch, () => {
+  ++customerVersion; clearTimeout(customerTimer)
+  customerResults.value = []; customerSearchError.value = ''; customerLoading.value = true
+  choosingCustomer.value = true
+  customerTimer = setTimeout(loadCustomers, 250)
+})
 onBeforeRouteLeave(async () => !busy.value && await saveOrder())
 onMounted(async () => {
   try {
@@ -526,7 +639,7 @@ onBeforeUnmount(() => { alive = false; ++quoteVersion; ++addressVersion; clearTi
             <h2>Giỏ hàng</h2><span class="ss-pill">{{ count }} sản phẩm</span>
             <span class="ss-spacer"></span>
             <button class="ss-btn" :disabled="locked || !order" @click="openPicker"><i class="bi bi-qr-code-scan"></i> Nhập mã</button>
-            <button class="ss-btn" :disabled="locked || !order" @click="openPicker">Chọn sản phẩm</button>
+            <button class="ss-btn primary" :disabled="locked || !order" @click="openPicker">Chọn sản phẩm</button>
           </div>
           <div class="ss-table-wrap">
             <table class="ss-table" style="min-width:640px">
@@ -535,7 +648,7 @@ onBeforeUnmount(() => { alive = false; ++quoteVersion; ++addressVersion; clearTi
                 <tr v-for="(i, idx) in order?.items || []" :key="i.code">
                   <td class="c">{{ idx + 1 }}</td>
                   <td><ProductThumbnail :url="imageSources[i.id]" :item="badgeItem(i)" :alt="i.name" /></td><td :title="i.code"><span class="ss-code">{{ i.productCode || i.code }}</span></td>
-                  <td class="ss-strong">{{ i.name }}</td>
+                  <td class="cart-product-name"><span class="ss-strong">{{ i.name }}</span></td>
                   <td>{{ i.color }}</td>
                   <td class="c">{{ i.size }}</td>
                   <td class="c"><div class="qty"><button :disabled="locked" @click="setQty(i, i.qty - 1)">−</button><input :disabled="locked" :value="i.qty" @change="setQty(i, $event.target.value)" /><button :disabled="locked" @click="setQty(i, i.qty + 1)">+</button></div></td>
@@ -547,15 +660,28 @@ onBeforeUnmount(() => { alive = false; ++quoteVersion; ++addressVersion; clearTi
             <p v-if="!order?.items.length" class="empty">Giỏ hàng trống.</p>
           </div>
         </section>
-        <section v-if="order?.delivery.enabled" class="ss-card delivery-card"><div class="ss-head"><h3><i class="bi bi-truck"></i> Thông tin giao hàng</h3><span class="ss-spacer"></span><button class="ss-btn sm" :disabled="locked" @click="openDelivery">Chỉnh sửa</button></div><div class="delivery-grid"><label>Người nhận<strong>{{ order.delivery.recipientName || 'Chưa nhập' }}</strong></label><label>Số điện thoại<strong>{{ order.delivery.recipientPhone || 'Chưa nhập' }}</strong></label><label class="address-line">Địa chỉ giao hàng<strong>{{ order.delivery.address || 'Chưa nhập địa chỉ' }}</strong></label></div></section>
+        <section v-if="order?.delivery.enabled" class="ss-card delivery-card"><div class="ss-head"><div class="ss-head-icon"><i class="bi bi-truck"></i></div><h3>Thông tin giao hàng</h3><span class="ss-spacer"></span><button class="ss-btn sm" :disabled="locked" @click="openDelivery">Chỉnh sửa</button></div><p v-if="!deliveryReady" class="delivery-hint" role="status">Chưa có thông tin giao hàng đầy đủ. Bấm “Chỉnh sửa” để bổ sung địa chỉ trước khi thanh toán.</p><div class="delivery-grid"><label>Người nhận<strong>{{ order.delivery.recipientName || 'Chưa nhập' }}</strong></label><label>Số điện thoại<strong>{{ order.delivery.recipientPhone || 'Chưa nhập' }}</strong></label><label class="address-line">Địa chỉ giao hàng<strong>{{ order.delivery.address || 'Chưa nhập địa chỉ' }}</strong></label></div></section>
       </div>
 
       <aside class="right ss-stack">
         <section class="ss-card tight">
           <h3 class="side-title">Khách hàng</h3>
           <div class="cust">
-            <input class="ss-input" v-model="customerSearch" placeholder="Tìm khách hàng theo tên, mã hoặc số điện thoại" :disabled="locked" />
+            <input class="ss-input" v-model="customerSearch" placeholder="Tìm theo tên, mã hoặc SĐT" :disabled="locked" @focus="choosingCustomer = true" @keydown.esc="choosingCustomer = false" aria-label="Tìm khách hàng theo tên, mã hoặc số điện thoại" />
             <button class="ss-icon-btn sq" :disabled="locked" title="Thêm khách hàng" @click="router.push('/khach-hang/them')"><i class="bi bi-person-plus"></i></button>
+          </div>
+          <div v-if="choosingCustomer && customerSearch.trim()" class="customer-results" aria-label="Kết quả tìm khách hàng">
+            <div class="customer-results-head"><strong>Kết quả tìm kiếm</strong><button type="button" class="ss-icon-btn" @click="choosingCustomer = false" aria-label="Đóng kết quả tìm kiếm"><i class="bi bi-x"></i></button></div>
+            <p v-if="customerLoading" role="status">Đang tìm khách hàng…</p>
+            <p v-else-if="customerSearchError" role="alert">{{ customerSearchError }}</p>
+            <template v-else>
+              <button v-for="c in customerResults" :key="c.id" type="button" class="customer-result" :disabled="locked" @click="selectCustomer(c)">
+                <strong>{{ c.name || 'Chưa cập nhật tên' }}</strong>
+                <small>{{ c.code || '—' }} · {{ c.phone || 'Chưa có SĐT' }}</small>
+              </button>
+              <p v-if="!customerResults.length">Không tìm thấy khách hàng phù hợp.</p>
+              <p v-else-if="customerResults.length === 20">Hiển thị 20 kết quả. Nhập thêm tên hoặc mã để tìm chính xác hơn.</p>
+            </template>
           </div>
           <select v-if="order" class="ss-select" v-model="order.customerId" @change="changeCustomer" :disabled="locked" aria-label="Khách hàng">
             <option :value="null">Khách lẻ</option>
@@ -569,43 +695,45 @@ onBeforeUnmount(() => { alive = false; ++quoteVersion; ++addressVersion; clearTi
         </section>
 
         <section class="ss-card" v-if="order">
-          <div class="ss-head"><div class="ss-head-icon"><i class="bi bi-receipt"></i></div><h2>Thông tin đơn hàng</h2><span class="ss-spacer"></span><label class="delivery-toggle"><input type="checkbox" :checked="order.delivery.enabled" :disabled="locked" @change="toggleDelivery($event.target.checked)" /> Giao hàng</label></div>
-          <div v-if="selectedVoucher && quoteReady" class="voucher-card"><div><i class="bi bi-check2-circle"></i> {{ bestSelected ? 'Đang áp dụng phiếu tốt nhất' : 'Phiếu đang áp dụng' }}<button class="ss-icon-btn" :disabled="locked" aria-label="Bỏ phiếu" @click="applyVoucher('')">×</button></div><div><b>{{ selectedVoucher.code }}</b><span class="voucher-badge">{{ voucherLabel(selectedVoucher) }}</span></div><div><span>Giá trị giảm</span><b>−{{ money(order.quote.discount) }}</b></div></div>
-          <div class="kv"><span>Tổng tiền hàng ({{ count }} sản phẩm):</span><b>{{ money(total) }}</b></div>
-          <div class="ss-field"><label class="ss-label" for="pos-voucher">Phiếu giảm giá</label>
+          <div class="ss-head"><div class="ss-head-icon"><i class="bi bi-receipt"></i></div><h2>Thông tin đơn hàng</h2><span class="ss-spacer"></span><label class="delivery-toggle"><span>Giao hàng</span><input type="checkbox" role="switch" aria-label="Giao hàng" :checked="order.delivery.enabled" :disabled="locked" @change="toggleDelivery($event.target.checked)" /><span class="delivery-switch-track" aria-hidden="true"></span></label></div>
+          <div v-if="selectedVoucher && quoteReady" class="voucher-card"><div><i class="bi bi-check2-circle"></i> {{ bestSelected ? 'Đang áp dụng phiếu tốt nhất' : 'Phiếu đang áp dụng' }}<button class="ss-icon-btn" :disabled="locked" aria-label="Bỏ phiếu" @click="applyVoucher('')">×</button></div><div><b>{{ selectedVoucher.code }} <small>{{ selectedVoucher.form === 2 ? 'Cá nhân' : 'Công khai' }}</small></b><span class="voucher-badge">{{ voucherLabel(selectedVoucher) }}</span></div><div><span>Giá trị giảm</span><b>−{{ money(order.quote.discount) }}</b></div></div>
+          <div class="ss-field voucher-selector"><label class="ss-label" for="pos-voucher">Phiếu giảm giá</label>
             <select id="pos-voucher" class="ss-select" :value="order.voucherCode" :disabled="locked || !count" @change="applyVoucher($event.target.value)">
               <option value="">Không sử dụng phiếu</option>
-              <option v-for="v in validVouchers" :key="v.code" :value="v.code">{{ v.code }} · Giảm {{ money(v.discount) }}</option>
+              <optgroup v-for="form in [2, 1]" :key="form" :label="form === 2 ? 'Phiếu cá nhân của khách' : 'Phiếu công khai'">
+                <option v-for="v in validVouchers.filter(v => Number(v.form || 1) === form)" :key="v.code" :value="v.code">{{ v.code }} · {{ voucherLabel(v) }} · Giảm {{ money(v.discount) }}</option>
+              </optgroup>
+              <optgroup v-if="order.quote?.ineligibleVouchers?.length" label="Chưa đủ điều kiện">
+                <option v-for="v in order.quote.ineligibleVouchers" :key="v.code" disabled>{{ v.form === 2 ? 'Cá nhân · ' : '' }}{{ v.code }} · {{ v.reason }}</option>
+              </optgroup>
               <option v-if="order.voucherCode && !validVouchers.some(v => v.code.toLowerCase() === order.voucherCode.toLowerCase())" :value="order.voucherCode">{{ order.voucherCode }}</option>
             </select>
             <small v-if="validVouchers[0]" class="ss-hint">Phiếu tốt nhất: {{ validVouchers[0].code }} · giảm {{ money(validVouchers[0].discount) }}</small>
           </div>
+          <div class="kv"><span>Tổng tiền hàng ({{ count }} sản phẩm):</span><b>{{ money(total) }}</b></div>
           <div class="kv" v-if="order.delivery.enabled"><span>Phí vận chuyển:</span><b>{{ money(order.delivery.shippingFee) }}</b></div>
           <div class="kv reduction-row"><span>Tiền giảm từ phiếu:</span><b>−{{ money(quoteReady ? order.quote.discount : 0) }}</b></div>
           <div class="kv payable-row"><span>Khách cần trả:</span><b>{{ money(payable) }}</b></div>
           <p v-if="order.quoteError" role="alert">{{ order.quoteError }}</p>
-          <button class="ss-btn sm" :disabled="locked || !count" @click="refreshCart">Kiểm tra lại giá và tồn kho</button>
+
 
           <div class="ss-field"><span class="ss-label strong">Hình thức thanh toán</span>
             <div class="ss-radios" style="min-height:24px;gap:12px;flex-wrap:wrap">
               <label v-for="m in paymentChoices" :key="m.value"><input type="radio" :value="m.value" v-model="order.paymentMode" :disabled="locked" /> {{ m.name }}</label>
             </div>
           </div>
-          <div v-if="order.paymentMode === 'MIXED'" class="ss-field"><label class="ss-label">Chuyển khoản</label>
-            <input class="ss-input" v-model="order.bankAmount" type="number" min="0" step="1" :disabled="locked" aria-label="Số tiền chuyển khoản" />
-            <small>Còn thu tiền mặt: {{ money(cashDue) }}</small>
-          </div>
           <small v-if="order.paymentMode !== 'CASH' && !quoteReady" class="ss-hint">Thêm sản phẩm và hoàn tất thông tin giao hàng để tính số tiền chuyển khoản.</small>
-          <button v-if="order.paymentMode !== 'CASH'" class="ss-btn" :disabled="!canPay" @click="pay">{{ bankConfig ? 'Hiển thị QR chuyển khoản' : 'Xác nhận chuyển khoản thủ công' }}</button>
+          <button v-if="order.paymentMode !== 'CASH'" class="ss-btn" :disabled="!canPay" @click="openQr">{{ bankConfig ? 'Hiển thị QR chuyển khoản' : 'Xác nhận chuyển khoản thủ công' }}</button>
           <div v-if="order.paymentMode !== 'BANK'" class="ss-field"><span class="ss-label strong">Tiền mặt khách đưa</span>
-            <input class="ss-input" type="number" min="0" step="1" v-model="order.paid" :disabled="locked" placeholder="Nhập số tiền khách đưa" /></div>
+            <input class="ss-input" type="text" inputmode="decimal" :value="cashDisplay" @input="inputCash" :disabled="locked" aria-label="Tiền mặt khách đưa" autocomplete="off" placeholder="Nhập số tiền khách đưa" /></div>
           <div v-else class="kv"><span>Cần chuyển khoản:</span><b>{{ money(payable) }}</b></div>
+          <small v-if="cashError" class="cash-error" role="alert">{{ cashError }}</small>
+          <p v-if="order.paymentMode === 'BANK' && bankConfirmed" class="bank-confirmed" role="status"><i class="bi bi-check-circle"></i> Đã xác nhận chuyển khoản, chưa hoàn tất hóa đơn. Bấm Thanh toán để hoàn tất.</p>
           <div class="kv"><span>Tiền thừa trả khách</span><b>{{ money(change) }}</b></div>
           <div class="ss-field"><span class="ss-label strong">Ghi chú thanh toán</span>
             <textarea class="ss-textarea" v-model="order.note" @change="saveOrder()" maxlength="980" :disabled="locked" placeholder="Ghi chú thêm nếu cần"></textarea></div>
 
-          <div class="pos-save-state">
-            <small role="status">{{ busy ? 'Đang lưu...' : dirty ? 'Chưa lưu thay đổi' : 'Đã lưu' }}</small>
+          <div v-if="dirty || error" class="pos-save-actions">
             <button v-if="dirty" class="ss-btn sm" :disabled="locked" @click="saveOrder()">Lưu</button>
             <button v-if="error" class="ss-btn sm" :disabled="locked" @click="reloadCurrent">Tải lại hóa đơn</button>
           </div>
@@ -634,12 +762,12 @@ onBeforeUnmount(() => { alive = false; ++quoteVersion; ++addressVersion; clearTi
         </div>
         <div class="ss-table-wrap">
           <table class="ss-table" style="min-width:600px">
-            <thead><tr><th>STT</th><th>Ảnh sản phẩm</th><th>Mã sản phẩm</th><th>Tên sản phẩm</th><th>Màu</th><th class="c">Size</th><th class="r">Tồn</th><th class="r">Giá</th><th class="c"></th></tr></thead>
+            <thead><tr><th>STT</th><th>Ảnh sản phẩm</th><th>Mã sản phẩm</th><th>Tên sản phẩm</th><th>Màu</th><th class="c">Size</th><th class="r">Tồn khả dụng</th><th class="r">Giá</th><th class="c"></th></tr></thead>
             <tbody>
               <tr v-for="(v, idx) in shown" :key="v.code">
                 <td>{{ catalogPage * 10 + idx + 1 }}</td><td><ProductThumbnail :url="imageSources[v.id]" :item="badgeItem(v)" :alt="v.name" /></td><td :title="v.code"><span class="ss-code">{{ v.productCode }}</span><small class="sku">{{ v.code }}</small></td><td class="ss-strong">{{ v.name }}</td><td>{{ v.color }}</td><td class="c">{{ v.size }}</td>
                 <td class="r">{{ v.stock }}</td><td class="r nowrap" :title="[v.campaignCode, v.campaignName].filter(Boolean).join(' · ')"><del v-if="v.discounted" class="pos-price-old">{{ money(v.originalPrice) }}</del><strong :class="{'sale-price': v.discounted}">{{ money(v.price) }}</strong></td>
-                <td class="c"><button class="ss-btn sm" :disabled="locked || !order" @click="addItem(v)"><i class="bi bi-plus-lg"></i> Thêm</button></td>
+                <td class="c"><button class="ss-btn sm" :disabled="locked || !order || v.stock < 1" @click="addItem(v)"><i class="bi bi-plus-lg"></i> Thêm</button></td>
               </tr>
               <tr v-if="loading"><td colspan="9" class="ss-empty">Đang tải sản phẩm...</td></tr>
               <tr v-else-if="!shown.length"><td colspan="9" class="ss-empty"><i class="bi bi-inbox"></i>Không tìm thấy sản phẩm.</td></tr>
@@ -667,7 +795,7 @@ onBeforeUnmount(() => { alive = false; ++quoteVersion; ++addressVersion; clearTi
           <label><input type="checkbox" v-model="checkoutDialog.confirmed" :disabled="busy" /> Tôi đã kiểm tra đủ {{ money(checkoutDialog.bank) }} tiền chuyển khoản.</label>
         </template>
         <div class="ss-actions"><button class="ss-btn" :disabled="busy" @click="checkoutDialog = null">Quay lại</button>
-          <button class="ss-btn primary" :disabled="busy || checkoutDialog.bank > 0 && !checkoutDialog.confirmed" @click="confirmPayment">{{ busy ? 'Đang xử lý...' : checkoutDialog.bank > 0 ? 'Đã thanh toán' : 'Thanh toán' }}</button></div>
+          <button class="ss-btn primary" :disabled="busy || checkoutDialog.bank > 0 && !checkoutDialog.confirmed" @click="confirmPayment">{{ busy ? 'Đang xử lý...' : checkoutDialog.bank > 0 ? 'Đã nhận tiền' : 'Thanh toán' }}</button></div>
       </section>
     </div>
     <div v-if="completedReceipt" class="ss-modal-bg">
@@ -687,10 +815,14 @@ onBeforeUnmount(() => { alive = false; ++quoteVersion; ++addressVersion; clearTi
 </template>
 
 <style scoped>
+.cash-error{color:#c63249;font-size:11px;line-height:1.5}
+.pos{grid-template-columns:minmax(0,1fr) clamp(390px,30vw,440px)!important;gap:18px!important}.pos .ss-card{border:1px solid #e3eaf0;box-shadow:0 3px 14px #18384d06;border-radius:16px;padding:17px}.pos .ss-head{margin-bottom:12px}.pos .ss-head h2{font-size:15px}.pos .ss-table th{background:#f6f8fb;font-size:11px;padding:13px 10px;white-space:nowrap}.pos .ss-table td{padding:14px 10px;vertical-align:middle}.pos .ss-table .cart-product-name .ss-strong{white-space:normal;overflow-wrap:anywhere;min-width:130px;display:block}.pos .grow{min-height:390px}.right{gap:14px}.right .ss-card{gap:12px}.voucher-card{padding:15px!important}.bank-confirmed{padding:12px;border:1px solid #b8e3d3;background:#f0faf5;color:#167253;border-radius:10px;font-size:12px;line-height:1.6}.pos .btns{margin-top:8px;position:sticky;bottom:0;background:white;padding:12px 0 0}.pos .btns .ss-btn{min-height:42px;font-weight:650}.pos .delivery-card{background:#fff}.pos .qty button{width:25px}.pos .sale-price{font-size:13px}.pos .kv{font-size:12px}.pos .payable-row{font-size:14px}.pos .empty{padding:90px 0}.pos .tabs button{border-radius:9px;min-height:36px}
+@media(max-width:1150px){.pos{grid-template-columns:minmax(0,1fr) 370px!important}.pos .ss-card{padding:13px}}@media(max-width:950px){.pos{grid-template-columns:1fr!important}.pos .btns{position:static}.right{max-height:none}}
+
 .bank-qr{display:grid;justify-items:center}.bank-qr>img{width:280px;max-width:100%;height:auto}.bank-qr .receipt-details{width:100%;margin:10px 0}.qr-unavailable{padding:12px;background:#fff7e8;border-radius:9px;font-size:12px}
 .pos-photo{position:relative;width:64px;height:64px;border:1px solid var(--ss-border);border-radius:9px;background:var(--ss-surface);display:grid;place-items:center;overflow:hidden}.pos-photo img{width:100%;height:100%;object-fit:cover}.pos-photo>i{font-size:24px;color:var(--ss-muted)}.photo-discount{position:absolute;top:0;right:0;background:#e73355;color:white;font-size:10px;font-weight:700;padding:3px 4px;border-radius:0 0 0 5px}.sale-price{color:#d32c50}.sku{display:block;color:var(--ss-muted);font-size:10px}.pos-filters>label{flex:1;min-width:120px;font-size:11px;color:var(--ss-muted)}.pos-filters{flex-wrap:wrap}.delivery-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.delivery-grid label{display:grid;gap:7px;font-size:11px;color:var(--ss-muted)}.delivery-grid strong{font-size:12px;font-weight:500;color:var(--ss-ink);padding:10px;background:var(--ss-surface);border-radius:7px;overflow-wrap:anywhere}.address-line{grid-column:1/-1}.delivery-card h3,.delivery-section h3{font-size:13px}.delivery-toggle{font-size:11px;white-space:nowrap}.delivery-modal{max-width:590px;max-height:90vh;overflow-y:auto;gap:16px}.delivery-section{padding:16px;border:1px solid var(--ss-border);border-radius:14px;display:grid;gap:14px}.address-choice{display:flex;align-items:flex-start;gap:9px;font-size:12px;padding:12px;border:1px solid var(--ss-border);border-radius:10px}.voucher-card{background:#eefaf5;border:1px solid #d1eee2;border-radius:12px;padding:13px;display:grid;gap:10px;font-size:11px;color:#208969}.voucher-card>div{display:flex;align-items:center;justify-content:space-between;gap:6px}.voucher-card .ss-icon-btn{width:22px;height:22px}.voucher-badge{display:inline-block;background:#d0f3e6;color:#208969;font-size:10px;padding:3px 6px;border-radius:4px;font-weight:700}.payable-row{border-top:1px solid var(--ss-border);padding-top:14px;font-size:14px}.payable-row b{color:var(--ss-primary)}.reduction-row b{color:#208969}.right>.ss-card{border-radius:15px}.kv{padding:9px 0;border-bottom:1px solid var(--ss-border)}
 
-.pos-thumb{width:54px;height:54px;object-fit:cover;border-radius:8px}.pos-filters{display:flex;gap:12px;margin:12px 0}.pos-save-state{display:flex;align-items:center;gap:8px;color:var(--ss-muted)}
+.pos-thumb{width:54px;height:54px;object-fit:cover;border-radius:8px}.pos-filters{display:flex;gap:12px;margin:12px 0}.pos-save-actions{display:flex;align-items:center;gap:8px;color:var(--ss-muted)}
 .pos-price-old{display:block;opacity:.6;font-size:10px}.pos-discount{display:inline-block;margin-left:5px;padding:2px 5px;border-radius:5px;background:#e7f5ff;color:#147fb4;font-size:10px;font-weight:700}
 .pos-receipt{max-width:570px;overflow-y:auto}.pos-receipt>.ss-head,.pos-receipt>.ss-actions{flex-shrink:0}.receipt-details{display:grid;grid-template-columns:minmax(95px,140px) minmax(0,1fr);gap:8px 16px;margin:20px 0;flex-shrink:0}.receipt-details dt{font-weight:500;color:var(--ss-muted)}.receipt-details dd{margin:0;overflow-wrap:anywhere;font-weight:600}
 
@@ -717,4 +849,27 @@ onBeforeUnmount(() => { alive = false; ++quoteVersion; ++addressVersion; clearTi
 .qty button:hover { background: var(--ss-primary-soft); color: var(--ss-primary); }
 .qty input { width: 36px; height: 28px; border: 0; text-align: center; font-size: 12px; outline: none; }
 @media (max-width: 1100px) { .pos { grid-template-columns: 1fr; } }
+</style>
+
+<style scoped>
+.cust .ss-input{min-width:0;flex:1}.cust .sq{flex-shrink:0}
+.customer-results{border:1px solid var(--ss-border);border-radius:10px;max-height:260px;overflow:auto;background:white}
+.customer-results-head{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--ss-surface);font-size:12px}
+.customer-results p{margin:0;padding:12px;font-size:12px;color:var(--ss-muted)}
+.customer-result{display:flex;flex-direction:column;gap:5px;width:100%;padding:11px 12px;text-align:left;border:0;border-top:1px solid var(--ss-border);background:white;color:var(--ss-ink);cursor:pointer;overflow-wrap:anywhere}
+.customer-result:hover,.customer-result:focus-visible{background:#eef6ff}.customer-result strong{font-size:13px}.customer-result small{font-size:12px;color:var(--ss-muted)}
+.pos .ss-table .cart-product-name{vertical-align:middle}
+.voucher-selector{display:grid;grid-template-columns:max-content minmax(0,1fr);align-items:center;gap:8px 12px}
+.voucher-selector .ss-label{margin:0;white-space:nowrap}.voucher-selector .ss-select{min-width:0;width:100%}
+.voucher-selector .ss-hint{grid-column:1/-1}
+.pos .payable-row>span{font-weight:650;color:var(--ss-ink)}
+.delivery-toggle{display:inline-flex;align-items:center;gap:7px;position:relative;color:#208969;cursor:pointer}
+.delivery-toggle input{position:absolute;opacity:0;width:1px;height:1px}
+.delivery-switch-track{display:inline-block;position:relative;width:34px;height:19px;border-radius:999px;background:#cbd5e1;transition:background .15s;flex-shrink:0}
+.delivery-switch-track::after{content:'';position:absolute;left:2px;top:2px;width:15px;height:15px;background:white;border-radius:50%;box-shadow:0 1px 3px #0002;transition:transform .15s}
+.delivery-toggle input:checked+.delivery-switch-track{background:#20b891}
+.delivery-toggle input:checked+.delivery-switch-track::after{transform:translateX(15px)}
+.delivery-toggle input:focus-visible+.delivery-switch-track{outline:2px solid var(--ss-primary);outline-offset:3px}
+.delivery-toggle input:disabled+.delivery-switch-track{opacity:.5;cursor:not-allowed}
+.delivery-hint{padding:10px 12px;border-radius:8px;background:#fff7e8;color:#925b13;font-size:12px;line-height:1.6}
 </style>

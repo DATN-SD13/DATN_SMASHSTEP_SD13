@@ -27,7 +27,7 @@ public final class SalesResponse {
         private final String kichThuoc;
         private final BigDecimal giaBan;
         private final BigDecimal giaGoc;
-        private final Integer tonKho;
+        private Integer tonKho;
         private final Boolean dangGiamGia;
         private final BigDecimal phanTramGiam;
         private final String maDotGiamGia;
@@ -88,6 +88,11 @@ public final class SalesResponse {
             this.tenDotGiamGia = tenDotGiamGia;
         }
 
+        public CatalogItem tonKhaDung(int soLuong) {
+            this.tonKho = soLuong;
+            return this;
+        }
+
         public CatalogItem ganIdSanPham(Long idSanPham) {
             this.idSanPham = idSanPham;
             return this;
@@ -103,13 +108,25 @@ public final class SalesResponse {
             BigDecimal tienGiam,
             LocalDateTime ngayHetHan,
             Integer loaiGiamGia,
-            BigDecimal giaTriGiam) {
+            BigDecimal giaTriGiam,
+            Integer hinhThucPhieu,
+            String lyDoKhongApDung) {
+        public VoucherOption(
+                String ma,
+                String ten,
+                BigDecimal giam,
+                LocalDateTime hetHan,
+                Integer loai,
+                BigDecimal giaTri) {
+            this(ma, ten, giam, hetHan, loai, giaTri, null, null);
+        }
+
         public VoucherOption(
                 String maPhieuGiamGia,
                 String tenPhieuGiamGia,
                 BigDecimal tienGiam,
                 LocalDateTime ngayHetHan) {
-            this(maPhieuGiamGia, tenPhieuGiamGia, tienGiam, ngayHetHan, null, null);
+            this(maPhieuGiamGia, tenPhieuGiamGia, tienGiam, ngayHetHan, null, null, null, null);
         }
     }
 
@@ -130,6 +147,12 @@ public final class SalesResponse {
         private final BigDecimal phiVanChuyen;
         private final List<VoucherOption> danhSachPhieuGiamGia;
         private final String loiPhieuDaChon;
+        private List<VoucherOption> phieuChuaDuDieuKien = List.of();
+
+        public Quote phieuChuaDuDieuKien(List<VoucherOption> phieu) {
+            this.phieuChuaDuDieuKien = List.copyOf(phieu);
+            return this;
+        }
 
         // Điểm gọi Java cũ còn được tham chiếu ngoài module POS; không tạo trường JSON tiếng Anh.
         @Deprecated

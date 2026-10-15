@@ -84,6 +84,8 @@ public class SalesController {
     public ApiResponse<Receipt> thanhToan(@Valid @RequestBody SalesRequest yeuCau) {
         yeuCau.setIdNhanVien(PosActor.idNhanVien());
         String ghiChu = yeuCau.getGhiChu();
+        if (yeuCau.getIdHoaDon() != null && ghiChu != null && ghiChu.length() > 980)
+            throw AppException.badRequest("Ghi chú tối đa 980 ký tự");
         if (ghiChu != null
                 && (ghiChu.startsWith(PosDraftRules.PREFIX)
                 || ghiChu.startsWith(PosDraftRules.DELIVERY_PREFIX))) {

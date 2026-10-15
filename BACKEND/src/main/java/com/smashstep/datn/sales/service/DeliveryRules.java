@@ -42,6 +42,9 @@ public final class DeliveryRules {
                             .reduce((a, b) -> a + ", " + b)
                             .orElse("");
         }
+        if (ten != null) ten = ten.trim();
+        if (soDienThoai != null) soDienThoai = soDienThoai.trim();
+        if (diaChi != null) diaChi = diaChi.trim();
         if (ten == null
                 || ten.isBlank()
                 || ten.length() > 255

@@ -2,11 +2,12 @@ import api from '../../../../utils/api'
 
 const layDuLieu = phanHoi => phanHoi.data.data
 
+// Chuyển hợp đồng API tại một nơi; giữ mô hình giao diện và phiên thanh toán đã lưu.
 const doiTenTruong = (duLieu, bangTen) => duLieu == null ? duLieu : Object.fromEntries(
   Object.entries(duLieu).map(([ten, giaTri]) => [bangTen[ten] || ten, giaTri])
 )
 const tenYeuCau = {
-  requestId: 'maYeuCau', invoiceId: 'idHoaDon', revision: 'phienBan', customerId: 'idKhachHang',
+  paymentVersion: 'phienBanThanhToan', requestId: 'maYeuCau', invoiceId: 'idHoaDon', revision: 'phienBan', customerId: 'idKhachHang',
   employeeId: 'idNhanVien', paymentMethodId: 'idPhuongThucThanhToan', voucherCode: 'maPhieuGiamGia',
   paidAmount: 'tienKhachDua', note: 'ghiChu', transferConfirmed: 'daXacNhanChuyenKhoan'
 }
@@ -46,14 +47,17 @@ function taoYeuCau(duLieu) {
   return yeuCau
 }
 function docKetQua(duLieu) {
-  const { danhSachSanPham, giaoHang, danhSachThanhToan, danhSachPhieuGiamGia, ...thongTin } = duLieu
+  const { danhSachSanPham, giaoHang, danhSachThanhToan, danhSachPhieuGiamGia, phieuChuaDuDieuKien, ...thongTin } = duLieu
   const ketQua = doiTenTruong(thongTin, daoBangTen(tenKetQua))
   if (danhSachSanPham !== undefined) ketQua.items = danhSachSanPham.map(docSanPham)
   if (giaoHang !== undefined) ketQua.delivery = doiTenTruong(giaoHang, daoBangTen(tenGiaoHang))
   if (danhSachThanhToan !== undefined) ketQua.payments = danhSachThanhToan.map(p => doiTenTruong(p, daoBangTen(tenKhoanThu)))
   if (danhSachPhieuGiamGia !== undefined) ketQua.vouchers = danhSachPhieuGiamGia.map(p => doiTenTruong(p, {
     maPhieuGiamGia: 'code', tenPhieuGiamGia: 'name', tienGiam: 'discount', ngayHetHan: 'expiresAt',
-    loaiGiamGia: 'type', giaTriGiam: 'value'
+    loaiGiamGia: 'type', giaTriGiam: 'value', hinhThucPhieu: 'form', lyDoKhongApDung: 'reason'
+  }))
+  if (phieuChuaDuDieuKien !== undefined) ketQua.ineligibleVouchers = phieuChuaDuDieuKien.map(p => doiTenTruong(p, {
+    maPhieuGiamGia: 'code', tenPhieuGiamGia: 'name', tienGiam: 'discount', hinhThucPhieu: 'form', lyDoKhongApDung: 'reason'
   }))
   return ketQua
 }
@@ -65,7 +69,7 @@ export default {
   async luuHoaDonCho(id, duLieu) { return docKetQua(layDuLieu(await api.put(`/ban-hang/hoa-don-cho/${id}`, taoYeuCau(duLieu)))) },
   async huyHoaDonCho(ma) {
     return layDuLieu(await api.put(`/hoa-don/${encodeURIComponent(ma)}/trang-thai`, {
-      trangThai: 6, ghiChu: 'Hủy hóa đơn chờ tại POS (chưa thanh toán)'
+      trangThai: 6, nguonThaoTac: 'POS', ghiChu: 'Hủy hóa đơn chờ tại POS (chưa thanh toán)'
     }))
   },
   async danhSachSanPhamBan(boLoc) {
