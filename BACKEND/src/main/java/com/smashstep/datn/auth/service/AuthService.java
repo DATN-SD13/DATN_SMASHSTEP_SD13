@@ -1,3 +1,4 @@
+
 package com.smashstep.datn.auth.service;
 
 import com.smashstep.datn.auth.dto.LoginRequest;
@@ -8,8 +9,11 @@ import com.smashstep.datn.customer.entity.KhachHang;
 import com.smashstep.datn.customer.repository.KhachHangRepository;
 import com.smashstep.datn.employee.entity.NhanVien;
 import com.smashstep.datn.employee.repository.NhanVienRepository;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+
+import java.util.Optional;
 
 @Service
 public class AuthService {
@@ -20,64 +24,114 @@ public class AuthService {
     private final JwtUtil jwtUtil;
 
     public AuthService(
-            NhanVienRepository  nhanVienRepository,
+            NhanVienRepository nhanVienRepository,
             KhachHangRepository khachHangRepository,
-            PasswordEncoder     passwordEncoder,
-            JwtUtil             jwtUtil
+            PasswordEncoder passwordEncoder,
+            JwtUtil jwtUtil
     ) {
-        this.nhanVienRepository  = nhanVienRepository;
+        this.nhanVienRepository = nhanVienRepository;
         this.khachHangRepository = khachHangRepository;
-        this.passwordEncoder     = passwordEncoder;
-        this.jwtUtil             = jwtUtil;
+        this.passwordEncoder = passwordEncoder;
+        this.jwtUtil = jwtUtil;
     }
 
     /**
-     * Đăng nhập chung — nếu có userType thì tìm đúng loại,
-     * nếu không thì tự động nhận biết (nhân viên trước, khách hàng sau).
+     * Đăng nhập bằng email hoặc tên đăng nhập.
+     * Nếu có userType thì tìm đúng loại tài khoản.
+     * Nếu không có userType thì tự nhận diện nhân viên hoặc khách hàng.
      */
     public LoginResponse login(LoginRequest request) {
-        String username = request.getUsername().trim();
+        String username = request.getUsername() == null
+                ? ""
+                : request.getUsername().trim();
+
         String password = request.getPassword();
-        String userType = request.getUserType(); // nullable
+        String userType = request.getUserType();
 
+        if (username.isEmpty() || password == null || password.isEmpty()) {
+            throw AppException.unauthorized(
+                    "Vui lòng nhập email/tên đăng nhập và mật khẩu"
+            );
+        }
+
+        // Đăng nhập nhân viên bằng tên đăng nhập hoặc email
         if ("NHAN_VIEN".equals(userType)) {
-            return loginNhanVien(
-                nhanVienRepository.findByTenDangNhap(username)
-                    .orElseThrow(() -> AppException.unauthorized("Tên đăng nhập hoặc mật khẩu không đúng")),
-                password);
+            NhanVien nv = nhanVienRepository.findByTenDangNhap(username)
+                    .or(() -> nhanVienRepository.findByEmailIgnoreCase(username))
+                    .orElseThrow(() -> AppException.unauthorized(
+                            "Tên đăng nhập/email hoặc mật khẩu không đúng"
+                    ));
+
+            return loginNhanVien(nv, password);
         }
+
+        // Đăng nhập khách hàng bằng tên tài khoản hoặc email
         if ("KHACH_HANG".equals(userType)) {
-            return loginKhachHang(
-                khachHangRepository.findByTenTaiKhoanIgnoreCaseOrEmailIgnoreCase(username, username)
-                    .orElseThrow(() -> AppException.unauthorized("Tên đăng nhập hoặc mật khẩu không đúng")),
-                password);
+            KhachHang kh = khachHangRepository
+                    .findByTenTaiKhoanIgnoreCaseOrEmailIgnoreCase(
+                            username, username
+                    )
+                    .orElseThrow(() -> AppException.unauthorized(
+                            "Tên đăng nhập/email hoặc mật khẩu không đúng"
+                    ));
+
+            return loginKhachHang(kh, password);
         }
 
-        // Không có userType — tự nhận biết
-        var nvOpt = nhanVienRepository.findByTenDangNhap(username);
-        if (nvOpt.isPresent()) return loginNhanVien(nvOpt.get(), password);
+        // Không có userType: tự nhận diện nhân viên trước
+        var nvOpt = nhanVienRepository.findByTenDangNhap(username)
+                .or(() -> nhanVienRepository.findByEmailIgnoreCase(username));
 
-        var khOpt = khachHangRepository.findByTenTaiKhoanIgnoreCaseOrEmailIgnoreCase(username, username);
-        if (khOpt.isPresent()) return loginKhachHang(khOpt.get(), password);
+        if (nvOpt.isPresent()) {
+            return loginNhanVien(nvOpt.get(), password);
+        }
 
-        throw AppException.unauthorized("Tên đăng nhập hoặc mật khẩu không đúng");
+        // Nếu không phải nhân viên, tìm khách hàng
+        var khOpt = khachHangRepository
+                .findByEmailIgnoreCase(username)
+                .or(() -> khachHangRepository
+                        .findByTenTaiKhoanIgnoreCaseOrEmailIgnoreCase(
+                                username, username));
+
+        KhachHang kh = khOpt.orElseThrow(() ->
+                new AppException( HttpStatus.UNAUTHORIZED,"Tên đăng nhập/email hoặc mật khẩu không đúng"));
+
+        return loginKhachHang(kh, password);
+        
     }
 
     // ===== NHÂN VIÊN =====
 
-    private LoginResponse loginNhanVien(NhanVien nv, String password) {
+    private LoginResponse loginNhanVien(
+            NhanVien nv,
+            String password
+    ) {
         if (nv.getMatKhau() == null) {
-            throw AppException.unauthorized("Tài khoản chưa được kích hoạt. Vui lòng liên hệ quản trị viên.");
-        }
-        if (!passwordEncoder.matches(password, nv.getMatKhau())) {
-            throw AppException.unauthorized("Tên đăng nhập hoặc mật khẩu không đúng");
-        }
-        if (!Integer.valueOf(1).equals(nv.getTrangThai())) {
-            throw AppException.unauthorized("Tài khoản đã bị khóa. Vui lòng liên hệ quản trị viên.");
+            throw AppException.unauthorized(
+                    "Tài khoản chưa được kích hoạt. Vui lòng liên hệ quản trị viên."
+            );
         }
 
-        String role  = resolveNhanVienRole(nv);
-        String token = jwtUtil.generateToken(nv.getId(), nv.getTenDangNhap(), role, "NHAN_VIEN");
+        if (!passwordEncoder.matches(password, nv.getMatKhau())) {
+            throw AppException.unauthorized(
+                    "Tên đăng nhập/email hoặc mật khẩu không đúng"
+            );
+        }
+
+        if (!Integer.valueOf(1).equals(nv.getTrangThai())) {
+            throw AppException.unauthorized(
+                    "Tài khoản đã bị khóa. Vui lòng liên hệ quản trị viên."
+            );
+        }
+
+        String role = resolveNhanVienRole(nv);
+
+        String token = jwtUtil.generateToken(
+                nv.getId(),
+                nv.getTenDangNhap(),
+                role,
+                "NHAN_VIEN"
+        );
 
         return LoginResponse.builder()
                 .accessToken(token)
@@ -92,27 +146,50 @@ public class AuthService {
                 .build();
     }
 
-    
     private String resolveNhanVienRole(NhanVien nv) {
-        if (nv.getIdVaiTro() == null) return "STAFF";
-        if (Long.valueOf(2L).equals(nv.getIdVaiTro().getId())) return "ADMIN";
+        if (nv.getIdVaiTro() == null) {
+            return "STAFF";
+        }
+
+        if (Long.valueOf(2L).equals(nv.getIdVaiTro().getId())) {
+            return "ADMIN";
+        }
+
         return "STAFF";
     }
 
     // ===== KHÁCH HÀNG =====
 
-    private LoginResponse loginKhachHang(KhachHang kh, String password) {
+    private LoginResponse loginKhachHang(
+            KhachHang kh,
+            String password
+    ) {
         if (kh.getMatKhau() == null) {
-            throw AppException.unauthorized("Tài khoản chưa có mật khẩu. Vui lòng đăng ký hoặc đặt lại mật khẩu.");
-        }
-        if (!passwordEncoder.matches(password, kh.getMatKhau())) {
-            throw AppException.unauthorized("Tên đăng nhập hoặc mật khẩu không đúng");
-        }
-        if (!Integer.valueOf(1).equals(kh.getTrangThai())) {
-            throw AppException.unauthorized("Tài khoản đã bị khóa.");
+            throw AppException.unauthorized(
+                    "Tài khoản chưa có mật khẩu. Vui lòng đăng ký hoặc đặt lại mật khẩu."
+            );
         }
 
-        String token = jwtUtil.generateToken(kh.getId(), kh.getTenTaiKhoan(), "CUSTOMER", "KHACH_HANG");
+        if (!passwordEncoder.matches(password, kh.getMatKhau())) {
+            throw AppException.unauthorized(
+                    "Tên đăng nhập/email hoặc mật khẩu không đúng"
+            );
+        }
+
+        if (!Integer.valueOf(1).equals(kh.getTrangThai())) {
+            throw AppException.unauthorized(
+                    "Tài khoản đã bị khóa."
+            );
+        }
+
+        String token = jwtUtil.generateToken(
+                kh.getId(),
+                kh.getTenTaiKhoan() != null
+                        ? kh.getTenTaiKhoan()
+                        : kh.getEmail(),
+                "CUSTOMER",
+                "KHACH_HANG"
+        );
 
         return LoginResponse.builder()
                 .accessToken(token)
@@ -126,4 +203,5 @@ public class AuthService {
                 .avatar(kh.getHinhAnh())
                 .build();
     }
+
 }

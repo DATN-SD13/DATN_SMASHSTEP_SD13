@@ -21,6 +21,8 @@ import AdminLogin from '../modules/auth/views/AdminLogin.vue'
 import CustomerLogin from '../modules/auth/views/CustomerLogin.vue'
 import CustomerHome from '../modules/auth/views/CustomerHome.vue'
 import LoginView from '../modules/auth/views/LoginView.vue'
+import ForgotPassword from '../modules/auth/views/ForgotPassword.vue'
+import ResetPassword from '../modules/auth/views/ResetPassword.vue'
 
 const promo = { label: 'Quản lý giảm giá', to: '/giam-gia' }
 const prod  = { label: 'Quản lý sản phẩm', to: '/san-pham' }
@@ -30,9 +32,11 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     // ── Auth (public) ───────────────────────────────────
-    { path: '/dang-nhap',            component: AdminLogin,    meta: { public: true, guestOnly: true } },
-    { path: '/khach-hang/dang-nhap', component: CustomerLogin, meta: { public: true, guestOnly: true } },
-    { path: '/khach-hang/trang-chu', component: CustomerHome,  meta: { requiresAuth: true, userType: 'KHACH_HANG' } },
+    { path: '/dang-nhap',                    component: AdminLogin,    meta: { public: true, guestOnly: true } },
+    { path: '/khach-hang/dang-nhap',         component: CustomerLogin, meta: { public: true, guestOnly: true } },
+    { path: '/khach-hang/quen-mat-khau',     component: ForgotPassword, meta: { public: true, guestOnly: true } },
+    { path: '/khach-hang/dat-lai-mat-khau',  component: ResetPassword,  meta: { public: true } },
+    { path: '/khach-hang/trang-chu',         component: CustomerHome,  meta: { requiresAuth: true, userType: 'KHACH_HANG' } },
 
     // ── Admin area (requiresAuth + NHAN_VIEN) ───────────
     { path: '/', redirect: '/thong-ke' },

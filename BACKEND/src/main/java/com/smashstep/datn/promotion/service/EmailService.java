@@ -477,6 +477,112 @@ public class EmailService {
         }
     }
 
+    /**
+     * Gửi email chứa link đặt lại mật khẩu cho khách hàng.
+     */
+    public void sendPasswordResetEmail(
+            String to,
+            String customerName,
+            String resetLink,
+            int expiryMinutes
+    ) {
+        JavaMailSender mailSender = senderFor(to);
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+
+            if (from != null && !from.isBlank()) {
+                helper.setFrom(from, "SmashStep");
+            }
+            helper.setTo(to);
+            helper.setSubject("SmashStep - Yêu cầu đặt lại mật khẩu");
+
+            String safeLink = isSafeHttpUrl(resetLink) ? escape(resetLink) : "";
+
+            String html = """
+                <!DOCTYPE html>
+                <html lang="vi">
+                <head>
+                  <meta charset="UTF-8">
+                  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                </head>
+                <body style="margin:0;padding:24px 10px;background:#f1f5f9;
+                             font-family:Arial,Helvetica,sans-serif;color:#10243a;">
+                  <div style="max-width:520px;margin:0 auto;background:#ffffff;
+                              border:1px solid #dce5ed;border-radius:12px;overflow:hidden;">
+
+                    <div style="padding:20px;text-align:center;background:#071b32;">
+                      <div style="font-size:25px;font-weight:900;letter-spacing:1px;color:#ffffff;">
+                        SMASH<span style="color:#20d5f5;">STEP</span>
+                      </div>
+                      <div style="margin-top:5px;font-size:10px;letter-spacing:3px;color:#b9eefa;">
+                        STEP INTO YOUR STYLE
+                      </div>
+                    </div>
+
+                    <div style="padding:32px 28px;">
+                      <div style="text-align:center;margin-bottom:20px;">
+                        <div style="width:60px;height:60px;border-radius:50%%;background:#e8f4fd;
+                                    display:inline-flex;align-items:center;justify-content:center;
+                                    font-size:28px;">&#128272;</div>
+                      </div>
+
+                      <h2 style="margin:0 0 10px;text-align:center;font-size:20px;color:#0b2540;">
+                        &#272;&#7863;t l&#7841;i m&#7853;t kh&#7849;u
+                      </h2>
+
+                      <p style="font-size:14px;line-height:1.7;color:#40546a;margin:0 0 8px;">
+                        Ch&#224;o <b>%s</b>,
+                      </p>
+                      <p style="font-size:14px;line-height:1.7;color:#40546a;margin:0 0 20px;">
+                        Ch&#250;ng t&#244;i nh&#7853;n &#273;&#432;&#7907;c y&#234;u c&#7847;u &#273;&#7863;t l&#7841;i m&#7853;t kh&#7849;u cho t&#224;i kho&#7843;n c&#7911;a b&#7841;n.
+                        Nh&#7845;n v&#224;o n&#250;t b&#234;n d&#432;&#7899;i &#273;&#7875; ti&#7871;p t&#7909;c. Link c&#243; hi&#7879;u l&#7921;c trong
+                        <b style="color:#e67e22;">%d ph&#250;t</b>.
+                      </p>
+
+                      <div style="text-align:center;margin:24px 0;">
+                        <a href="%s"
+                           style="display:inline-block;padding:14px 36px;background:#079fc9;
+                                  color:#ffffff;text-decoration:none;border-radius:25px;
+                                  font-size:14px;font-weight:bold;">
+                          &#272;&#7863;t l&#7841;i m&#7853;t kh&#7849;u &rarr;
+                        </a>
+                      </div>
+
+                      <p style="font-size:12px;line-height:1.6;color:#8a9db0;
+                                border-top:1px solid #edf2f7;padding-top:16px;margin:0;">
+                        N&#7871;u b&#7841;n kh&#244;ng y&#234;u c&#7847;u &#273;&#7863;t l&#7841;i m&#7853;t kh&#7849;u, h&#227;y b&#7887; qua email n&#224;y.
+                        T&#224;i kho&#7843;n c&#7911;a b&#7841;n v&#7851;n an to&#224;n.
+                      </p>
+                    </div>
+
+                    <div style="height:5px;background:#20d5f5;"></div>
+                  </div>
+                </body>
+                </html>
+                """.formatted(escape(customerName), expiryMinutes, safeLink);
+
+            String plainText = """
+                Chào %s!
+
+                Chúng tôi nhận được yêu cầu đặt lại mật khẩu cho tài khoản của bạn.
+                Truy cập link sau để đặt lại (hiệu lực %d phút):
+
+                %s
+
+                Nếu bạn không yêu cầu, hãy bỏ qua email này.
+
+                SmashStep
+                """.formatted(safeText(customerName), expiryMinutes, safeText(resetLink));
+
+            helper.setText(plainText, html);
+            mailSender.send(message);
+
+        } catch (Exception e) {
+            throw new IllegalStateException("Không thể gửi email đặt lại mật khẩu", e);
+        }
+    }
+
     private boolean isSafeHttpUrl(String value) {
         if (value == null || value.isBlank()) {
             return false;

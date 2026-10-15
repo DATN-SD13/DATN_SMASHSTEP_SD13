@@ -15,9 +15,10 @@ export const useAuthStore = defineStore('auth', () => {
   const isAuthenticated = computed(() => !!token.value)
   const role            = computed(() => user.value?.role  || null)
   const userType        = computed(() => user.value?.userType || null)
-  const isAdmin         = computed(() => role.value === 'ADMIN')
-  const isStaff         = computed(() => role.value === 'STAFF' || role.value === 'ADMIN')
-  const isCustomer      = computed(() => role.value === 'CUSTOMER')
+  const isAdmin         = computed( () => user.value?.userType === 'NHAN_VIEN' && user.value?.role === 'ADMIN')
+  const isStaff         = computed( () => user.value?.userType === 'NHAN_VIEN' && ['STAFF', 'ADMIN'].includes(user.value?.role))
+  const isCustomer      = computed( () => user.value?.userType === 'KHACH_HANG' || user.value?.role === 'CUSTOMER')
+
 
   // ── Actions ────────────────────────────────────────────
 

@@ -1,9 +1,12 @@
 package com.smashstep.datn.auth.controller;
 
+import com.smashstep.datn.auth.dto.ForgotPasswordRequest;
 import com.smashstep.datn.auth.dto.LoginRequest;
 import com.smashstep.datn.auth.dto.LoginResponse;
+import com.smashstep.datn.auth.dto.ResetPasswordRequest;
 import com.smashstep.datn.auth.security.JwtAuthFilter;
 import com.smashstep.datn.auth.service.AuthService;
+import com.smashstep.datn.auth.service.PasswordResetService;
 import com.smashstep.datn.common.response.ApiResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
@@ -18,9 +21,11 @@ import java.util.Map;
 public class AuthController {
 
     private final AuthService authService;
+    private final PasswordResetService passwordResetService;
 
-    public AuthController(AuthService authService) {
+    public AuthController(AuthService authService, PasswordResetService passwordResetService) {
         this.authService = authService;
+        this.passwordResetService = passwordResetService;
     }
 
     /**
@@ -74,5 +79,44 @@ public class AuthController {
         );
 
         return ResponseEntity.ok(ApiResponse.success(info));
+    }
+
+    /**
+     * Gửi link đặt lại mật khẩu về email.
+     * POST /api/auth/quen-mat-khau
+     * Body: { email }
+     */
+    @PostMapping("/quen-mat-khau")
+    public ResponseEntity<ApiResponse<Void>> quenMatKhau(
+            @Valid @RequestBody ForgotPasswordRequest request
+    ) {
+        passwordResetService.guiLinkDatLaiMatKhau(request.getEmail());
+        // Luôn trả thành công để tránh user enumeration
+        return ResponseEntity.ok(ApiResponse.<Void>success(null));
+    }
+
+    /**
+     * Kiểm tra token còn hợp lệ không (frontend dùng trước khi hiển thị form).
+     * GET /api/auth/kiem-tra-token?token=xxx
+     */
+    @GetMapping("/kiem-tra-token")
+    public ResponseEntity<ApiResponse<Boolean>> kiemTraToken(
+            @RequestParam String token
+    ) {
+        boolean hopLe = passwordResetService.kiemTraToken(token);
+        return ResponseEntity.ok(ApiResponse.success(hopLe));
+    }
+
+    /**
+     * Đặt lại mật khẩu bằng token từ email.
+     * POST /api/auth/dat-lai-mat-khau
+     * Body: { token, newPassword }
+     */
+    @PostMapping("/dat-lai-mat-khau")
+    public ResponseEntity<ApiResponse<Void>> datLaiMatKhau(
+            @Valid @RequestBody ResetPasswordRequest request
+    ) {
+        passwordResetService.datLaiMatKhau(request.getToken(), request.getNewPassword());
+        return ResponseEntity.ok(ApiResponse.<Void>success(null));
     }
 }
