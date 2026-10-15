@@ -13,6 +13,9 @@ import EmployeeDetail from '../modules/admin/employee/views/EmployeeDetail.vue'
 import AddEmployee from '../modules/admin/employee/views/AddEmployee.vue'
 import POSSales from '../modules/admin/sales/views/POSSales.vue'
 import StatisticsView from '../modules/admin/invoice/views/StatisticsView.vue'
+
+import StatisticsDashboard from '../modules/admin/statistics/view/StatisticsDashboard.vue'
+
 import ComingSoon from '../layouts/ComingSoon.vue'
 import EditDiscount from '../modules/admin/promotion/views/EditDiscount.vue'
 import DetailDiscount from '../modules/admin/promotion/views/DetailDiscount.vue'
@@ -38,6 +41,18 @@ const router = createRouter({
     {path: '/dot-giam-gia/sua/:code',component: EditCampaign,meta: {title: 'Sửa đợt giảm giá',parent: {label: 'Đợt giảm giá',to: '/dot-giam-gia'}}},
     { path: '/ban-hang', component: POSSales, meta: { title: 'Bán hàng tại quầy' } },
     { path: '/thong-ke', component: StatisticsView, meta: { title: 'Thống kê' } },
+   
+    
+{
+  path: '/thong-ke-tong-hop',
+  component: StatisticsDashboard,
+  meta: {
+    title: 'Thống kê tổng hợp',
+    requiresAuth: true,
+    userType: 'NHAN_VIEN'
+  }
+},
+
     { path: '/san-pham', component: () => import('../modules/admin/product/views/ProductList.vue'), meta: { title: 'Sản phẩm', parent: prod } },
     { path: '/san-pham/them', component: () => import('../modules/admin/product/views/ProductCreate.vue'), meta: { title: 'Thêm sản phẩm', parent: productParent } },
     { path: '/san-pham/:id/sua', component: () => import('../modules/admin/product/views/ProductEdit.vue'), meta: { title: 'Sửa sản phẩm', parent: productParent } },
