@@ -19,7 +19,15 @@ const pages         = ref(1)
 const totalElements = ref(0)
 const viewMode      = ref('bang')
 
-const f = reactive({ tuKhoa: '', caId: '', ngayLam: '' })
+const toYMDToday = () => {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${dd}`
+}
+
+const f = reactive({ tuKhoa: '', caId: '', ngayLam: toYMDToday() })
 
 // ── Select2 options ───────────────────────────────────────
 const shiftOptions = computed(() => [
@@ -33,10 +41,10 @@ const shiftOptionsActive = computed(() =>
 
 // ── Trạng thái ────────────────────────────────────────────
 const STATUS = {
-  0: { label: 'Chờ xác nhận', cls: 'warn' },
-  1: { label: 'Đã xác nhận',  cls: 'success' },
-  2: { label: 'Vắng mặt',     cls: 'danger' },
-  3: { label: 'Hoàn thành',   cls: '' }
+  0: { label: 'Chờ giao ca', cls: 'warn' },
+  1: { label: 'Giao ca',     cls: 'success' },
+  2: { label: 'Vắng mặt',   cls: 'danger' },
+  3: { label: 'Đã kết thúc', cls: '' }
 }
 
 // ── Load bảng ─────────────────────────────────────────────
@@ -75,7 +83,7 @@ async function loadEmployees() {
   } catch { /* ignore */ }
 }
 
-function reset() { f.tuKhoa = ''; f.caId = ''; f.ngayLam = ''; page.value = 1; load() }
+function reset() { f.tuKhoa = ''; f.caId = ''; f.ngayLam = toYMDToday(); page.value = 1; load() }
 watch(page, load)
 watch(size, () => { page.value = 1; load() })
 onMounted(() => { loadShifts(); load() })
@@ -212,7 +220,118 @@ function openCalDetail(shift, day) {
   calDetail.value = { shift, day, list: calCell(shift.id, day.ymd) }
 }
 
-// ── Modal phân ca ─────────────────────────────────────────
+// ── Xếp ca tự động ────────────────────────────────────────
+const showAutoModal   = ref(false)
+const autoSaving      = ref(false)
+const autoError       = ref('')
+const autoResult      = ref(null)
+const autoForm = reactive({
+  tuNgay:  toYMD(new Date()),
+  denNgay: (() => { const d = new Date(); d.setDate(d.getDate() + 6); return toYMD(d) })()
+})
+
+function openAutoModal() {
+  autoError.value = ''; autoResult.value = null
+  showAutoModal.value = true
+}
+
+async function submitAuto() {
+  autoError.value = ''; autoResult.value = null
+  if (!autoForm.tuNgay || !autoForm.denNgay) return (autoError.value = 'Vui lòng chọn khoảng ngày')
+  if (autoForm.tuNgay > autoForm.denNgay)    return (autoError.value = 'Từ ngày không được lớn hơn đến ngày')
+  autoSaving.value = true
+  try {
+    autoResult.value = await scheduleService.xepCaTuDong(autoForm.tuNgay, autoForm.denNgay)
+    showSuccess(autoResult.value.thongBao)
+    if (viewMode.value === 'lich') loadCalendar(); else load()
+  } catch (e) {
+    autoError.value = e?.response?.data?.message || 'Xếp ca thất bại'
+  } finally { autoSaving.value = false }
+}
+
+// ── Import Excel ───────────────────────────────────────────
+const showImportModal  = ref(false)
+const importFile       = ref(null)
+const importLoading    = ref(false)
+const importError      = ref('')
+const importResult     = ref(null)
+const fileInputRef     = ref(null)
+
+function openImportModal() {
+  importFile.value = null; importError.value = ''; importResult.value = null
+  showImportModal.value = true
+}
+
+function onFileChange(e) {
+  const f = e.target.files?.[0]
+  if (!f) return
+  const ext = f.name.split('.').pop().toLowerCase()
+  if (!['xlsx','xls'].includes(ext)) {
+    importError.value = 'Chỉ chấp nhận file .xlsx hoặc .xls'
+    importFile.value = null
+    return
+  }
+  importError.value = ''; importFile.value = f
+}
+
+async function submitImport() {
+  if (!importFile.value) return (importError.value = 'Vui lòng chọn file Excel')
+  importError.value = ''; importResult.value = null; importLoading.value = true
+  try {
+    importResult.value = await scheduleService.importExcel(importFile.value)
+    if (viewMode.value === 'lich') loadCalendar(); else load()
+  } catch (e) {
+    importError.value = e?.response?.data?.message || 'Import thất bại'
+  } finally { importLoading.value = false }
+}
+
+// ── Tải template ──────────────────────────────────────────
+const downloadingTpl = ref(false)
+async function handleDownloadTemplate() {
+  downloadingTpl.value = true
+  try { await scheduleService.downloadTemplate() }
+  catch { showError('Không thể tải template') }
+  finally { downloadingTpl.value = false }
+}
+
+// ── Chỉnh sửa trạng thái ──────────────────────────────────
+const showEditModal = ref(false)
+const editRow       = ref(null)
+const editSaving    = ref(false)
+const editError     = ref('')
+const editForm      = reactive({ trangThai: 0, ghiChu: '' })
+
+const TRANG_THAI_OPTIONS = [
+  { value: 0, label: 'Chờ giao ca'  },
+  { value: 1, label: 'Giao ca'      },
+  { value: 2, label: 'Vắng mặt'    },
+  { value: 3, label: 'Đã kết thúc' }
+]
+
+function openEditModal(row) {
+  editRow.value        = row
+  editForm.trangThai   = row.trangThai
+  editForm.ghiChu      = row.ghiChu || ''
+  editError.value      = ''
+  showEditModal.value  = true
+}
+
+async function submitEdit() {
+  editError.value = ''
+  editSaving.value = true
+  try {
+    await scheduleService.updateTrangThai(editRow.value.id, editForm.trangThai, editForm.ghiChu)
+    const idx = rows.value.findIndex(r => r.id === editRow.value.id)
+    if (idx !== -1) {
+      rows.value[idx] = { ...rows.value[idx], trangThai: editForm.trangThai, ghiChu: editForm.ghiChu }
+    }
+    showEditModal.value = false
+    showSuccess('Đã cập nhật trạng thái.')
+    if (viewMode.value === 'lich') loadCalendar()
+  } catch (e) {
+    editError.value = e?.response?.data?.message || 'Cập nhật thất bại'
+  } finally { editSaving.value = false }
+}
 const showModal = ref(false)
 const saving    = ref(false)
 const formError = ref('')
@@ -278,10 +397,19 @@ async function submitModal() {
           <input class="ss-input filter-date" type="date" v-model="f.ngayLam" @change="load" />
         </div>
         <div class="ss-actions left" style="gap:8px">
-          <button class="ss-btn sm"><i class="bi bi-arrow-left-right"></i> Xếp ca tự động</button>
-          <button class="ss-btn sm" @click="reset"><i class="bi bi-arrow-counterclockwise"></i> Đặt lại lịch</button>
-          <button class="ss-btn sm"><i class="bi bi-download"></i> Tải template</button>
-          <button class="ss-btn sm"><i class="bi bi-file-earmark-excel"></i> Import Excel</button>
+          <button class="ss-btn sm" @click="openAutoModal">
+            <i class="bi bi-arrow-left-right"></i> Xếp ca tự động
+          </button>
+          <button class="ss-btn sm" @click="reset">
+            <i class="bi bi-arrow-counterclockwise"></i> Đặt lại lịch
+          </button>
+          <button class="ss-btn sm" :disabled="downloadingTpl" @click="handleDownloadTemplate">
+            <i :class="downloadingTpl ? 'bi bi-arrow-repeat spin' : 'bi bi-download'"></i>
+            {{ downloadingTpl ? 'Đang tải...' : 'Tải template' }}
+          </button>
+          <button class="ss-btn sm" @click="openImportModal">
+            <i class="bi bi-file-earmark-excel"></i> Import Excel
+          </button>
           <button class="ss-btn sm primary" @click="openModal">
             <i class="bi bi-plus-lg"></i> Thêm mới lịch làm việc
           </button>
@@ -338,6 +466,9 @@ async function submitModal() {
                     <td>
                       <div class="ss-row-actions">
                         <button class="ss-icon-btn" title="Xem"><i class="bi bi-eye"></i></button>
+                        <button class="ss-icon-btn" title="Sửa trạng thái" @click="openEditModal(row)">
+                          <i class="bi bi-pencil-square"></i>
+                        </button>
                         <button class="ss-icon-btn danger" title="Xóa" @click="handleDelete(row)">
                           <i class="bi bi-trash"></i>
                         </button>
@@ -559,6 +690,174 @@ async function submitModal() {
       </div>
     </Teleport>
 
+    <!-- Modal chỉnh sửa trạng thái -->
+    <Teleport to="body">
+      <div v-if="showEditModal" class="ss-modal-bg" @click.self="showEditModal=false">
+        <div class="ss-modal" style="width:min(420px,100%)">
+          <div class="ss-head">
+            <div class="ss-head-icon"><i class="bi bi-pencil-square"></i></div>
+            <h2>Cập nhật trạng thái</h2>
+            <span class="ss-spacer"></span>
+            <button class="ss-icon-btn" @click="showEditModal=false"><i class="bi bi-x-lg"></i></button>
+          </div>
+
+          <div class="edit-info" v-if="editRow">
+            <div class="edit-info-row">
+              <span class="edit-info-label">Nhân viên</span>
+              <span class="edit-info-val ss-strong">{{ editRow.tenNhanVien }}</span>
+            </div>
+            <div class="edit-info-row">
+              <span class="edit-info-label">Ca làm</span>
+              <span class="edit-info-val">{{ editRow.tenCa }}</span>
+            </div>
+            <div class="edit-info-row">
+              <span class="edit-info-label">Ngày làm</span>
+              <span class="edit-info-val">{{ editRow.ngayLam }}</span>
+            </div>
+          </div>
+
+          <div class="ss-field" style="margin-top:14px">
+            <label class="ss-label">Trạng thái <span class="req">*</span></label>
+            <div class="trang-thai-options">
+              <label
+                v-for="opt in TRANG_THAI_OPTIONS" :key="opt.value"
+                class="tt-option"
+                :class="{ active: editForm.trangThai === opt.value, [`cls-${opt.value}`]: true }"
+              >
+                <input type="radio" :value="opt.value" v-model="editForm.trangThai" style="display:none" />
+                <span class="tt-dot"></span>
+                {{ opt.label }}
+              </label>
+            </div>
+          </div>
+
+          <div class="ss-field" style="margin-top:12px">
+            <label class="ss-label">Ghi chú</label>
+            <input class="ss-input" v-model="editForm.ghiChu" placeholder="Nhập ghi chú..." />
+          </div>
+
+          <p v-if="editError" class="ss-hint warn" style="margin-top:10px">
+            <i class="bi bi-exclamation-circle"></i> {{ editError }}
+          </p>
+
+          <div class="ss-actions" style="margin-top:16px">
+            <button class="ss-btn" @click="showEditModal=false" :disabled="editSaving">Hủy</button>
+            <button class="ss-btn primary" @click="submitEdit" :disabled="editSaving">
+              <i :class="editSaving ? 'bi bi-arrow-repeat spin' : 'bi bi-check2'"></i>
+              {{ editSaving ? 'Đang lưu...' : 'Lưu' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Modal xếp ca tự động -->    <Teleport to="body">
+      <div v-if="showAutoModal" class="ss-modal-bg" @click.self="showAutoModal=false">
+        <div class="ss-modal" style="width:min(440px,100%)">
+          <div class="ss-head">
+            <div class="ss-head-icon"><i class="bi bi-arrow-left-right"></i></div>
+            <h2>Xếp ca tự động</h2>
+            <span class="ss-spacer"></span>
+            <button class="ss-icon-btn" @click="showAutoModal=false"><i class="bi bi-x-lg"></i></button>
+          </div>
+
+          <p class="ss-hint" style="margin-bottom:14px">
+            <i class="bi bi-info-circle"></i>
+            Hệ thống sẽ tự động phân ca luân phiên cho tất cả nhân viên đang hoạt động
+            trong khoảng thời gian đã chọn. Những lịch đã tồn tại sẽ được bỏ qua.
+          </p>
+
+          <div class="ss-grid2">
+            <div class="ss-field">
+              <label class="ss-label">Từ ngày <span class="req">*</span></label>
+              <input class="ss-input" type="date" v-model="autoForm.tuNgay" />
+            </div>
+            <div class="ss-field">
+              <label class="ss-label">Đến ngày <span class="req">*</span></label>
+              <input class="ss-input" type="date" v-model="autoForm.denNgay" />
+            </div>
+          </div>
+
+          <!-- Kết quả -->
+          <div v-if="autoResult" class="auto-result">
+            <div class="auto-stat success"><i class="bi bi-check-circle"></i> Đã tạo: <strong>{{ autoResult.daTao }}</strong></div>
+            <div class="auto-stat warn"><i class="bi bi-skip-forward"></i> Bỏ qua: <strong>{{ autoResult.boBua }}</strong></div>
+          </div>
+
+          <p v-if="autoError" class="ss-hint warn"><i class="bi bi-exclamation-circle"></i> {{ autoError }}</p>
+
+          <div class="ss-actions">
+            <button class="ss-btn" @click="showAutoModal=false" :disabled="autoSaving">Đóng</button>
+            <button class="ss-btn primary" @click="submitAuto" :disabled="autoSaving">
+              <i :class="autoSaving ? 'bi bi-arrow-repeat spin' : 'bi bi-arrow-left-right'"></i>
+              {{ autoSaving ? 'Đang xếp...' : 'Bắt đầu xếp ca' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Modal import Excel -->
+    <Teleport to="body">
+      <div v-if="showImportModal" class="ss-modal-bg" @click.self="showImportModal=false">
+        <div class="ss-modal" style="width:min(480px,100%)">
+          <div class="ss-head">
+            <div class="ss-head-icon"><i class="bi bi-file-earmark-excel"></i></div>
+            <h2>Import Excel lịch làm việc</h2>
+            <span class="ss-spacer"></span>
+            <button class="ss-icon-btn" @click="showImportModal=false"><i class="bi bi-x-lg"></i></button>
+          </div>
+
+          <p class="ss-hint" style="margin-bottom:14px">
+            <i class="bi bi-info-circle"></i>
+            File Excel cần đúng định dạng template. Tải template trước nếu chưa có.
+          </p>
+
+          <!-- Upload zone -->
+          <div class="upload-zone"
+            :class="{ 'has-file': importFile }"
+            @click="fileInputRef?.click()"
+            @dragover.prevent
+            @drop.prevent="e => { importFile = e.dataTransfer.files[0]; importError=''; importResult=null }">
+            <input ref="fileInputRef" type="file" accept=".xlsx,.xls" style="display:none" @change="onFileChange" />
+            <template v-if="importFile">
+              <i class="bi bi-file-earmark-check" style="font-size:28px;color:#2e7d32"></i>
+              <span class="upload-filename">{{ importFile.name }}</span>
+              <span class="upload-sub">Click để đổi file</span>
+            </template>
+            <template v-else>
+              <i class="bi bi-cloud-upload" style="font-size:28px;color:var(--ss-muted)"></i>
+              <span class="upload-hint">Kéo thả hoặc click để chọn file</span>
+              <span class="upload-sub">.xlsx, .xls</span>
+            </template>
+          </div>
+
+          <!-- Kết quả import -->
+          <div v-if="importResult" class="import-result">
+            <div class="auto-stat success"><i class="bi bi-check-circle"></i> Đã tạo: <strong>{{ importResult.daTao }}</strong></div>
+            <div class="auto-stat warn"><i class="bi bi-skip-forward"></i> Bỏ qua: <strong>{{ importResult.boBua }}</strong></div>
+            <div class="auto-stat danger"><i class="bi bi-x-circle"></i> Lỗi: <strong>{{ importResult.loiio }}</strong></div>
+            <ul v-if="importResult.chiTietLoi?.length" class="error-list">
+              <li v-for="(msg, i) in importResult.chiTietLoi" :key="i">{{ msg }}</li>
+            </ul>
+          </div>
+
+          <p v-if="importError" class="ss-hint warn"><i class="bi bi-exclamation-circle"></i> {{ importError }}</p>
+
+          <div class="ss-actions">
+            <button class="ss-btn" @click="showImportModal=false" :disabled="importLoading">Đóng</button>
+            <button class="ss-btn" @click="handleDownloadTemplate" :disabled="downloadingTpl" style="margin-right:auto">
+              <i class="bi bi-download"></i> Tải template
+            </button>
+            <button class="ss-btn primary" @click="submitImport" :disabled="importLoading || !importFile">
+              <i :class="importLoading ? 'bi bi-arrow-repeat spin' : 'bi bi-upload'"></i>
+              {{ importLoading ? 'Đang import...' : 'Import' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
   </AdminLayout>
 </template>
 
@@ -608,8 +907,6 @@ async function submitModal() {
 
 .spin { display:inline-block; animation:spin .7s linear infinite; }
 @keyframes spin { to { transform:rotate(360deg); } }
-
-/* ── Lịch tháng ──────────────────────────────────────────── */
 .cal-table-month {
   width: 100%;
   border-collapse: collapse;
@@ -679,4 +976,83 @@ async function submitModal() {
   display: inline-block;
   font-weight: 600;
 }
+
+/* ── Auto & Import result ─────────────────────────────────── */
+.auto-result, .import-result {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px;
+  background: var(--ss-surface);
+  border-radius: var(--ss-radius);
+  margin-bottom: 12px;
+}
+.auto-stat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  padding: 4px 10px;
+  border-radius: 20px;
+}
+.auto-stat.success { background: #e8f5e9; color: #2e7d32; }
+.auto-stat.warn    { background: #fff8e1; color: #f57f17; }
+.auto-stat.danger  { background: #fff5f5; color: #c62828; }
+.import-result { flex-direction: column; }
+.error-list {
+  margin: 6px 0 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: #c62828;
+  max-height: 100px;
+  overflow-y: auto;
+}
+
+/* ── Upload zone ─────────────────────────────────────────── */
+.upload-zone {
+  border: 2px dashed #cbd5e1;
+  border-radius: 10px;
+  padding: 28px 16px;
+  text-align: center;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s;
+  margin-bottom: 14px;
+}
+.upload-zone:hover       { border-color: #079fc9; background: rgba(7,159,201,0.04); }
+.upload-zone.has-file    { border-color: #2e7d32; background: #f1f8e9; border-style: solid; }
+.upload-hint { font-size: 13px; font-weight: 600; color: var(--ss-text); }
+.upload-filename { font-size: 13px; font-weight: 700; color: #2e7d32; }
+.upload-sub  { font-size: 11px; color: var(--ss-muted); }
+
+/* ── Modal chỉnh sửa trạng thái ─────────────────────────── */
+.edit-info {
+  background: var(--ss-surface);
+  border-radius: var(--ss-radius);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.edit-info-row { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.edit-info-label { width: 80px; font-size: 11px; font-weight: 600; color: var(--ss-muted); flex-shrink: 0; }
+.edit-info-val { color: var(--ss-text); }
+
+.trang-thai-options { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.tt-option {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600;
+  cursor: pointer; border: 2px solid transparent;
+  background: var(--ss-surface); color: var(--ss-muted);
+  transition: all 0.15s; user-select: none;
+}
+.tt-option:hover { border-color: #cbd5e1; color: var(--ss-text); }
+.tt-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+.tt-option.active.cls-0 { background: #fff8e1; color: #f57f17; border-color: #f57f17; }
+.tt-option.active.cls-1 { background: #e3f2fd; color: #1565c0; border-color: #1565c0; }
+.tt-option.active.cls-2 { background: #fff5f5; color: #c62828; border-color: #c62828; }
+.tt-option.active.cls-3 { background: #e8f5e9; color: #2e7d32; border-color: #2e7d32; }
 </style>

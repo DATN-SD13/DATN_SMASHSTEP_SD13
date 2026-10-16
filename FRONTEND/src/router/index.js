@@ -17,6 +17,7 @@ import ComingSoon from '../layouts/ComingSoon.vue'
 import EditDiscount from '../modules/admin/promotion/views/EditDiscount.vue'
 import DetailDiscount from '../modules/admin/promotion/views/DetailDiscount.vue'
 import EditCampaign from '../modules/admin/promotion/views/EditCampaign.vue'
+import CaLamViecList from '../modules/admin/schedule/views/CaLamViecList.vue'
 import AdminLogin from '../modules/auth/views/AdminLogin.vue'
 import CustomerLogin from '../modules/auth/views/CustomerLogin.vue'
 import CustomerHome from '../modules/auth/views/CustomerHome.vue'
@@ -82,7 +83,9 @@ const router = createRouter({
     { path: '/nhan-vien/:code', component: EmployeeDetail, meta: { title: 'Chi tiết nhân viên', parent: { label: 'Nhân viên', to: '/nhan-vien' }, requiresAuth: true, userType: 'NHAN_VIEN', role: 'ADMIN' } },
 
     // ── Lịch làm việc ───────────────────────────────────
-    { path: '/lich-lam-viec', component: () => import('../modules/admin/schedule/views/ScheduleList.vue'), meta: { title: 'Lịch làm việc', parent: { label: 'Quản lý lịch làm', to: '/lich-lam-viec' }, requiresAuth: true, userType: 'NHAN_VIEN', role: 'ADMIN' } },
+    { path: '/lich-lam-viec',       component: () => import('../modules/admin/schedule/views/ScheduleList.vue'), meta: { title: 'Lịch làm việc', parent: { label: 'Quản lý lịch làm', to: '/lich-lam-viec' }, requiresAuth: true, userType: 'NHAN_VIEN', role: 'ADMIN' } },
+    { path: '/ca-lam-viec',          component: CaLamViecList, meta: { title: 'Lịch ca làm', parent: { label: 'Quản lý lịch làm', to: '/lich-lam-viec' }, requiresAuth: true, userType: 'NHAN_VIEN', role: 'ADMIN' } },
+    { path: '/lich-su-hoat-dong',    component: () => import('../modules/admin/schedule/views/LichSuHoatDong.vue'), meta: { title: 'Lịch sử hoạt động', parent: { label: 'Quản lý lịch làm', to: '/lich-lam-viec' }, requiresAuth: true, userType: 'NHAN_VIEN', role: 'ADMIN' } },
 
     { path: '/invoice', redirect: '/hoa-don' },
     { path: '/:pathMatch(.*)*', component: ComingSoon, meta: { title: 'Đang phát triển' } }

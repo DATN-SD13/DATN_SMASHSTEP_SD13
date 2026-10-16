@@ -8,13 +8,36 @@ const scheduleService = {
     return unwrap(await api.get('/ca-lam-viec'))
   },
 
+  async getCaHomNay() {
+    return unwrap(await api.get('/lich-lam-viec/ca-hom-nay'))
+  },
   async getCaLamViecActive() {
     return unwrap(await api.get('/ca-lam-viec/active'))
+  },
+
+  async createCaLamViec(payload) {
+    return unwrap(await api.post('/ca-lam-viec', payload))
+  },
+
+  async updateCaLamViec(id, payload) {
+    return unwrap(await api.put(`/ca-lam-viec/${id}`, payload))
+  },
+
+  async toggleTrangThaiCa(id) {
+    return unwrap(await api.patch(`/ca-lam-viec/${id}/trang-thai`))
   },
 
   // ── Lịch làm việc ────────────────────────────────────────
   async getLichLamViec(params = {}) {
     return unwrap(await api.get('/lich-lam-viec', { params }))
+  },
+
+  async getLichSuHoatDong(params = {}) {
+    return unwrap(await api.get('/lich-lam-viec/lich-su-hoat-dong', { params }))
+  },
+
+  async getVaiTro() {
+    return unwrap(await api.get('/lich-lam-viec/vai-tro'))
   },
 
   async getLichTuan(tuNgay) {
@@ -31,6 +54,42 @@ const scheduleService = {
 
   async deleteLich(id) {
     return unwrap(await api.delete(`/lich-lam-viec/${id}`))
+  },
+
+  async xepCaTuDong(tuNgay, denNgay) {
+    return unwrap(await api.post('/lich-lam-viec/xep-ca-tu-dong', null, { params: { tuNgay, denNgay } }))
+  },
+
+  async downloadTemplate() {
+    const res = await api.get('/lich-lam-viec/template', { responseType: 'blob' })
+    const url = URL.createObjectURL(new Blob([res.data]))
+    const a   = document.createElement('a')
+    a.href = url
+    a.download = 'template-lich-lam-viec.xlsx'
+    a.click()
+    URL.revokeObjectURL(url)
+  },
+
+  async importExcel(file) {
+    const fd = new FormData()
+    fd.append('file', file)
+    return unwrap(await api.post('/lich-lam-viec/import-excel', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    }))
+  },
+
+  async xuatExcelLichSu(params = {}) {
+    const res = await api.get('/lich-lam-viec/xuat-excel-lich-su', {
+      params,
+      responseType: 'blob'
+    })
+    const tuNgay  = params.tuNgay  || ''
+    const denNgay = params.denNgay || ''
+    const filename = `lich-su-hoat-dong${tuNgay ? '-' + tuNgay : ''}${denNgay ? '-' + denNgay : ''}.xlsx`
+    const url = URL.createObjectURL(new Blob([res.data]))
+    const a = document.createElement('a')
+    a.href = url; a.download = filename; a.click()
+    URL.revokeObjectURL(url)
   }
 }
 
