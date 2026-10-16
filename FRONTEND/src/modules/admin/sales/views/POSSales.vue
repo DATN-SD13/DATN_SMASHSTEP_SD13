@@ -26,7 +26,8 @@ const employeeId = ref(null), methods = ref([]), voucherSupported = ref(false)
 let quoteVersion = 0, quoteTimer
 const orders = ref([]), activeId = ref(null)
 const order = computed(() => orders.value.find(o => o.id === activeId.value) || null)
-const deliveryLoading = ref(false)
+const deliveryLoading = ref(false), syncingStock = ref(false)
+let stockSyncTimer, stockPollTimer, stockSyncPromise = null, stockSyncPending = false
 const locked = computed(() => deliveryLoading.value || Boolean(deliveryEditor.value) || busy.value || !ready.value || Boolean(checkoutDialog.value) || Boolean(pendingPayment.value) || recoveryBlocked.value)
 const picking = ref(false), q = ref(''), colorFilter = ref(''), sizeFilter = ref('')
 const categoryFilter = ref(''), brandFilter = ref(''), attributes = ref({})
@@ -160,6 +161,8 @@ async function calculateQuote(suggest = true) {
   }
 }
 async function applyVoucher(code, target = order.value, automatic = false) {
+  const id = target?.id
+  if (stockSyncPromise) { await stockSyncPromise; target = orders.value.find(o => o.id === id) }
   if (!target || locked.value) return
   if (!automatic) target.autoVoucher = Boolean(code)
   target.voucherCode = code
@@ -187,6 +190,7 @@ const addressForm = ref({ province: '', ward: '', district: '', street: '' })
 const { provinces, wards, loadingProvinces, loadingWards, addressError, changeProvince, resetAddress } = useAddressApi(addressForm)
 let deliveryOrderId
 function openDelivery() {
+  if (stockSyncPromise) { stockSyncPromise.then(() => { if (alive) openDelivery() }); return }
   if (locked.value || !order.value) return
   deliveryOrderId = order.value.id
   deliveryEditor.value = JSON.parse(JSON.stringify(order.value.delivery))
@@ -198,6 +202,7 @@ function selectDeliveryAddress(a) {
   Object.assign(deliveryEditor.value, { recipientName: a.receiverName, recipientPhone: a.receiverPhone, address: a.fullAddress })
 }
 async function toggleDelivery(enabled) {
+  if (stockSyncPromise) await stockSyncPromise
   if (locked.value || !order.value) return
   const target = order.value
   if (!enabled) { target.delivery.enabled = false; await saveOrder(target, 'Đã chuyển sang nhận hàng tại quầy.'); return }
@@ -225,6 +230,7 @@ async function toggleDelivery(enabled) {
   finally { deliveryLoading.value = false }
 }
 async function saveDelivery() {
+  if (stockSyncPromise) await stockSyncPromise
   if (busy.value || !deliveryEditor.value || order.value?.id !== deliveryOrderId) return
   const candidate = JSON.parse(JSON.stringify(deliveryEditor.value))
   if (!candidate.addressId && structuredAddress.value) {
@@ -270,6 +276,7 @@ async function loadAddresses() {
   finally { if (version === addressVersion) addressLoading.value = false }
 }
 async function changeCustomer() {
+  if (stockSyncPromise) await stockSyncPromise
   if (locked.value || !order.value) return
   order.value.voucherCode = ''; order.value.autoVoucher = true
   order.value.delivery = { enabled: false, addressId: null, recipientName: '', recipientPhone: '', address: '', shippingFee: 0 }
@@ -277,6 +284,7 @@ async function changeCustomer() {
   return await saveOrder(order.value, customer ? `Chọn khách hàng ${customer.name || customer.code} thành công.` : 'Đã bỏ khách hàng, chuyển sang khách lẻ.')
 }
 async function useAddress(event) {
+  if (stockSyncPromise) await stockSyncPromise
   if (locked.value || !order.value) return
   const selected = addresses.value.find(a => a.id === Number(event.target.value))
   if (!selected) { order.value.delivery.addressId = null; return }
@@ -310,6 +318,7 @@ async function readyCheckout() {
   return canPay.value
 }
 async function openQr() {
+  if (stockSyncPromise) await stockSyncPromise
   if (!(await readyCheckout())) return
   qrFailed.value = false
   checkoutDialog.value = { payload: checkoutPayload(), invoiceCode: order.value.name,
@@ -317,6 +326,7 @@ async function openQr() {
     qr: qrLink(bankConfig, transferred.value, order.value.name) }
 }
 async function pay() {
+  if (stockSyncPromise) await stockSyncPromise
   if (!(await readyCheckout())) return
   if (order.value.paymentMode === 'BANK' && bankConfirmed.value) {
     const request = checkoutPayload(); request.transferConfirmed = true
@@ -351,8 +361,9 @@ function clearCheckout() {
   catch { recoveryBlocked.value = true; error.value = 'Không cập nhật được phiên thanh toán; tải lại trang để kiểm tra.'; return false }
 }
 async function confirmPayment() {
+  if (stockSyncPromise) await stockSyncPromise
   const dialog = checkoutDialog.value
-  if (!dialog || busy.value || (dialog.bank > 0 && !dialog.confirmed)) return
+  if (!dialog || busy.value || syncingStock.value || (dialog.bank > 0 && !dialog.confirmed)) return
   if (dialog.context !== paymentContext()) {
     checkoutDialog.value = null; error.value = 'Thông tin hóa đơn đã thay đổi. Vui lòng mở lại mã QR và kiểm tra số tiền.'; return
   }
@@ -399,7 +410,7 @@ async function performPayment(saved) {
     showError(error.value, pendingPayment.value ? 'Cần kiểm tra kết quả thanh toán' : 'Thanh toán chưa hoàn tất')
   } finally { busy.value = false }
 }
-async function retryPayment() { if (pendingPayment.value) await performPayment(pendingPayment.value) }
+async function retryPayment() { if (stockSyncPromise) await stockSyncPromise; if (pendingPayment.value) await performPayment(pendingPayment.value) }
 function openInvoice(print = false) {
   if (!completedReceipt.value) return
   router.push({ path: '/hoa-don/' + encodeURIComponent(completedReceipt.value.invoiceCode), query: print ? { print: '1' } : {} })
@@ -409,6 +420,72 @@ function rememberCustomers(drafts) {
   for (const d of drafts) if (d.customerId && !customers.value.some(c => c.id === d.customerId))
     customers.value.push({ id: d.customerId, code: d.customerCode, name: d.customerName, phone: d.customerPhone })
 }
+function requestStockSync() {
+  stockSyncPending = true
+  clearTimeout(stockSyncTimer)
+  if (!alive || busy.value || syncingStock.value || deliveryLoading.value || deliveryEditor.value || pendingPayment.value || recoveryBlocked.value
+      || (typeof document !== 'undefined' && document.visibilityState === 'hidden')) return
+  stockSyncTimer = setTimeout(() => { stockSyncTimer = null; syncCartStock() }, 150)
+}
+watch([busy, deliveryLoading, deliveryEditor, pendingPayment, recoveryBlocked], () => { if (stockSyncPending) requestStockSync() })
+
+async function syncCartStock() {
+  if (stockSyncPromise) { stockSyncPending = true; return stockSyncPromise }
+  if (!alive || !ready.value || busy.value || syncingStock.value || deliveryLoading.value || deliveryEditor.value
+      || pendingPayment.value || recoveryBlocked.value
+      || (typeof document !== 'undefined' && document.visibilityState === 'hidden')) { stockSyncPending = true; return }
+  stockSyncPending = false
+  syncingStock.value = true
+  stockSyncPromise = (async () => {
+  try {
+    const rows = await salesService.dongBoHoaDonCho()
+    if (!alive) return
+    rememberCustomers(rows)
+    const removed = []
+    let changed = false
+    const next = rows.map(d => {
+      const previous = orders.value.find(o => o.id === d.id)
+      if (!previous) { changed = true; return hydrate(d) }
+      if (String(previous.revision) === String(d.revision)) {
+        for (const fresh of d.items) {
+          const item = previous.items.find(i => i.id === fresh.id)
+          if (item) { item.stock = fresh.stock; item.available = fresh.available; item.currentPrice = fresh.currentPrice }
+        }
+        return previous
+      }
+      const persistedIds = new Set(JSON.parse(previous.saved).items.map(i => i.variantId))
+      for (const item of previous.items) if (persistedIds.has(item.id) && !d.items.some(i => i.id === item.id)) removed.push(item.name || item.code)
+      changed = true
+      const server = hydrate(d, previous)
+      if (signature(previous) !== previous.saved) {
+        const savedItems = JSON.parse(previous.saved).items
+        const removedIds = new Set(savedItems.filter(i => !d.items.some(fresh => fresh.id === i.variantId)).map(i => i.variantId))
+        const items = previous.items.filter(i => !removedIds.has(i.id)).map(item => {
+          const fresh = d.items.find(i => i.id === item.id)
+          return fresh ? { ...item, stock: fresh.stock, available: fresh.available, currentPrice: fresh.currentPrice } : item
+        })
+        return { ...previous, revision: d.revision, saved: server.saved, items,
+          voucherCode: removedIds.size ? '' : previous.voucherCode, quote: null, quotedSignature: '', quoteError: '' }
+      }
+      return server
+    })
+    if (next.length !== orders.value.length) changed = true
+    if (changed) {
+      orders.value = next
+      if (!next.some(o => o.id === activeId.value)) activeId.value = next[0]?.id ?? null
+      checkoutDialog.value = null; bankAccepted.value = null
+      if (removed.length) showSuccess(`Đã tự xóa sản phẩm ngừng kinh doanh khỏi giỏ: ${[...new Set(removed)].join(', ')}. Vui lòng kiểm tra lại đơn hàng.`, 'Giỏ hàng đã cập nhật')
+    }
+    if (picking.value) await loadCatalog(true)
+  } catch (e) {
+    // Leave the current display untouched on a transient failure; retry at the next background check.
+    if (alive && e.response?.status === 403) error.value = message(e)
+  } finally { syncingStock.value = false }
+  })()
+  try { await stockSyncPromise }
+  finally { stockSyncPromise = null; if (alive && stockSyncPending) requestStockSync() }
+}
+
 async function reloadOrders() {
   const rows = await salesService.danhSachHoaDonCho()
   if (!alive) return
@@ -417,8 +494,13 @@ async function reloadOrders() {
   if (!orders.value.some(o => o.id === activeId.value)) activeId.value = orders.value[0]?.id ?? null
 }
 async function saveOrder(target = order.value, successMessage = '') {
+  const wasCurrent = target === order.value
+  if (stockSyncPromise) {
+    await stockSyncPromise
+    if (wasCurrent) target = orders.value.find(o => o.id === target?.id)
+  }
   if (!target) return true
-  if (busy.value || deliveryLoading.value) return false
+  if (busy.value || syncingStock.value || deliveryLoading.value) return false
   if (!target.items.length) {
     target.voucherCode = ''; target.quote = null; target.quotedSignature = ''; target.quoteError = ''; target.paid = ''
   }
@@ -437,7 +519,7 @@ async function saveOrder(target = order.value, successMessage = '') {
     // Only replace this exact draft; UI edits and tab switches are locked during the request.
     const index = orders.value.findIndex(o => o.id === target.id)
     if (index >= 0) orders.value[index] = hydrate(result, target)
-    await loadCatalog()
+    await loadCatalog(true)
     if (successMessage) showSuccess(successMessage)
     return true
   } catch (e) {
@@ -470,10 +552,12 @@ async function reviewChangedCart(target) {
   }
 }
 async function switchOrder(id) {
+  if (stockSyncPromise) await stockSyncPromise
   if (locked.value || !(await saveOrder())) return
   activeId.value = id
 }
 async function addOrder() {
+  if (stockSyncPromise) await stockSyncPromise
   if (locked.value || orders.value.length >= MAX_ORDERS || !(await saveOrder())) return
   busy.value = true; error.value = ''
   try {
@@ -493,6 +577,7 @@ function removeOrder(id) {
   const target = orders.value.find(o => o.id === id)
   if (!target) return
   confirmAction(`Hủy hóa đơn ${target.name}? Giỏ hàng sẽ được lưu trong lịch sử, không xóa hóa đơn.`, async () => {
+    if (stockSyncPromise) await stockSyncPromise
     if (locked.value) return
     if (order.value?.id !== target.id && !(await saveOrder())) return
     busy.value = true; error.value = ''
@@ -506,6 +591,7 @@ function removeOrder(id) {
 }
 function cancelOrder() { if (order.value) removeOrder(order.value.id) }
 async function addItem(v) {
+  if (stockSyncPromise) await stockSyncPromise
   if (locked.value || !order.value) return
   const cur = order.value.items.find(i => i.id === v.id)
   if (v.stock < 1) { error.value = 'Số lượng đã đạt tồn kho hiện tại'; showError(error.value, 'Không thể thêm sản phẩm'); return }
@@ -514,6 +600,9 @@ async function addItem(v) {
   await saveOrder(order.value, `Thêm sản phẩm ${v.name || v.code || ''} vào giỏ hàng thành công.`)
 }
 async function setQty(i, n) {
+  if (stockSyncPromise) await stockSyncPromise
+  i = order.value?.items.find(item => item.id === i.id)
+  if (!i) return
   if (locked.value) return
   const qty = Number(n)
   if (!Number.isInteger(qty) || qty < 1 || qty > 10000) { error.value = 'Số lượng phải là số nguyên từ 1 đến 10000'; showError(error.value, 'Số lượng không hợp lệ'); return }
@@ -521,6 +610,7 @@ async function setQty(i, n) {
   i.qty = qty; await saveOrder(order.value, `Cập nhật số lượng sản phẩm ${i.name || i.code || ''} thành ${qty} thành công.`)
 }
 async function removeItem(code) {
+  if (stockSyncPromise) await stockSyncPromise
   if (locked.value || !order.value) return
   const item = order.value.items.find(i => i.code === code)
   if (!item) return
@@ -563,8 +653,8 @@ function openPicker() {
   if (locked.value || !order.value) return
   q.value = ''; catalogPage.value = 0; picking.value = true; loadCatalog()
 }
-async function loadCatalog() {
-  const version = ++catalogVersion; loading.value = true
+async function loadCatalog(silent = false) {
+  const version = ++catalogVersion; if (silent !== true) loading.value = true
   try {
     const result = await salesService.danhSachSanPhamBan({ page: catalogPage.value, size: 10, keyword: q.value.trim(),
       color: colorFilter.value.trim(), variantSize: sizeFilter.value.trim(), categoryId: categoryFilter.value || undefined, brandId: brandFilter.value || undefined })
@@ -614,9 +704,16 @@ onMounted(async () => {
     employeeName.value = auth.user?.id === me.userId ? `${auth.user.code || ''} · ${auth.user.name || me.username}` : me.username
     await reloadOrders(); restoreCheckout(); ready.value = true
     await Promise.all([loadCatalog(), loadCustomers(), loadPaymentOptions(), productAttributeService.options(['colors', 'sizes', 'categories', 'brands']).then(v => { attributes.value = v })])
+    if (typeof window !== 'undefined') {
+      window.addEventListener('focus', requestStockSync)
+      window.addEventListener('online', requestStockSync)
+      document.addEventListener('visibilitychange', requestStockSync)
+      stockPollTimer = window.setInterval(requestStockSync, 4000)
+      requestStockSync()
+    }
   } catch (e) { error.value = message(e) }
 })
-onBeforeUnmount(() => { alive = false; ++quoteVersion; ++addressVersion; clearTimeout(quoteTimer); ++catalogVersion; ++customerVersion; clearTimeout(searchTimer); clearTimeout(customerTimer) })
+onBeforeUnmount(() => { if (typeof window !== 'undefined') { window.clearInterval(stockPollTimer); window.removeEventListener('focus', requestStockSync); window.removeEventListener('online', requestStockSync); document.removeEventListener('visibilitychange', requestStockSync) } clearTimeout(stockSyncTimer); alive = false; ++quoteVersion; ++addressVersion; clearTimeout(quoteTimer); ++catalogVersion; ++customerVersion; clearTimeout(searchTimer); clearTimeout(customerTimer) })
 </script>
 
 <template>
@@ -742,7 +839,7 @@ onBeforeUnmount(() => { alive = false; ++quoteVersion; ++addressVersion; clearTi
           <p v-if="order.paymentMode === 'BANK' && bankConfirmed" class="bank-confirmed" role="status"><i class="bi bi-check-circle"></i> Đã xác nhận chuyển khoản, chưa hoàn tất hóa đơn. Bấm Thanh toán để hoàn tất.</p>
           <div class="kv"><span>Tiền thừa trả khách</span><b>{{ money(change) }}</b></div>
           <div class="ss-field"><span class="ss-label strong">Ghi chú thanh toán</span>
-            <textarea class="ss-textarea" v-model="order.note" @change="saveOrder(order, 'Cập nhật ghi chú thanh toán thành công.')" maxlength="980" :disabled="locked" placeholder="Ghi chú thêm nếu cần"></textarea></div>
+            <textarea class="ss-textarea" v-model="order.note" @change="saveOrder(order, 'Cập nhật ghi chú thanh toán thành công.')" maxlength="960" :disabled="locked" placeholder="Ghi chú thêm nếu cần"></textarea></div>
 
           <div v-if="dirty || error" class="pos-save-actions">
             <button v-if="dirty" class="ss-btn sm" :disabled="locked" @click="saveOrder(order, 'Lưu hóa đơn chờ thành công.')">Lưu</button>
