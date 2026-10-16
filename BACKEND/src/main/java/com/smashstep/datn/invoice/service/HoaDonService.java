@@ -47,6 +47,8 @@ public class HoaDonService {
     private final LichSuHoaDonRepository lichSuHoaDonRepository;
     private final LichSuThanhToanRepository lichSuThanhToanRepository;
     private final NhanVienRepository nhanVienRepository;
+    @jakarta.persistence.PersistenceContext private jakarta.persistence.EntityManager entityManager;
+    @org.springframework.beans.factory.annotation.Autowired private InvoiceCodeService dichVuMaHoaDon;
 
     @Transactional(readOnly = true)
     public PageResponse<HoaDonListDto> timKiem(
@@ -117,6 +119,7 @@ public class HoaDonService {
         if (ma == null || ma.isBlank()) {
             throw AppException.badRequest("Mã hóa đơn không được để trống");
         }
+        if (request.getTrangThai() == 6 && dichVuMaHoaDon != null) dichVuMaHoaDon.lockInvoiceCreation();
         HoaDon hoaDon =
                 hoaDonRepository
                         .findByMaHoaDonForUpdate(ma.trim())
@@ -213,6 +216,8 @@ public class HoaDonService {
             }
             // Actor is recorded in history; the invoice owner remains unchanged.
         }
+        if (request.getTrangThai() == 6 && com.smashstep.datn.invoice.rules.PosDraftRules.daTruKho(hoaDon))
+            com.smashstep.datn.sales.service.TonKhoHoaDonCho.hoanKhiHuy(entityManager, hoaDon);
         hoaDon.setTrangThai(request.getTrangThai());
         hoaDon.setNgayCapNhat(LocalDateTime.now());
 

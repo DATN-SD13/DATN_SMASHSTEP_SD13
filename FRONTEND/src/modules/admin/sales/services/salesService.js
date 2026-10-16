@@ -63,6 +63,7 @@ function docKetQua(duLieu) {
 }
 
 export default {
+  async dongBoHoaDonCho() { return layDuLieu(await api.post('/ban-hang/hoa-don-cho/dong-bo')).map(docKetQua) },
   async danhSachHoaDonCho() { return layDuLieu(await api.get('/ban-hang/hoa-don-cho')).map(docKetQua) },
   async chiTietHoaDonCho(id) { return docKetQua(layDuLieu(await api.get(`/ban-hang/hoa-don-cho/${id}`))) },
   async taoHoaDonCho() { return docKetQua(layDuLieu(await api.post('/ban-hang/hoa-don-cho'))) },

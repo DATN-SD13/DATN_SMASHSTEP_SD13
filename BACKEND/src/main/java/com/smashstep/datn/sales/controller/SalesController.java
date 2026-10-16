@@ -34,6 +34,11 @@ public class SalesController {
         return ApiResponse.ok(hoaDonChoService.danhSachHoaDonCho());
     }
 
+    @PostMapping("/hoa-don-cho/dong-bo")
+    public ApiResponse<List<Draft>> dongBoHoaDonCho() {
+        return ApiResponse.ok(hoaDonChoService.dongBoHoaDonCho());
+    }
+
     @GetMapping("/hoa-don-cho/{id}")
     public ApiResponse<Draft> chiTietHoaDonCho(@PathVariable Long id) {
         return ApiResponse.ok(hoaDonChoService.layHoaDonCho(id));
