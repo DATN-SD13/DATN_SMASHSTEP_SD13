@@ -3,6 +3,7 @@ package com.smashstep.datn.auth.service;
 
 import com.smashstep.datn.auth.dto.LoginRequest;
 import com.smashstep.datn.auth.dto.LoginResponse;
+import com.smashstep.datn.auth.dto.RegisterRequest;
 import com.smashstep.datn.auth.security.JwtUtil;
 import com.smashstep.datn.common.exception.AppException;
 import com.smashstep.datn.customer.entity.KhachHang;
@@ -33,6 +34,67 @@ public class AuthService {
         this.khachHangRepository = khachHangRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtUtil = jwtUtil;
+    }
+
+    // ===== ĐĂNG KÝ KHÁCH HÀNG =====
+
+    @org.springframework.transaction.annotation.Transactional
+    public LoginResponse register(RegisterRequest request) {
+        String email = request.getEmail().trim().toLowerCase(java.util.Locale.ROOT);
+
+        if (khachHangRepository.existsByEmailIgnoreCase(email)) {
+            throw AppException.conflict("Email này đã được sử dụng.");
+        }
+
+        KhachHang kh = new KhachHang();
+        kh.setMaKhachHang(sinhMaKhachHang());
+        kh.setTenKhachHang(request.getName().trim());
+        kh.setEmail(email);
+        kh.setSoDienThoai(
+            request.getPhone() != null && !request.getPhone().isBlank()
+                ? request.getPhone().trim() : null
+        );
+        // Dùng phần trước @ của email làm tên tài khoản, đảm bảo không trùng
+        String baseUsername = email.split("@")[0].replaceAll("[^a-zA-Z0-9_]", "");
+        String username = baseUsername;
+        int suffix = 1;
+        while (khachHangRepository.existsByTenTaiKhoan(username)) {
+            username = baseUsername + suffix++;
+        }
+        kh.setTenTaiKhoan(username);
+        kh.setMatKhau(passwordEncoder.encode(request.getPassword()));
+        kh.setTrangThai(1);
+        kh.setNgayTao(java.time.LocalDateTime.now());
+        kh.setNgayCapNhat(java.time.LocalDateTime.now());
+
+        kh = khachHangRepository.save(kh);
+
+        String token = jwtUtil.generateToken(
+                kh.getId(),
+                kh.getTenTaiKhoan(),
+                "CUSTOMER",
+                "KHACH_HANG"
+        );
+
+        return LoginResponse.builder()
+                .accessToken(token)
+                .tokenType("Bearer")
+                .userType("KHACH_HANG")
+                .id(kh.getId())
+                .code(kh.getMaKhachHang())
+                .name(kh.getTenKhachHang())
+                .email(kh.getEmail())
+                .role("CUSTOMER")
+                .avatar(kh.getHinhAnh())
+                .build();
+    }
+
+    private String sinhMaKhachHang() {
+        String ma;
+        do {
+            ma = "KH" + String.format("%06d", (int)(Math.random() * 1_000_000));
+        } while (khachHangRepository.existsByMaKhachHang(ma));
+        return ma;
     }
 
     /**

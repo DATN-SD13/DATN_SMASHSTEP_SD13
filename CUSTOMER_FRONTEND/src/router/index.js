@@ -1,13 +1,82 @@
 import { createRouter, createWebHistory } from 'vue-router'
+
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/', name: 'home', component: () => import('../views/HomeView.vue'), meta: { title: 'SmashStep | Mỗi bước chân, một dấu ấn' } },
-    { path: '/san-pham', name: 'products', component: () => import('../views/ProductListView.vue'), meta: { title: 'Bộ sưu tập giày | SmashStep' } },
-    { path: '/san-pham/:id', name: 'product-detail', component: () => import('../views/ProductDetailView.vue'), meta: { title: 'Chi tiết sản phẩm | SmashStep' } },
+    // ── Auth (public, guest only) ────────────────────────
+    {
+      path: '/dang-nhap',
+      name: 'login',
+      component: () => import('../views/LoginView.vue'),
+      meta: { title: 'Đăng nhập | SmashStep', public: true, guestOnly: true }
+    },
+    {
+      path: '/quen-mat-khau',
+      name: 'forgot-password',
+      component: () => import('../views/ForgotPasswordView.vue'),
+      meta: { title: 'Quên mật khẩu | SmashStep', public: true, guestOnly: true }
+    },
+    {
+      path: '/dat-lai-mat-khau',
+      name: 'reset-password',
+      component: () => import('../views/ResetPasswordView.vue'),
+      meta: { title: 'Đặt lại mật khẩu | SmashStep', public: true }
+    },
+    {
+      path: '/dang-ky',
+      name: 'register',
+      component: () => import('../views/RegisterView.vue'),
+      meta: { title: 'Đăng ký | SmashStep', public: true, guestOnly: true }
+    },
+
+    // ── Public pages ─────────────────────────────────────
+    {
+      path: '/',
+      name: 'home',
+      component: () => import('../views/HomeView.vue'),
+      meta: { title: 'SmashStep | Mỗi bước chân, một dấu ấn' }
+    },
+    {
+      path: '/san-pham',
+      name: 'products',
+      component: () => import('../views/ProductListView.vue'),
+      meta: { title: 'Bộ sưu tập giày | SmashStep' }
+    },
+    {
+      path: '/san-pham/:id',
+      name: 'product-detail',
+      component: () => import('../views/ProductDetailView.vue'),
+      meta: { title: 'Chi tiết sản phẩm | SmashStep' }
+    },
+
     { path: '/:pathMatch(.*)*', redirect: '/' }
   ],
-  scrollBehavior(to, from, saved) { return saved || (to.hash ? { el: to.hash, top: 90, behavior: 'smooth' } : { top: 0 }) }
+  scrollBehavior(to, from, saved) {
+    return saved || (to.hash ? { el: to.hash, top: 90, behavior: 'smooth' } : { top: 0 })
+  }
 })
-router.afterEach(to => { document.title = to.meta.title })
+
+// ── Navigation Guard ──────────────────────────────────────
+router.beforeEach((to, _from, next) => {
+  import('../stores/auth').then(({ useAuthStore }) => {
+    const auth = useAuthStore()
+
+    // Trang chỉ dành cho guest: nếu đã đăng nhập thì về trang chủ
+    if (to.meta.guestOnly && auth.isAuthenticated) {
+      return next('/')
+    }
+
+    // Route yêu cầu đăng nhập
+    if (to.meta.requiresAuth && !auth.isAuthenticated) {
+      return next({ path: '/dang-nhap', query: { redirect: to.fullPath } })
+    }
+
+    next()
+  })
+})
+
+router.afterEach(to => {
+  document.title = to.meta.title || 'SmashStep'
+})
+
 export default router

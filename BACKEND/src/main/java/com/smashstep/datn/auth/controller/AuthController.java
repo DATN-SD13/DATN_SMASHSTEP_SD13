@@ -3,6 +3,7 @@ package com.smashstep.datn.auth.controller;
 import com.smashstep.datn.auth.dto.ForgotPasswordRequest;
 import com.smashstep.datn.auth.dto.LoginRequest;
 import com.smashstep.datn.auth.dto.LoginResponse;
+import com.smashstep.datn.auth.dto.RegisterRequest;
 import com.smashstep.datn.auth.dto.ResetPasswordRequest;
 import com.smashstep.datn.auth.security.JwtAuthFilter;
 import com.smashstep.datn.auth.service.AuthService;
@@ -26,6 +27,19 @@ public class AuthController {
     public AuthController(AuthService authService, PasswordResetService passwordResetService) {
         this.authService = authService;
         this.passwordResetService = passwordResetService;
+    }
+
+    /**
+     * Đăng ký tài khoản khách hàng mới.
+     * POST /api/auth/dang-ky
+     * Body: { name, email, phone?, password }
+     */
+    @PostMapping("/dang-ky")
+    public ResponseEntity<ApiResponse<LoginResponse>> dangKy(
+            @Valid @RequestBody RegisterRequest request
+    ) {
+        LoginResponse response = authService.register(request);
+        return ResponseEntity.status(201).body(ApiResponse.success(response));
     }
 
     /**
