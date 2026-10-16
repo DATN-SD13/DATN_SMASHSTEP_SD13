@@ -60,13 +60,14 @@ class SanPhamTichHopTest {
     @Autowired WebApplicationContext context;
     private final Map<String, Long> ids = new LinkedHashMap<>();
     private String code;
+    private String sizeValue() { return "40." + new java.math.BigInteger(UUID.randomUUID().toString().replace("-", ""), 16); }
     private MockMvc mvc;
 
     @BeforeEach
     void setup() {
         code = "TEST-" + UUID.randomUUID().toString().substring(0, 12);
         for (String type : List.of("categories", "brands", "materials", "styles", "collars", "origins", "colors", "sizes")) {
-            var request = new ThuocTinhRequest(code, code + "-" + type, "Ghi chú kiểm thử",
+            var request = new ThuocTinhRequest(code, type.equals("sizes") ? sizeValue() : code + "-" + type, "Ghi chú kiểm thử",
                     type.equals("colors") ? String.format("#%06X", UUID.randomUUID().hashCode() & 0xFFFFFF) : null, 1);
             ids.put(type, attributes.luuThuocTinh(type, null, request).getId());
         }
@@ -87,7 +88,7 @@ class SanPhamTichHopTest {
     @Test
     void persistsVariantsAndReturnsRealPaginatedAggregates() throws Exception {
         var product = products.themSanPham(productRequest());
-        var size2 = attributes.luuThuocTinh("sizes", null, new ThuocTinhRequest(null, code + "-size2", "", null, 1));
+        var size2 = attributes.luuThuocTinh("sizes", null, new ThuocTinhRequest(null, sizeValue(), "", null, 1));
         variants.themDanhSachBienThe(product.getId(), List.of(
                 variantRequest(product.getId(), ids.get("sizes"), 2, "1200000"),
                 variantRequest(product.getId(), size2.getId(), 3, "1500000")));
@@ -160,14 +161,14 @@ class SanPhamTichHopTest {
     @Test
     void attributesUseRealSearchPaginationAndStatus() {
         for (String type : ids.keySet()) {
-            assertEquals(1, attributes.layDanhSach(type, 0, 5, code, 1).getTotalElements());
+            assertEquals(1, attributes.layDanhSach(type, 0, 5, type.equals("sizes") ? attributes.layChiTiet(type, ids.get(type)).getTen() : code, 1).getTotalElements());
             var updated = attributes.luuThuocTinh(type, ids.get(type),
-                    new ThuocTinhRequest(code, code + "-updated-" + type, "Ghi chú cập nhật",
+                    new ThuocTinhRequest(code, type.equals("sizes") ? sizeValue() : code + "-updated-" + type, "Ghi chú cập nhật",
                             type.equals("colors") ? "#ABCDEF" : null, 1));
-            assertTrue(updated.getTen().contains("updated"));
+            assertTrue(type.equals("sizes") ? updated.getTen().matches("[0-9]+\\.[0-9]+") : updated.getTen().contains("updated"));
             attributes.doiTrangThai(type, ids.get(type), 0);
-            assertEquals(1, attributes.layDanhSach(type, 0, 5, code, 0).getTotalElements());
-            assertEquals(0, attributes.layDanhSach(type, 0, 5, code, 1).getTotalElements());
+            assertEquals(1, attributes.layDanhSach(type, 0, 5, type.equals("sizes") ? updated.getTen() : code, 0).getTotalElements());
+            assertEquals(0, attributes.layDanhSach(type, 0, 5, type.equals("sizes") ? updated.getTen() : code, 1).getTotalElements());
         }
     }
 
@@ -240,7 +241,7 @@ class SanPhamTichHopTest {
     @Test
     void allEightAttributeGetEndpointsReadConfiguredDatabase() throws Exception {
         for (String type : ids.keySet()) {
-            mvc.perform(get("/api/product-attributes/" + type).param("keyword", code).param("status", "1"))
+            mvc.perform(get("/api/product-attributes/" + type).param("keyword", type.equals("sizes") ? attributes.layChiTiet(type, ids.get(type)).getTen() : code).param("status", "1"))
                     .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1))
                     .andExpect(jsonPath("$.content[0].id").value(ids.get(type)));
         }
@@ -257,14 +258,14 @@ class SanPhamTichHopTest {
         JsonMapper mapper = JsonMapper.builder().build();
         String attributeCode = code + "-HTTP";
         for (String type : ids.keySet()) {
-            ThuocTinhRequest request = new ThuocTinhRequest(attributeCode, attributeCode + "-" + type,
+            ThuocTinhRequest request = new ThuocTinhRequest(attributeCode, type.equals("sizes") ? sizeValue() : attributeCode + "-" + type,
                     "Ghi chú qua HTTP", type.equals("colors") ? String.format("#%06X", UUID.randomUUID().hashCode() & 0xFFFFFF) : null, 1);
             String body = mvc.perform(post("/api/product-attributes/" + type).contentType(MediaType.APPLICATION_JSON)
                             .content(mapper.writeValueAsString(request)))
                     .andExpect(status().isCreated()).andExpect(jsonPath("$.trangThai").value(1))
                     .andReturn().getResponse().getContentAsString();
             Long id = ((Number) mapper.readValue(body, Map.class).get("id")).longValue();
-            request.setTen(attributeCode + "-edit-" + type);
+            request.setTen(type.equals("sizes") ? sizeValue() : attributeCode + "-edit-" + type);
             mvc.perform(put("/api/product-attributes/" + type + "/" + id).contentType(MediaType.APPLICATION_JSON)
                             .content(mapper.writeValueAsString(request)))
                     .andExpect(status().isOk()).andExpect(jsonPath("$.ten").value(request.getTen()));
@@ -272,10 +273,10 @@ class SanPhamTichHopTest {
                             .contentType(MediaType.APPLICATION_JSON).content("{\"trangThai\":0}"))
                     .andExpect(status().isOk()).andExpect(jsonPath("$.trangThai").value(0));
             entityManager.flush(); entityManager.clear();
-            mvc.perform(get("/api/product-attributes/" + type).param("keyword", attributeCode).param("status", "0"))
+            mvc.perform(get("/api/product-attributes/" + type).param("keyword", type.equals("sizes") ? request.getTen() : attributeCode).param("status", "0"))
                     .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1))
                     .andExpect(jsonPath("$.content[0].id").value(id));
-            mvc.perform(get("/api/product-attributes/" + type).param("keyword", attributeCode).param("status", "1"))
+            mvc.perform(get("/api/product-attributes/" + type).param("keyword", type.equals("sizes") ? request.getTen() : attributeCode).param("status", "1"))
                     .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(0));
         }
     }
@@ -324,7 +325,7 @@ class SanPhamTichHopTest {
         mvc.perform(get("/api/products/" + productId)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.product.soBienThe").value(1))
                 .andExpect(jsonPath("$.product.tongSoLuong").value(12));
-        var size2 = attributes.luuThuocTinh("sizes", null, new ThuocTinhRequest(null, code + "-second", "", null, 1));
+        var size2 = attributes.luuThuocTinh("sizes", null, new ThuocTinhRequest(null, sizeValue(), "", null, 1));
         single.put("maChiTietSanPham", code + "-CT2"); single.put("sku", code + "-SKU2");
         single.put("kichThuocId", size2.getId());
         mvc.perform(post("/api/products/" + productId + "/variants").contentType(MediaType.APPLICATION_JSON)
@@ -346,9 +347,10 @@ class SanPhamTichHopTest {
                         .content(mapper.writeValueAsString(Map.of("maMauSac", code + "-MC", "tenMauSac", code + "-Màu",
                                 "maMauHex", "#AABBCC", "trangThai", 1))))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.ma").value(maMauMoi));
+        String numericSize = sizeValue();
         mvc.perform(post("/api/product-attributes/sizes").contentType(MediaType.APPLICATION_JSON)
-                        .content(mapper.writeValueAsString(Map.of("giaTri", code + "-40.5", "ghiChu", "Size dạng chuỗi", "trangThai", 1))))
-                .andExpect(status().isCreated()).andExpect(jsonPath("$.ten").value(code + "-40.5"));
+                        .content(mapper.writeValueAsString(Map.of("giaTri", numericSize, "ghiChu", "Size dạng chuỗi", "trangThai", 1))))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.ten").value(numericSize));
         mvc.perform(get("/api/product-attributes/invalid/1")).andExpect(status().isBadRequest());
     }
 
@@ -493,7 +495,7 @@ class SanPhamTichHopTest {
     @Test
     void exactVariantImagesPersistAndMainSelectionNeverCrossesScopes() throws Exception {
         var product = products.themSanPham(productRequest());
-        var size2 = attributes.luuThuocTinh("sizes", null, new ThuocTinhRequest(null, code + "-second-size", "", null, 1));
+        var size2 = attributes.luuThuocTinh("sizes", null, new ThuocTinhRequest(null, sizeValue(), "", null, 1));
         var a = variants.themSanPhamChiTiet(variantRequest(product.getId(), ids.get("sizes"), 2, "1000000"));
         var b = variants.themSanPhamChiTiet(variantRequest(product.getId(), size2.getId(), 3, "1200000"));
         var common = images.themAnh(product.getId(), new HinhAnhSanPhamRequest("https://example.com/common.png", true));
