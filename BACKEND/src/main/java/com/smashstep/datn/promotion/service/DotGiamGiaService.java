@@ -162,12 +162,10 @@ public class DotGiamGiaService {
             );
         }
 
-        validateProductPromotionConflict(
+        validateCampaignSelection(
                 request.getProductDetailIds(),
                 request.getStartDate(),
-                request.getEndDate(),
-                null
-        );
+                request.getEndDate());
 
         // -----------------------------
         // 4. Tạo đợt giảm giá
@@ -415,12 +413,10 @@ public class DotGiamGiaService {
                     "Ngày kết thúc không được nhỏ hơn ngày bắt đầu"
             );
         }
-        validateProductPromotionConflict(
+        validateCampaignSelection(
                 request.getProductDetailIds(),
                 request.getStartDate(),
-                request.getEndDate(),
-                entity.getId()
-        );
+                request.getEndDate());
 
         // 3. Chuẩn hóa mã mới
 
@@ -586,65 +582,17 @@ public class DotGiamGiaService {
     }
 
 
-    private void validateProductPromotionConflict(
+    /** Overlapping campaigns are allowed; CurrentPriceService selects the highest active discount per variant. */
+    private void validateCampaignSelection(
             List<Long> productDetailIds,
             LocalDateTime startDate,
-            LocalDateTime endDate,
-            Long currentPromotionId
+            LocalDateTime endDate
     ) {
-        if (productDetailIds == null || productDetailIds.isEmpty()) {
-            return;
-        }
-
         if (startDate == null || endDate == null || !endDate.isAfter(startDate)) {
             throw AppException.badRequest("Khoảng thời gian không hợp lệ");
         }
-
         validateVariants(productDetailIds);
-
-        for (Long productDetailId : productDetailIds.stream().distinct().toList()) {
-
-            List<ChiTietDotGiamGia> activePromotions =
-                    chiTietDotGiamGiaRepository
-                            .findActiveByProductDetailId(productDetailId);
-
-            for (ChiTietDotGiamGia chiTiet : activePromotions) {
-                DotGiamGia otherPromotion = chiTiet.getIdDotGiamGia();
-
-                if (otherPromotion == null
-                        || otherPromotion.getNgayBatDau() == null
-                        || otherPromotion.getNgayKetThuc() == null) {
-                    continue;
-                }
-
-                // Khi cập nhật: bỏ qua chính đợt đang sửa
-                if (currentPromotionId != null
-                        && currentPromotionId.equals(otherPromotion.getId())) {
-                    continue;
-                }
-
-                LocalDateTime otherStart = otherPromotion.getNgayBatDau();
-                LocalDateTime otherEnd = otherPromotion.getNgayKetThuc();
-
-                // Hai khoảng thời gian giao nhau khi:
-                // startDate <= otherEnd && endDate >= otherStart
-                boolean overlap =
-                        !startDate.isAfter(otherEnd)
-                                && !endDate.isBefore(otherStart);
-
-                if (overlap) {
-                    throw AppException.conflict(
-                            "Biến thể sản phẩm ID " + productDetailId
-                                    + " đang thuộc đợt giảm giá "
-                                    + otherPromotion.getMaDotGiamGia()
-                                    + " từ " + otherStart
-                                    + " đến " + otherEnd
-                    );
-                }
-            }
-        }
     }
-
 
     private DotGiamGiaResponse toResponse(DotGiamGia entity) {
 
@@ -721,7 +669,7 @@ public class DotGiamGiaService {
                         .findByIdDotGiamGia_Id(entity.getId());
 
         // ==========================================
-        // NẾU KÍCH HOẠT LẠI -> KIỂM TRA TRÙNG
+        // NẾU KÍCH HOẠT LẠI -> KIỂM TRA THỜI GIAN VÀ BIẾN THỂ
         // ==========================================
         if (status == 1) {
 
@@ -745,14 +693,11 @@ public class DotGiamGiaService {
 
 
             validateVariants(productDetailIds);
-            // Kiểm tra xem các biến thể có đang nằm
-            // trong đợt giảm giá khác bị trùng ngày không
-            validateProductPromotionConflict(
+            // Cho phép trùng thời gian với đợt khác; vẫn kiểm tra biến thể và thời gian hợp lệ.
+            validateCampaignSelection(
                     productDetailIds,
                     startDate,
-                    endDate,
-                    entity.getId()
-            );
+                    endDate);
         }
 
         // ==========================================
@@ -843,9 +788,9 @@ public class DotGiamGiaService {
 
         validateTeamCampaign(request);
         if (!Boolean.FALSE.equals(request.getKichHoat())) {
-            validateProductPromotionConflict(request.getChiTiet().stream().map(
+            validateCampaignSelection(request.getChiTiet().stream().map(
                             com.smashstep.datn.promotion.dto.ChiTietDotGiamGiaRequest::getIdSanPhamChiTiet).toList(),
-                    request.getNgayBatDau(), request.getNgayKetThuc(), null);
+                    request.getNgayBatDau(), request.getNgayKetThuc());
         }
         if (request.getMaDotGiamGia() == null || request.getMaDotGiamGia().isBlank()) request.setMaDotGiamGia(generateCode());
         if (dotGiamGiaRepository.existsByMaDotGiamGia(request.getMaDotGiamGia())) throw AppException.conflict("Mã đợt giảm giá đã tồn tại");
@@ -939,9 +884,9 @@ public class DotGiamGiaService {
 
         if (Integer.valueOf(1).equals(dotGiamGia.getTrangThai()) &&
                 (request.getKichHoat() == null ? Boolean.TRUE.equals(dotGiamGia.getKichHoat()) : request.getKichHoat())) {
-            validateProductPromotionConflict(request.getChiTiet().stream().map(
+            validateCampaignSelection(request.getChiTiet().stream().map(
                             com.smashstep.datn.promotion.dto.ChiTietDotGiamGiaRequest::getIdSanPhamChiTiet).toList(),
-                    request.getNgayBatDau(), request.getNgayKetThuc(), id);
+                    request.getNgayBatDau(), request.getNgayKetThuc());
         }
         if (request.getMaDotGiamGia() != null) {
             var owner = dotGiamGiaRepository.findByMaDotGiamGia(request.getMaDotGiamGia());

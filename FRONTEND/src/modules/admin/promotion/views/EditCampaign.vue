@@ -515,7 +515,7 @@ function save() {
         } else if (status === 409) {
           showError(
             backendMessage ||
-              "Đợt giảm giá bị trùng hoặc xung đột với chương trình khác.",
+              "Mã đợt giảm giá đã tồn tại hoặc dữ liệu vừa thay đổi. Vui lòng kiểm tra lại.",
           );
         } else if (status >= 500) {
           showError("Hệ thống đang gặp lỗi. Vui lòng thử lại sau.");
