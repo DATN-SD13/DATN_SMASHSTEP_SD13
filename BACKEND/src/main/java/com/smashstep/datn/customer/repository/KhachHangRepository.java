@@ -31,7 +31,6 @@ public interface KhachHangRepository extends JpaRepository<KhachHang, Long> {
     Optional<KhachHang> findByTenTaiKhoanIgnoreCaseOrEmailIgnoreCase(
             String tenTaiKhoan, String email);
     Optional<KhachHang> findByEmailIgnoreCase(String email);
-    Optional<KhachHang> findByResetToken(String resetToken);
 
     @Query("""
         SELECT k FROM KhachHang k

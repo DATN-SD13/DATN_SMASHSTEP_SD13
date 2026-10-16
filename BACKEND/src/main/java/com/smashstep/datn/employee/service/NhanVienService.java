@@ -169,13 +169,12 @@ public class NhanVienService {
          */
         saved.setTenDangNhap(maNhanVien);
 
-        String temporaryPassword = isManager(vaiTro)
-                ? PasswordGenerator.generate() : null;
-        saved.setMatKhau(temporaryPassword == null ? null : passwordEncoder.encode(temporaryPassword));
+        // All newly created employees receive their own BCrypt-protected account.
+        String temporaryPassword = PasswordGenerator.generate();
+        saved.setMatKhau(passwordEncoder.encode(temporaryPassword));
+        saved.setNgayCapNhat(LocalDateTime.now());
         saved = nhanVienRepository.save(saved);
-        if (temporaryPassword != null) {
-            sendManagerAccountAfterCommit(saved, temporaryPassword);
-        }
+        sendEmployeeAccountAfterCommit(saved, temporaryPassword);
 
         return toResponse(saved);
     }
@@ -257,10 +256,12 @@ public class NhanVienService {
         NhanVien nhanVien = findByMa(ma);
 
         // Không cho phép admin tự khóa chính mình
-        String currentUsername = org.springframework.security.core.context.SecurityContextHolder
-                .getContext().getAuthentication().getName();
-        if (nhanVien.getMaNhanVien() != null
-                && nhanVien.getMaNhanVien().equalsIgnoreCase(currentUsername)
+        var authentication = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        String currentUsername = authentication == null ? null : authentication.getName();
+        boolean sameAccount = authentication != null
+                && authentication.getDetails() instanceof com.smashstep.datn.auth.security.JwtAuthFilter.AuthDetails actor
+                && "NHAN_VIEN".equals(actor.userType()) && java.util.Objects.equals(nhanVien.getId(),actor.userId());
+        if ((sameAccount || nhanVien.getMaNhanVien() != null && nhanVien.getMaNhanVien().equalsIgnoreCase(currentUsername))
                 && Integer.valueOf(0).equals(request.getStatus())) {
             throw AppException.badRequest("Không thể tự khóa tài khoản của chính mình");
         }
@@ -300,13 +301,16 @@ public class NhanVienService {
                 || name.equalsIgnoreCase("Quan ly") || name.equalsIgnoreCase("Manager"));
     }
 
-    private void sendManagerAccountAfterCommit(NhanVien employee, String temporaryPassword) {
+    private void sendEmployeeAccountAfterCommit(NhanVien employee, String temporaryPassword) {
         String email = employee.getEmail();
         String name = employee.getTenNhanVien();
         String username = employee.getTenDangNhap();
+        String roleName = employee.getIdVaiTro() == null ? "Nhân viên" : employee.getIdVaiTro().getTenVaiTro();
+        boolean manager = employee.getIdVaiTro() != null && isManager(employee.getIdVaiTro());
         Runnable send = () -> {
             try {
-                employeeMailService.sendManagerAccountEmail(email, name, username, temporaryPassword);
+                if (manager) employeeMailService.sendManagerAccountEmail(email, name, username, temporaryPassword);
+                else employeeMailService.sendEmployeeAccountEmail(email, name, roleName, username, temporaryPassword);
             } catch (RuntimeException ex) {
                 log.warn("Đã tạo tài khoản {} nhưng gửi email thất bại ({})", username,
                         ex.getClass().getSimpleName());
@@ -385,12 +389,14 @@ public class NhanVienService {
 
         validateGender(request.getGender());
 
-        if (request.getDob() != null
-                && request.getDob().isAfter(LocalDate.now())) {
-
-            throw AppException.badRequest(
-                    "Ngày sinh không được lớn hơn ngày hiện tại"
-            );
+        if (request.getDob() != null) {
+            LocalDate today = LocalDate.now();
+            if (request.getDob().isAfter(today)) {
+                throw AppException.badRequest("Ngày sinh không được lớn hơn ngày hiện tại");
+            }
+            if (request.getDob().isAfter(today.minusYears(18))) {
+                throw AppException.badRequest("Nhân viên phải đủ 18 tuổi trở lên");
+            }
         }
     }
 

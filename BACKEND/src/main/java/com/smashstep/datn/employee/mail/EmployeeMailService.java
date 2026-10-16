@@ -2,10 +2,9 @@ package com.smashstep.datn.employee.mail;
 
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
-
 import lombok.RequiredArgsConstructor;
-
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.mail.MailException;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
@@ -16,17 +15,44 @@ public class EmployeeMailService {
 
     private final JavaMailSender mailSender;
 
+    /*
+     * Gmail dùng để gửi email.
+     *
+     * application.properties:
+     * spring.mail.username=${MAIL_USERNAME}
+     */
     @Value("${spring.mail.username}")
     private String fromEmail;
 
-    public void sendManagerAccountEmail(
+    /*
+     * Link frontend.
+     *
+     * Mặc định:
+     * http://localhost:5173
+     */
+    @Value("${app.frontend-url:http://localhost:5173}")
+    private String frontendUrl;
+
+
+    // =========================================================
+    // GỬI EMAIL TÀI KHOẢN NHÂN VIÊN
+    // =========================================================
+
+    // Retain the existing manager account API while sharing the new role-aware template.
+    public void sendManagerAccountEmail(String toEmail, String employeeName, String username, String temporaryPassword) {
+        sendEmployeeAccountEmail(toEmail, employeeName, "Quản lý", username, temporaryPassword);
+    }
+
+    public void sendEmployeeAccountEmail(
             String toEmail,
             String employeeName,
+            String roleName,
             String username,
             String temporaryPassword
     ) {
 
         try {
+
             MimeMessage message =
                     mailSender.createMimeMessage();
 
@@ -37,569 +63,1114 @@ public class EmployeeMailService {
                             "UTF-8"
                     );
 
+            /*
+             * Người gửi
+             */
             helper.setFrom(
                     fromEmail
             );
 
+            /*
+             * Người nhận
+             */
             helper.setTo(
                     toEmail
             );
 
+            /*
+             * Tiêu đề email
+             */
             helper.setSubject(
-                    "SmashStep - Tài khoản quản lý của bạn đã được tạo"
+                    "SmashStep - Tài khoản nội bộ của bạn đã được tạo"
             );
 
+            /*
+             * Nội dung HTML
+             */
             helper.setText(
                     buildHtml(
                             employeeName,
+                            roleName,
                             username,
                             temporaryPassword
                     ),
                     true
             );
 
+            /*
+             * Gửi email
+             */
             mailSender.send(
                     message
             );
 
-        } catch (MessagingException e) {
+        } catch (
+                MessagingException |
+                MailException e
+        ) {
 
             throw new RuntimeException(
-                    "Không thể gửi email tài khoản nhân viên.",
+                    "Không thể gửi email tài khoản tới "
+                            + toEmail
+                            + ". Vui lòng kiểm tra cấu hình Gmail.",
                     e
             );
         }
     }
 
+
+    // =========================================================
+    // TẠO GIAO DIỆN EMAIL
+    // =========================================================
+
     private String buildHtml(
             String employeeName,
+            String roleName,
             String username,
-            String password
+            String temporaryPassword
     ) {
 
+        /*
+         * Escape dữ liệu trước khi đưa vào HTML.
+         */
+        String safeName =
+                escapeHtml(employeeName);
+
+        String safeRole =
+                escapeHtml(roleName);
+
+        String safeUsername =
+                escapeHtml(username);
+
+        String safePassword =
+                escapeHtml(temporaryPassword);
+
+        String safeFrontendUrl =
+                escapeHtml(frontendUrl);
+
+
+        /*
+         * Email HTML.
+         *
+         * Màu chính:
+         *
+         * #2F80ED  -> xanh chính
+         * #1D4ED8  -> xanh đậm
+         * #2563EB  -> xanh chữ
+         * #EFF6FF  -> xanh rất nhạt
+         * #BFDBFE  -> viền xanh
+         * #F8FBFF  -> nền trắng xanh
+         */
         return """
                 <!DOCTYPE html>
                 <html lang="vi">
+
                 <head>
+
                     <meta charset="UTF-8">
 
-                    <style>
+                    <meta
+                        name="viewport"
+                        content="width=device-width, initial-scale=1.0"
+                    >
+
+                    <title>
+                        SmashStep Internal
+                    </title>
 
-                        * {
-                            box-sizing: border-box;
-                        }
-
-                        body {
-                            margin: 0;
-                            padding: 0;
-
-                            background: #f1f5f9;
-
-                            font-family:
-                                Arial,
-                                Helvetica,
-                                sans-serif;
-
-                            color: #0f172a;
-                        }
-
-                        .wrapper {
-                            width: 100%;
-
-                            padding: 40px 15px;
-                        }
-
-                        .container {
-                            width: 100%;
-                            max-width: 950px;
-
-                            margin: auto;
-
-                            overflow: hidden;
-
-                            border-radius: 22px;
-
-                            background: #ffffff;
-
-                            box-shadow:
-                                0 20px 60px
-                                rgba(15, 23, 42, 0.12);
-                        }
-
-                        .left {
-                            width: 46%;
-
-                            padding: 55px 45px;
-
-                            vertical-align: top;
-
-                            color: #ffffff;
-
-                            background:
-                                linear-gradient(
-                                    135deg,
-                                    #0569b7,
-                                    #0ea5e9
-                                );
-                        }
-
-                        .brand-small {
-                            display: inline-block;
-
-                            margin-bottom: 25px;
-
-                            padding:
-                                8px 16px;
-
-                            border:
-                                1px solid
-                                rgba(
-                                    255,
-                                    255,
-                                    255,
-                                    0.5
-                                );
-
-                            border-radius: 999px;
-
-                            font-size: 12px;
-                            font-weight: bold;
-
-                            letter-spacing: 1px;
-                        }
-
-                        .brand-title {
-                            margin: 0;
-
-                            font-size: 42px;
-
-                            line-height: 1.05;
-
-                            font-weight: 800;
-                        }
-
-                        .brand-title span {
-                            display: block;
-
-                            font-weight: 400;
-                        }
-
-                        .brand-desc {
-                            margin-top: 22px;
-
-                            font-size: 15px;
-
-                            line-height: 1.7;
-
-                            color:
-                                rgba(
-                                    255,
-                                    255,
-                                    255,
-                                    0.88
-                                );
-                        }
-
-                        .features {
-                            margin-top: 70px;
-                        }
-
-                        .feature {
-                            display: inline-block;
-
-                            width: 31%;
-
-                            vertical-align: top;
-
-                            font-size: 12px;
-                        }
-
-                        .feature-icon {
-                            margin-bottom: 8px;
-
-                            font-size: 22px;
-                        }
-
-                        .feature-title {
-                            font-weight: bold;
-
-                            margin-bottom: 5px;
-                        }
-
-                        .feature-text {
-                            font-size: 10px;
-
-                            color:
-                                rgba(
-                                    255,
-                                    255,
-                                    255,
-                                    0.8
-                                );
-                        }
-
-                        .right {
-                            width: 54%;
-
-                            padding: 50px;
-
-                            vertical-align: top;
-
-                            background: #ffffff;
-                        }
-
-                        .hello {
-                            margin: 0;
-
-                            font-size: 21px;
-                            font-weight: 500;
-                        }
-
-                        .name {
-                            margin:
-                                5px
-                                0
-                                25px;
-
-                            color: #0284c7;
-
-                            font-size: 25px;
-                            font-weight: 800;
-                        }
-
-                        .description {
-                            margin-bottom: 25px;
-
-                            color: #64748b;
-
-                            font-size: 14px;
-                            line-height: 1.6;
-                        }
-
-                        .account-box {
-                            margin-bottom: 25px;
-
-                            padding:
-                                8px
-                                22px;
-
-                            border:
-                                1px solid
-                                #dbeafe;
-
-                            border-radius: 14px;
-
-                            background: #f8fafc;
-                        }
-
-                        .account-row {
-                            padding:
-                                16px
-                                0;
-
-                            border-bottom:
-                                1px solid
-                                #e2e8f0;
-                        }
-
-                        .account-row:last-child {
-                            border-bottom: 0;
-                        }
-
-                        .label {
-                            display: inline-block;
-
-                            width: 45%;
-
-                            color: #0369a1;
-
-                            font-size: 12px;
-                            font-weight: 700;
-                        }
-
-                        .value {
-                            display: inline-block;
-
-                            width: 53%;
-
-                            text-align: right;
-
-                            color: #0f172a;
-
-                            font-size: 15px;
-                            font-weight: 700;
-
-                            letter-spacing: 0.5px;
-                        }
-
-                        .login-btn {
-                            display: block;
-
-                            width: 260px;
-
-                            margin:
-                                0
-                                auto
-                                25px;
-
-                            padding:
-                                15px
-                                20px;
-
-                            border-radius: 10px;
-
-                            background: #0284c7;
-
-                            color: #ffffff !important;
-
-                            text-align: center;
-
-                            text-decoration: none;
-
-                            font-size: 15px;
-                            font-weight: bold;
-                        }
-
-                        .warning {
-                            padding:
-                                15px
-                                18px;
-
-                            border-radius: 10px;
-
-                            background: #fff7ed;
-
-                            color: #9a3412;
-
-                            font-size: 12px;
-
-                            line-height: 1.6;
-                        }
-
-                        .footer {
-                            margin-top: 28px;
-
-                            padding-top: 20px;
-
-                            border-top:
-                                1px solid
-                                #e2e8f0;
-
-                            color: #94a3b8;
-
-                            font-size: 11px;
-
-                            text-align: center;
-                        }
-
-                        @media screen
-                        and (max-width: 700px) {
-
-                            .left,
-                            .right {
-                                display: block;
-
-                                width: 100%;
-                            }
-
-                            .left,
-                            .right {
-                                padding: 35px 25px;
-                            }
-
-                            .brand-title {
-                                font-size: 34px;
-                            }
-                        }
-
-                    </style>
                 </head>
 
-                <body>
 
-                <div class="wrapper">
+                <body
+                    style="
+                        margin:0;
+                        padding:0;
+                        background:#F3F6FB;
+                        font-family:
+                            Arial,
+                            Helvetica,
+                            sans-serif;
+                        color:#111827;
+                    "
+                >
 
-                    <table
-                        class="container"
-                        cellpadding="0"
-                        cellspacing="0"
-                    >
-                        <tr>
 
-                            <td class="left">
+                <!-- ================================================= -->
+                <!-- BACKGROUND EMAIL -->
+                <!-- ================================================= -->
 
-                                <div class="brand-small">
-                                    SMASHSTEP
-                                </div>
+                <table
+                    width="100%%"
+                    cellpadding="0"
+                    cellspacing="0"
+                    border="0"
+                    style="
+                        width:100%%;
+                        background:#F3F6FB;
+                        padding:40px 15px;
+                    "
+                >
 
-                                <h1 class="brand-title">
-                                    SmashStep
-                                    <span>
-                                        Internal
-                                    </span>
-                                </h1>
+                    <tr>
 
-                                <div class="brand-desc">
-                                    Hệ thống quản lý nội bộ
-                                    chuyên nghiệp và hiệu quả
-                                    dành cho cửa hàng SmashStep.
-                                </div>
+                        <td align="center">
 
-                                <div class="features">
 
-                                    <div class="feature">
+                            <!-- ===================================== -->
+                            <!-- EMAIL CONTAINER -->
+                            <!-- ===================================== -->
 
-                                        <div class="feature-icon">
-                                            🛡️
+                            <table
+                                width="920"
+                                cellpadding="0"
+                                cellspacing="0"
+                                border="0"
+                                style="
+                                    width:100%%;
+                                    max-width:920px;
+                                    background:#FFFFFF;
+                                    border-radius:20px;
+                                    overflow:hidden;
+                                    box-shadow:
+                                        0 15px 45px
+                                        rgba(30,64,175,0.12);
+                                "
+                            >
+
+
+                                <tr>
+
+
+                                    <!-- ================================= -->
+                                    <!-- PANEL BÊN TRÁI -->
+                                    <!-- ================================= -->
+
+                                    <td
+                                        width="46%%"
+                                        valign="top"
+                                        style="
+                                            width:46%%;
+                                            padding:50px 38px;
+
+                                            color:#FFFFFF;
+
+                                            background:
+                                                linear-gradient(
+                                                    135deg,
+                                                    #1D4ED8,
+                                                    #2F80ED
+                                                );
+                                        "
+                                    >
+
+
+                                        <!-- BRAND BADGE -->
+
+                                        <div
+                                            style="
+                                                display:inline-block;
+
+                                                padding:
+                                                    7px 14px;
+
+                                                border:
+                                                    1px solid
+                                                    rgba(
+                                                        255,
+                                                        255,
+                                                        255,
+                                                        0.55
+                                                    );
+
+                                                border-radius:
+                                                    999px;
+
+                                                font-size:
+                                                    11px;
+
+                                                font-weight:
+                                                    700;
+
+                                                letter-spacing:
+                                                    1px;
+                                            "
+                                        >
+                                            SMASHSTEP
                                         </div>
 
-                                        <div class="feature-title">
-                                            Bảo mật
+
+
+                                        <!-- BRAND NAME -->
+
+                                        <div
+                                            style="
+                                                margin-top:
+                                                    25px;
+
+                                                font-size:
+                                                    40px;
+
+                                                line-height:
+                                                    1.05;
+
+                                                font-weight:
+                                                    800;
+
+                                                color:
+                                                    #FFFFFF;
+                                            "
+                                        >
+                                            SmashStep
                                         </div>
 
-                                        <div class="feature-text">
-                                            An toàn thông tin
+
+                                        <div
+                                            style="
+                                                font-size:
+                                                    38px;
+
+                                                line-height:
+                                                    1.1;
+
+                                                font-weight:
+                                                    300;
+
+                                                color:
+                                                    #FFFFFF;
+                                            "
+                                        >
+                                            Internal
                                         </div>
 
-                                    </div>
 
-                                    <div class="feature">
 
-                                        <div class="feature-icon">
-                                            ⚡
+                                        <!-- DESCRIPTION -->
+
+                                        <div
+                                            style="
+                                                margin-top:
+                                                    26px;
+
+                                                max-width:
+                                                    280px;
+
+                                                font-size:
+                                                    15px;
+
+                                                line-height:
+                                                    1.7;
+
+                                                color:
+                                                    rgba(
+                                                        255,
+                                                        255,
+                                                        255,
+                                                        0.92
+                                                    );
+                                            "
+                                        >
+                                            Hệ thống quản lý nội bộ
+                                            chuyên nghiệp và hiệu quả
+                                            dành cho cửa hàng
+                                            SmashStep.
                                         </div>
 
-                                        <div class="feature-title">
-                                            Hiệu quả
+
+
+                                        <!-- ================================= -->
+                                        <!-- FEATURE -->
+                                        <!-- ================================= -->
+
+                                        <table
+                                            width="100%%"
+                                            cellpadding="0"
+                                            cellspacing="0"
+                                            border="0"
+                                            style="
+                                                margin-top:
+                                                    80px;
+
+                                                color:
+                                                    #FFFFFF;
+                                            "
+                                        >
+
+                                            <tr>
+
+
+                                                <!-- BẢO MẬT -->
+
+                                                <td
+                                                    width="33%%"
+                                                    valign="top"
+                                                    style="
+                                                        width:
+                                                            33%%;
+
+                                                        padding-right:
+                                                            8px;
+                                                    "
+                                                >
+
+                                                    <div
+                                                        style="
+                                                            font-size:
+                                                                25px;
+
+                                                            margin-bottom:
+                                                                10px;
+                                                        "
+                                                    >
+                                                        🛡️
+                                                    </div>
+
+
+                                                    <div
+                                                        style="
+                                                            font-size:
+                                                                13px;
+
+                                                            font-weight:
+                                                                700;
+                                                        "
+                                                    >
+                                                        Bảo mật
+                                                    </div>
+
+
+                                                    <div
+                                                        style="
+                                                            margin-top:
+                                                                6px;
+
+                                                            font-size:
+                                                                10px;
+
+                                                            line-height:
+                                                                1.5;
+
+                                                            color:
+                                                                rgba(
+                                                                    255,
+                                                                    255,
+                                                                    255,
+                                                                    0.80
+                                                                );
+                                                        "
+                                                    >
+                                                        An toàn
+                                                        thông tin
+                                                    </div>
+
+                                                </td>
+
+
+
+                                                <!-- HIỆU QUẢ -->
+
+                                                <td
+                                                    width="33%%"
+                                                    valign="top"
+                                                    style="
+                                                        width:
+                                                            33%%;
+
+                                                        padding-right:
+                                                            8px;
+                                                    "
+                                                >
+
+                                                    <div
+                                                        style="
+                                                            font-size:
+                                                                25px;
+
+                                                            margin-bottom:
+                                                                10px;
+                                                        "
+                                                    >
+                                                        ⚡
+                                                    </div>
+
+
+                                                    <div
+                                                        style="
+                                                            font-size:
+                                                                13px;
+
+                                                            font-weight:
+                                                                700;
+                                                        "
+                                                    >
+                                                        Hiệu quả
+                                                    </div>
+
+
+                                                    <div
+                                                        style="
+                                                            margin-top:
+                                                                6px;
+
+                                                            font-size:
+                                                                10px;
+
+                                                            line-height:
+                                                                1.5;
+
+                                                            color:
+                                                                rgba(
+                                                                    255,
+                                                                    255,
+                                                                    255,
+                                                                    0.80
+                                                                );
+                                                        "
+                                                    >
+                                                        Tối ưu
+                                                        quy trình
+                                                    </div>
+
+                                                </td>
+
+
+
+                                                <!-- KẾT NỐI -->
+
+                                                <td
+                                                    width="33%%"
+                                                    valign="top"
+                                                    style="
+                                                        width:
+                                                            33%%;
+                                                    "
+                                                >
+
+                                                    <div
+                                                        style="
+                                                            font-size:
+                                                                25px;
+
+                                                            margin-bottom:
+                                                                10px;
+                                                        "
+                                                    >
+                                                        👥
+                                                    </div>
+
+
+                                                    <div
+                                                        style="
+                                                            font-size:
+                                                                13px;
+
+                                                            font-weight:
+                                                                700;
+                                                        "
+                                                    >
+                                                        Kết nối
+                                                    </div>
+
+
+                                                    <div
+                                                        style="
+                                                            margin-top:
+                                                                6px;
+
+                                                            font-size:
+                                                                10px;
+
+                                                            line-height:
+                                                                1.5;
+
+                                                            color:
+                                                                rgba(
+                                                                    255,
+                                                                    255,
+                                                                    255,
+                                                                    0.80
+                                                                );
+                                                        "
+                                                    >
+                                                        Làm việc
+                                                        cùng nhau
+                                                    </div>
+
+                                                </td>
+
+                                            </tr>
+
+                                        </table>
+
+
+                                    </td>
+
+
+
+                                    <!-- ================================= -->
+                                    <!-- PANEL BÊN PHẢI -->
+                                    <!-- ================================= -->
+
+                                    <td
+                                        width="54%%"
+                                        valign="top"
+                                        style="
+                                            width:54%%;
+
+                                            padding:
+                                                45px 40px;
+
+                                            background:
+                                                #FFFFFF;
+                                        "
+                                    >
+
+
+                                        <!-- GREETING -->
+
+                                        <div
+                                            style="
+                                                font-size:
+                                                    20px;
+
+                                                font-weight:
+                                                    500;
+
+                                                color:
+                                                    #111827;
+                                            "
+                                        >
+                                            👤 Xin chào,
                                         </div>
 
-                                        <div class="feature-text">
-                                            Tối ưu quy trình
+
+
+                                        <!-- EMPLOYEE NAME -->
+
+                                        <div
+                                            style="
+                                                margin-top:
+                                                    5px;
+
+                                                font-size:
+                                                    26px;
+
+                                                line-height:
+                                                    1.3;
+
+                                                font-weight:
+                                                    800;
+
+                                                color:
+                                                    #2563EB;
+                                            "
+                                        >
+                                            %s 👋
                                         </div>
 
-                                    </div>
 
-                                    <div class="feature">
 
-                                        <div class="feature-icon">
-                                            👥
+                                        <!-- DESCRIPTION -->
+
+                                        <div
+                                            style="
+                                                margin-top:
+                                                    22px;
+
+                                                color:
+                                                    #64748B;
+
+                                                font-size:
+                                                    13px;
+
+                                                line-height:
+                                                    1.8;
+                                            "
+                                        >
+
+                                            Tài khoản truy cập hệ thống
+                                            SmashStep Internal của bạn
+                                            đã được tạo thành công.
+
+                                            <br>
+
+                                            Vui lòng sử dụng thông tin
+                                            dưới đây để đăng nhập.
+
                                         </div>
 
-                                        <div class="feature-title">
-                                            Kết nối
+
+
+                                        <!-- ================================= -->
+                                        <!-- ROLE BADGE -->
+                                        <!-- ================================= -->
+
+                                        <div
+                                            style="
+                                                margin-top:
+                                                    18px;
+
+                                                display:
+                                                    inline-block;
+
+                                                padding:
+                                                    7px 13px;
+
+                                                border-radius:
+                                                    999px;
+
+                                                background:
+                                                    #EFF6FF;
+
+                                                color:
+                                                    #2563EB;
+
+                                                font-size:
+                                                    12px;
+
+                                                font-weight:
+                                                    700;
+
+                                                border:
+                                                    1px solid
+                                                    #DBEAFE;
+                                            "
+                                        >
+                                            Vai trò: %s
                                         </div>
 
-                                        <div class="feature-text">
-                                            Làm việc cùng nhau
+
+
+                                        <!-- ================================= -->
+                                        <!-- ACCOUNT BOX -->
+                                        <!-- ================================= -->
+
+                                        <table
+                                            width="100%%"
+                                            cellpadding="0"
+                                            cellspacing="0"
+                                            border="0"
+                                            style="
+                                                width:
+                                                    100%%;
+
+                                                margin-top:
+                                                    22px;
+
+                                                border:
+                                                    1px solid
+                                                    #BFDBFE;
+
+                                                border-radius:
+                                                    12px;
+
+                                                background:
+                                                    #F8FBFF;
+
+                                                border-collapse:
+                                                    separate;
+
+                                                overflow:
+                                                    hidden;
+                                            "
+                                        >
+
+
+                                            <!-- USERNAME -->
+
+                                            <tr>
+
+
+                                                <td
+                                                    style="
+                                                        padding:
+                                                            17px 18px;
+
+                                                        border-bottom:
+                                                            1px solid
+                                                            #BFDBFE;
+                                                    "
+                                                >
+
+                                                    <div
+                                                        style="
+                                                            color:
+                                                                #2563EB;
+
+                                                            font-size:
+                                                                11px;
+
+                                                            font-weight:
+                                                                700;
+                                                        "
+                                                    >
+                                                        👤
+                                                        &nbsp;
+                                                        TÊN TÀI KHOẢN
+                                                    </div>
+
+                                                </td>
+
+
+
+                                                <td
+                                                    align="right"
+                                                    style="
+                                                        padding:
+                                                            17px 18px;
+
+                                                        border-bottom:
+                                                            1px solid
+                                                            #BFDBFE;
+
+                                                        color:
+                                                            #111827;
+
+                                                        font-size:
+                                                            15px;
+
+                                                        font-weight:
+                                                            800;
+
+                                                        letter-spacing:
+                                                            0.5px;
+                                                    "
+                                                >
+                                                    %s
+                                                </td>
+
+
+                                            </tr>
+
+
+
+                                            <!-- PASSWORD -->
+
+                                            <tr>
+
+
+                                                <td
+                                                    style="
+                                                        padding:
+                                                            17px 18px;
+                                                    "
+                                                >
+
+                                                    <div
+                                                        style="
+                                                            color:
+                                                                #2563EB;
+
+                                                            font-size:
+                                                                11px;
+
+                                                            font-weight:
+                                                                700;
+                                                        "
+                                                    >
+                                                        🔒
+                                                        &nbsp;
+                                                        MẬT KHẨU TẠM THỜI
+                                                    </div>
+
+                                                </td>
+
+
+
+                                                <td
+                                                    align="right"
+                                                    style="
+                                                        padding:
+                                                            17px 18px;
+
+                                                        color:
+                                                            #111827;
+
+                                                        font-size:
+                                                            15px;
+
+                                                        font-weight:
+                                                            800;
+
+                                                        letter-spacing:
+                                                            1px;
+                                                    "
+                                                >
+                                                    %s
+                                                </td>
+
+
+                                            </tr>
+
+
+                                        </table>
+
+
+
+                                        <!-- ================================= -->
+                                        <!-- LOGIN BUTTON -->
+                                        <!-- ================================= -->
+
+                                        <table
+                                            width="100%%"
+                                            cellpadding="0"
+                                            cellspacing="0"
+                                            border="0"
+                                            style="
+                                                margin-top:
+                                                    26px;
+                                            "
+                                        >
+
+                                            <tr>
+
+                                                <td align="center">
+
+
+                                                    <a
+                                                        href="%s"
+
+                                                        style="
+                                                            display:
+                                                                inline-block;
+
+                                                            min-width:
+                                                                220px;
+
+                                                            padding:
+                                                                15px 25px;
+
+                                                            border-radius:
+                                                                9px;
+
+                                                            background:
+                                                                #2F80ED;
+
+                                                            color:
+                                                                #FFFFFF;
+
+                                                            text-decoration:
+                                                                none;
+
+                                                            font-size:
+                                                                14px;
+
+                                                            font-weight:
+                                                                700;
+
+                                                            box-shadow:
+                                                                0 7px 18px
+                                                                rgba(
+                                                                    47,
+                                                                    128,
+                                                                    237,
+                                                                    0.25
+                                                                );
+                                                        "
+                                                    >
+                                                        ➜
+                                                        &nbsp;
+                                                        Đăng nhập hệ thống
+                                                    </a>
+
+
+                                                </td>
+
+                                            </tr>
+
+                                        </table>
+
+
+
+                                        <!-- ================================= -->
+                                        <!-- WARNING -->
+                                        <!-- ================================= -->
+
+                                        <div
+                                            style="
+                                                margin-top:
+                                                    24px;
+
+                                                padding:
+                                                    15px 17px;
+
+                                                border-radius:
+                                                    10px;
+
+                                                background:
+                                                    #FFF7ED;
+
+                                                border:
+                                                    1px solid
+                                                    #FED7AA;
+
+                                                color:
+                                                    #92400E;
+
+                                                font-size:
+                                                    12px;
+
+                                                line-height:
+                                                    1.7;
+                                            "
+                                        >
+
+                                            ⚠️
+                                            &nbsp;
+
+                                            Đây là mật khẩu tạm thời.
+                                            Vui lòng đổi mật khẩu ngay
+                                            sau lần đăng nhập đầu tiên
+                                            để đảm bảo an toàn tài khoản.
+
                                         </div>
 
-                                    </div>
 
-                                </div>
 
-                            </td>
+                                        <!-- ================================= -->
+                                        <!-- SECURITY INFO -->
+                                        <!-- ================================= -->
 
-                            <td class="right">
+                                        <div
+                                            style="
+                                                margin-top:
+                                                    16px;
 
-                                <h2 class="hello">
-                                    👤 Xin chào,
-                                </h2>
+                                                padding:
+                                                    13px 16px;
 
-                                <div class="name">
-                                    %s 👋
-                                </div>
+                                                border-radius:
+                                                    10px;
 
-                                <div class="description">
+                                                background:
+                                                    #EFF6FF;
 
-                                    Tài khoản truy cập
-                                    hệ thống của bạn
-                                    đã được tạo.
+                                                color:
+                                                    #475569;
 
-                                    <br>
+                                                font-size:
+                                                    11px;
 
-                                    Vui lòng sử dụng
-                                    thông tin dưới đây
-                                    để đăng nhập.
+                                                line-height:
+                                                    1.7;
+                                            "
+                                        >
 
-                                </div>
+                                            🔐
+                                            Vì lý do bảo mật,
+                                            không chia sẻ tên tài khoản
+                                            và mật khẩu này cho người khác.
 
-                                <div class="account-box">
+                                        </div>
 
-                                    <div class="account-row">
 
-                                        <span class="label">
-                                            👤 USERNAME
-                                        </span>
 
-                                        <span class="value">
-                                            %s
-                                        </span>
+                                        <!-- ================================= -->
+                                        <!-- FOOTER -->
+                                        <!-- ================================= -->
 
-                                    </div>
+                                        <div
+                                            style="
+                                                margin-top:
+                                                    27px;
 
-                                    <div class="account-row">
+                                                padding-top:
+                                                    18px;
 
-                                        <span class="label">
-                                            🔒 MẬT KHẨU TẠM THỜI
-                                        </span>
+                                                border-top:
+                                                    1px solid
+                                                    #E5E7EB;
 
-                                        <span class="value">
-                                            %s
-                                        </span>
+                                                color:
+                                                    #94A3B8;
 
-                                    </div>
+                                                font-size:
+                                                    10px;
 
-                                </div>
+                                                line-height:
+                                                    1.7;
 
-                                <a
-                                    class="login-btn"
-                                    href="http://localhost:5173"
-                                >
-                                    ➜ Đăng nhập hệ thống
-                                </a>
+                                                text-align:
+                                                    center;
+                                            "
+                                        >
 
-                                <div class="warning">
+                                            Email được gửi tự động từ
+                                            hệ thống
 
-                                    ⚠️
-                                    Bạn cần đổi mật khẩu
-                                    ngay sau lần đăng nhập
-                                    đầu tiên để đảm bảo
-                                    an toàn tài khoản.
+                                            <strong
+                                                style="
+                                                    color:
+                                                        #2563EB;
+                                                "
+                                            >
+                                                SmashStep Internal
+                                            </strong>.
 
-                                </div>
+                                            <br>
 
-                                <div class="footer">
+                                            Vui lòng không trả lời
+                                            email này.
 
-                                    Email được gửi tự động
-                                    từ hệ thống SmashStep.
+                                        </div>
 
-                                    <br>
 
-                                    Vui lòng không trả lời
-                                    email này.
+                                    </td>
 
-                                </div>
 
-                            </td>
+                                </tr>
 
-                        </tr>
-                    </table>
 
-                </div>
+                            </table>
+
+
+                            <!-- ===================================== -->
+                            <!-- COPYRIGHT -->
+                            <!-- ===================================== -->
+
+                            <div
+                                style="
+                                    margin-top:
+                                        18px;
+
+                                    color:
+                                        #94A3B8;
+
+                                    font-size:
+                                        10px;
+
+                                    text-align:
+                                        center;
+                                "
+                            >
+                                © SmashStep Internal
+                                · Hệ thống quản lý cửa hàng
+                            </div>
+
+
+                        </td>
+
+                    </tr>
+
+                </table>
+
 
                 </body>
+
                 </html>
                 """.formatted(
-                escapeHtml(employeeName),
-                escapeHtml(username),
-                escapeHtml(password)
+                safeName,
+                safeRole,
+                safeUsername,
+                safePassword,
+                safeFrontendUrl
         );
     }
 
-    /*
-     * Tránh dữ liệu người dùng
-     * phá HTML email.
-     */
+
+    // =========================================================
+    // ESCAPE HTML
+    // =========================================================
+
     private String escapeHtml(
             String value
     ) {

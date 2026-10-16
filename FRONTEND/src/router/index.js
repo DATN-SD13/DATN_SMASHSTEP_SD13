@@ -55,6 +55,7 @@ const router = createRouter({
     { path: '/dot-giam-gia/sua/:code',    component: EditCampaign,   meta: { title: 'Sửa đợt giảm giá', parent: { label: 'Đợt giảm giá', to: '/dot-giam-gia' }, requiresAuth: true, userType: 'NHAN_VIEN' } },
 
     { path: '/ban-hang',  component: POSSales,       meta: { title: 'Bán hàng tại quầy', requiresAuth: true, userType: 'NHAN_VIEN' } },
+    { path: '/thong-ke-tong-hop', component: () => import('../modules/admin/statistics/view/StatisticsDashboard.vue'), meta: { title: 'Thống kê tổng hợp', requiresAuth: true, userType: 'NHAN_VIEN' } },
     { path: '/thong-ke',  component: StatisticsView, meta: { title: 'Thống kê', requiresAuth: true, userType: 'NHAN_VIEN' } },
 
     { path: '/san-pham',           component: () => import('../modules/admin/product/views/ProductList.vue'),    meta: { title: 'Sản phẩm', parent: prod, requiresAuth: true, userType: 'NHAN_VIEN' } },

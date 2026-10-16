@@ -1,20 +1,17 @@
-USE SmashStep;
+-- Source: origin/hung 0eec8c2. Additive only; guard each column independently.
+USE [SmashStep];
 GO
-
--- Thêm cột reset_token và reset_token_expiry vào bảng khach_hang
--- Chạy một lần duy nhất trên môi trường dev/test/prod
-
+SET QUOTED_IDENTIFIER ON;
+SET ANSI_NULLS ON;
+GO
 IF COL_LENGTH('dbo.khach_hang', 'reset_token') IS NULL
 BEGIN
-    ALTER TABLE khach_hang
-    ADD reset_token VARCHAR(255) NULL,
-        reset_token_expiry DATETIME2 NULL;
-
-    PRINT N'Đã thêm cột reset_token và reset_token_expiry vào bảng khach_hang.';
-END
-ELSE
+    ALTER TABLE dbo.khach_hang ADD reset_token VARCHAR(255) NULL;
+    PRINT N'Added khach_hang.reset_token';
+END;
+IF COL_LENGTH('dbo.khach_hang', 'reset_token_expiry') IS NULL
 BEGIN
-    PRINT N'Cột reset_token đã tồn tại, bỏ qua.';
-END
-
+    ALTER TABLE dbo.khach_hang ADD reset_token_expiry DATETIME2 NULL;
+    PRINT N'Added khach_hang.reset_token_expiry';
+END;
 GO

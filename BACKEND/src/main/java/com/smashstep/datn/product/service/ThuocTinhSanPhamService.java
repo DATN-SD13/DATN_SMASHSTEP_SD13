@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import jakarta.persistence.criteria.Predicate;
 import java.math.BigInteger;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.*;
 
@@ -163,7 +164,19 @@ public class ThuocTinhSanPhamService {
         return maMoi;
     }
 
+    private String chuanHoaKichCo(String value) {
+        String size = QuyTacSanPham.boKhoangTrang(value);
+        if (size.isEmpty()) throw AppException.badRequest("Kích cỡ không được để trống.");
+        if (size.length() > 50) throw AppException.badRequest("Giá trị kích thước tối đa 50 ký tự");
+        if (!size.matches("[0-9]+(?:[.,][0-9]+)?") || new BigDecimal(size.replace(',', '.')).signum() <= 0)
+            throw AppException.badRequest("Kích cỡ chỉ được nhập số lớn hơn 0.");
+        // Keep existing string identity: 40 and 40.0 remain distinct values.
+        return size.replace(',', '.');
+    }
+
     public KiemTraTrungResponse.Attribute kiemTraTrung(String loai, ThuocTinhTrungRequest request) {
+        if ("sizes".equals(loai)) request = new ThuocTinhTrungRequest(
+                chuanHoaKichCo(request.getTen()), request.getMaMauHex(), request.getExcludeId());
         if (request.getExcludeId() != null) layChiTiet(loai, request.getExcludeId());
         if ("sizes".equals(loai) && QuyTacSanPham.boKhoangTrang(request.getTen()).length() > 50)
             throw AppException.badRequest("Giá trị kích thước tối đa 50 ký tự");
@@ -212,6 +225,8 @@ public class ThuocTinhSanPhamService {
 
     @Transactional
     public ThuocTinhResponse luuThuocTinh(String loai, Long id, ThuocTinhRequest yeuCau) {
+        if ("sizes".equals(loai)) yeuCau = new ThuocTinhRequest(yeuCau.getMa(),
+                chuanHoaKichCo(yeuCau.getTen()), yeuCau.getGhiChu(), yeuCau.getMaMauHex(), yeuCau.getTrangThai());
         khoaGhi.khoa("attributes:" + loai);
         QuyTacSanPham.kiemTraTrangThai(yeuCau.getTrangThai());
         var duplicate = kiemTraTrung(loai, new ThuocTinhTrungRequest(yeuCau.getTen(), yeuCau.getMaMauHex(), id));

@@ -59,9 +59,12 @@ public class CanonicalPosTichHopTest {
 
     @BeforeEach
     void resetCapture() {
+        com.smashstep.datn.support.EmployeeSecurityFixture.authenticate(em);
         SqlCapture.sql.clear();
         mvc = MockMvcBuilders.webAppContextSetup(context).build();
     }
+
+    @org.junit.jupiter.api.AfterEach void clearEmployee() { com.smashstep.datn.support.EmployeeSecurityFixture.clear(); }
 
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
@@ -107,7 +110,7 @@ public class CanonicalPosTichHopTest {
         String code =
                 mapper.readTree(thanhToan.getResponse().getContentAsString())
                         .path("data")
-                        .path("invoiceCode")
+                        .path("maHoaDon")
                         .asText();
         var chuyenKetQuaThanhToan = sales.thanhToan(request);
         assertEquals(code, chuyenKetQuaThanhToan.getMaHoaDon());
@@ -124,7 +127,7 @@ public class CanonicalPosTichHopTest {
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(mapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.invoiceCode").value(code));
+                .andExpect(jsonPath("$.data.maHoaDon").value(code));
         mvc.perform(get("/api/hoa-don/" + code))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.maHinhThucNhan").value(selectedCustomer ? 1 : 0))
@@ -137,6 +140,8 @@ public class CanonicalPosTichHopTest {
         assertEquals(variant.getTonKho() - 1, sales.chiTietSanPhamBan(variant.getId()).getTonKho());
         assertFalse(detail.getLichSuThanhToan().isEmpty());
         assertNotNull(detail.getIdNhanVien());
+        assertEquals(request.getIdNhanVien(), detail.getIdNhanVien());
+        assertEquals(request.getIdKhachHang(), detail.getIdKhachHang());
         for (int status : selectedCustomer ? new int[] {1, 2, 3, 4, 5} : new int[] {5}) {
             var update = new CapNhatTrangThaiHoaDonDto();
             update.setTrangThai(status);

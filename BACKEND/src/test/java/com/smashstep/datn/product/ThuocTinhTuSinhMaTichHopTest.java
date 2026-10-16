@@ -85,7 +85,7 @@ class ThuocTinhTuSinhMaTichHopTest {
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").value("Kích thước không có mã."));
         mvc.perform(get("/api/product-attributes/unknown/next-code")).andExpect(status().isBadRequest());
         String body = mvc.perform(post("/api/product-attributes/sizes").contentType(MediaType.APPLICATION_JSON)
-                        .content(mapper.writeValueAsString(Map.of("giaTri", testName + "-46.5", "ghiChu", "Test size", "trangThai", 1))))
+                        .content(mapper.writeValueAsString(Map.of("giaTri", "46." + new java.math.BigInteger(UUID.randomUUID().toString().replace("-", ""), 16), "ghiChu", "Test size", "trangThai", 1))))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.ma").isEmpty())
                 .andReturn().getResponse().getContentAsString();
         long id = mapper.readTree(body).get("id").asLong();

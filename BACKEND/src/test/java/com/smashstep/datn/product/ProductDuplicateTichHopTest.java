@@ -53,6 +53,7 @@ class ProductDuplicateTichHopTest {
         return new SanPhamSuaRequest(null, r.getTenSanPham(), r.getDanhMucId(), r.getThuongHieuId(),
                 r.getChatLieuId(), r.getKieuDangId(), r.getCoGiayId(), r.getXuatXuId(), "changed", r.getTrangThai());
     }
+    private String numericSize() { return "40." + new java.math.BigInteger(UUID.randomUUID().toString().replace("-", ""), 16); }
     private String hex() { return String.format("#%06X", UUID.randomUUID().hashCode() & 0xFFFFFF); }
 
     @Test void normalizationKeepsVietnameseAccentsAndSizesAreStrings() {
@@ -125,10 +126,11 @@ class ProductDuplicateTichHopTest {
     void allEightAttributesNormalizeNamesIncludeInactiveAndExcludeSelf(String type) throws Exception {
         String color = "colors".equals(type) ? hex() : null;
         String words = "sizes".equals(type) ? "Size Value" : "Giá Trị";
-        var r = new ThuocTinhRequest(null, key + "   " + words.replace(" ", "   "), null, color, 0);
+        String name = "sizes".equals(type) ? numericSize() : key + "   " + words.replace(" ", "   ");
+        var r = new ThuocTinhRequest(null, name, null, color, 0);
         var existing = attributes.luuThuocTinh(type, null, r);
         String preview = "sizes".equals(type) ? null : attributes.taoMaTiepTheo(type);
-        String normalized = "  " + (key + " " + words).toLowerCase(Locale.ROOT) + "  ";
+        String normalized = "  " + ("sizes".equals(type) ? name : (key + " " + words).toLowerCase(Locale.ROOT)) + "  ";
         var check = new ThuocTinhTrungRequest(normalized, color, null);
         mvc.perform(post("/api/product-attributes/" + type + "/check-duplicate").contentType(MediaType.APPLICATION_JSON).content(json(check)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.duplicate").value(true))
@@ -142,11 +144,12 @@ class ProductDuplicateTichHopTest {
         assertFalse(attributes.kiemTraTrung(type, check).isDuplicate());
         mvc.perform(put("/api/product-attributes/" + type + "/" + existing.getId()).contentType(MediaType.APPLICATION_JSON).content(json(r)))
                 .andExpect(status().isOk());
+        String otherName = "sizes".equals(type) ? numericSize() : key + "Other";
         var other = attributes.luuThuocTinh(type, null,
-                new ThuocTinhRequest(null, key + "Other", null, color == null ? null : hex(), 1));
+                new ThuocTinhRequest(null, otherName, null, color == null ? null : hex(), 1));
         mvc.perform(put("/api/product-attributes/" + type + "/" + other.getId()).contentType(MediaType.APPLICATION_JSON).content(json(r)))
                 .andExpect(status().isConflict());
-        assertEquals(key + "Other", attributes.layChiTiet(type, other.getId()).getTen());
+        assertEquals(otherName, attributes.layChiTiet(type, other.getId()).getTen());
     }
 
     @Test void colorHexIsCaseInsensitiveAndReportsNameHexAndBoth() throws Exception {
@@ -164,8 +167,8 @@ class ProductDuplicateTichHopTest {
     }
 
     @Test void sizes40And40Point0RemainDifferentStrings() {
-        var r = new ThuocTinhRequest(null, key + "40", null, null, 1);
-        attributes.luuThuocTinh("sizes", null, r); r.setTen(key + "40.0");
+        var r = new ThuocTinhRequest(null, numericSize(), null, null, 1);
+        attributes.luuThuocTinh("sizes", null, r); r.setTen(r.getTen() + "0");
         assertFalse(attributes.kiemTraTrung("sizes", new ThuocTinhTrungRequest(r.getTen(), null, null)).isDuplicate());
         assertNotNull(attributes.luuThuocTinh("sizes", null, r).getId());
     }

@@ -76,6 +76,7 @@ public class LichLamViecService {
             Long caId, Long vaiTroId, String tuKhoa,
             int page, int size, boolean tinhDoanhThu) {
 
+        if (tuNgay != null && denNgay != null && tuNgay.isAfter(denNgay)) throw AppException.badRequest("Khoảng ngày không hợp lệ");
         if (page < 1) page = 1;
         size = Math.min(Math.max(size, 1), 100);
 

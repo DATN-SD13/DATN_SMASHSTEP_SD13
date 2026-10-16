@@ -40,21 +40,49 @@ class LegacyJavaDtoCompatibilityTest {
 
     @Test
     void salesJsonKeepsCatalogPaymentQuoteAndReceiptProperties() {
-        assertJsonKeys(catalog(), "id", "code", "productCode", "name", "color", "size", "price", "originalPrice", "stock");
-        assertJsonKeys(new PaymentMethod(1L, "TIEN_MAT", "Tiền mặt"), "id", "code", "name");
+        // Latest main exposes canonical Vietnamese JSON names to the POS UI.
+        assertJsonKeys(catalog(), "id", "maSanPhamChiTiet", "maSanPham", "tenSanPham", "mauSac", "kichThuoc", "giaBan", "giaGoc", "tonKho");
+        assertJsonKeys(new PaymentMethod(1L, "TIEN_MAT", "Tiền mặt"), "id", "maPhuongThucThanhToan", "tenPhuongThucThanhToan");
         Quote quote = new Quote(new BigDecimal("100.00"), new BigDecimal("10.00"), new BigDecimal("90.00"));
-        JsonNode json = assertJsonKeys(quote, "subtotal", "discount", "total");
-        assertEquals(0, quote.total().compareTo(json.get("total").decimalValue()));
-        assertJsonKeys(new Receipt(1L, "POS-test", quote.subtotal(), quote.discount(), quote.total(), BigDecimal.ZERO),
-                "invoiceId", "invoiceCode", "subtotal", "discount", "total", "change");
+        JsonNode json = assertJsonKeys(quote, "tongTienHang", "tienGiam", "thanhTien", "phiVanChuyen", "danhSachPhieuGiamGia", "loiPhieuDaChon", "phieuChuaDuDieuKien");
+        assertEquals(0, quote.total().compareTo(json.get("thanhTien").decimalValue()));
+        assertJsonKeys(new Receipt(1L, "HD000001", quote.subtotal(), quote.discount(), quote.total(), BigDecimal.ZERO),
+                "idHoaDon", "maHoaDon", "tongTienHang", "tienGiam", "thanhTien", "tienThua", "danhSachThanhToan", "phiVanChuyen");
     }
 
     @Test
-    void convertedSalesValuesKeepImmutableFieldsAndBothAccessorStyles() throws Exception {
-        assertImmutableAccessors(catalog());
-        assertImmutableAccessors(new PaymentMethod(1L, null, null));
-        assertImmutableAccessors(new Quote(BigDecimal.ONE, BigDecimal.ZERO, BigDecimal.ONE));
-        assertImmutableAccessors(new Receipt(1L, "POS-test", BigDecimal.ONE, BigDecimal.ZERO, BigDecimal.ONE, null));
+    void salesAccessorsKeepCanonicalValuesAndExplicitFluentEnrichment() throws Exception {
+        CatalogItem item = catalog();
+        assertEquals("CT001", item.getMaSanPhamChiTiet());
+        assertEquals("SP001", item.getMaSanPham());
+        assertEquals(new BigDecimal("90.00"), item.getGiaBan());
+        assertSame(item, item.tonKhaDung(3).ganIdSanPham(12L));
+        assertEquals(3, item.getTonKho());
+        assertEquals(12L, item.getIdSanPham());
+        assertFinalFieldsExcept(item, "tonKho", "idSanPham");
+
+        PaymentMethod method = new PaymentMethod(1L, "TIEN_MAT", "Tiền mặt");
+        assertTrue(PaymentMethod.class.isRecord());
+        assertEquals(1L, method.id());
+        assertEquals("TIEN_MAT", method.maPhuongThucThanhToan());
+        assertEquals("Tiền mặt", method.tenPhuongThucThanhToan());
+
+        Quote quote = new Quote(BigDecimal.ONE, BigDecimal.ZERO, BigDecimal.ONE);
+        assertEquals(quote.getTongTienHang(), quote.subtotal());
+        assertEquals(quote.getTienGiam(), quote.discount());
+        assertEquals(quote.getThanhTien(), quote.total());
+        assertSame(quote, quote.phieuChuaDuDieuKien(List.of()));
+        assertThrows(UnsupportedOperationException.class, () -> quote.getDanhSachPhieuGiamGia().add(null));
+        assertThrows(UnsupportedOperationException.class, () -> quote.getPhieuChuaDuDieuKien().add(null));
+        assertFinalFieldsExcept(quote, "phieuChuaDuDieuKien");
+
+        Receipt receipt = new Receipt(1L, "HD000001", BigDecimal.ONE, BigDecimal.ZERO, BigDecimal.ONE, null);
+        assertSame(receipt, receipt.ghiNhanThanhToan(List.of(), BigDecimal.TEN, 5));
+        assertEquals("HD000001", receipt.getMaHoaDon());
+        assertEquals(BigDecimal.TEN, receipt.getPhiVanChuyen());
+        assertEquals(5, receipt.getTrangThai());
+        assertThrows(UnsupportedOperationException.class, () -> receipt.getDanhSachThanhToan().add(null));
+        assertFinalFieldsExcept(receipt, "danhSachThanhToan", "phiVanChuyen", "trangThai");
     }
 
     @Test
@@ -67,7 +95,9 @@ class LegacyJavaDtoCompatibilityTest {
         Quote second = new Quote(BigDecimal.TEN, BigDecimal.ONE, new BigDecimal("9"));
         assertEquals(first, second);
         assertEquals(first.hashCode(), second.hashCode());
-        assertEquals("Quote[subtotal=10, discount=1, total=9]", first.toString());
+        assertTrue(first.toString().contains("tongTienHang=10"));
+        assertTrue(first.toString().contains("tienGiam=1"));
+        assertTrue(first.toString().contains("thanhTien=9"));
         assertEquals(new Receipt(1L, "POS-test", BigDecimal.TEN, BigDecimal.ONE, new BigDecimal("9"), null),
                 new Receipt(1L, "POS-test", BigDecimal.TEN, BigDecimal.ONE, new BigDecimal("9"), null));
     }
@@ -79,6 +109,20 @@ class LegacyJavaDtoCompatibilityTest {
         assertEquals("Nhân viên kiểm tra", request.getName());
         assertSame(NhanVienRequest.class, Class.forName("com.smashstep.datn.employee.dto.NhanVienRequest"));
         assertTrue(NhanVienController.class.getDeclaredMethods().length > 0);
+    }
+
+    private void assertFinalFieldsExcept(Object value, String... mutableNames) throws Exception {
+        Class<?> type = value.getClass();
+        assertTrue(Modifier.isFinal(type.getModifiers()));
+        var mutable = java.util.Set.of(mutableNames);
+        for (Field field : type.getDeclaredFields()) {
+            assertTrue(Modifier.isPrivate(field.getModifiers()), field.getName());
+            assertEquals(!mutable.contains(field.getName()), Modifier.isFinal(field.getModifiers()), field.getName());
+            String getter = "get" + Character.toUpperCase(field.getName().charAt(0)) + field.getName().substring(1);
+            assertEquals(field.getType(), type.getMethod(getter).getReturnType());
+            field.setAccessible(true);
+            assertEquals(field.get(value), type.getMethod(getter).invoke(value), field.getName());
+        }
     }
 
     private CatalogItem catalog() {

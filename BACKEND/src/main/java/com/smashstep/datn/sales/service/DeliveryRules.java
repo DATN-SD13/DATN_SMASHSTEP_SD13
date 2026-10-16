@@ -76,9 +76,13 @@ public final class DeliveryRules {
     }
 
     public static void apDung(HoaDon h, SalesDelivery giaoHang, String ghiChu) {
+        if (ghiChu != null && ghiChu.startsWith(PosDraftRules.TON_KHO_THUC))
+            throw AppException.badRequest("Ghi chú chứa tiền tố hệ thống");
+        boolean daTruKho = PosDraftRules.daTruKho(h);
         h.setGhiChu(
                 (giaoHang.apDung() ? PosDraftRules.DELIVERY_PREFIX : PosDraftRules.PREFIX)
-                        + Objects.toString(ghiChu, ""));
+                        + (daTruKho ? PosDraftRules.TON_KHO_THUC : "") + Objects.toString(ghiChu, ""));
+        if (h.getGhiChu().length() > 1000) throw AppException.badRequest("Ghi chú quá dài; vui lòng nhập tối đa 960 ký tự");
         h.setPhiVanChuyen(giaoHang.phiVanChuyen());
         h.setDonViVanChuyen(null);
         h.setDiaChiGiaoHang(giaoHang.apDung() ? giaoHang.diaChi() : null);

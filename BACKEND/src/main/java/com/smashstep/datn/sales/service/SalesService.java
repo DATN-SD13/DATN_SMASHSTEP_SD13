@@ -536,7 +536,7 @@ public class SalesService {
             BigDecimal giaBan = duLieu.bangGia().get(v.getId()).getEffectivePrice();
             chiTiet.setDonGia(giaBan);
             chiTiet.setThanhTien(giaBan.multiply(BigDecimal.valueOf(chiTiet.getSoLuong())));
-            v.setSoLuong(v.getSoLuong() - chiTiet.getSoLuong());
+            if (!PosDraftRules.daTruKho(h)) v.setSoLuong(v.getSoLuong() - chiTiet.getSoLuong());
             v.setNgayCapNhat(thoiDiem);
         }
         if (duLieu.phieuGiamGia() != null) {
@@ -682,6 +682,13 @@ public class SalesService {
                 .contains(phuongThuc.getMaPhuongThuc())) {
             throw AppException.badRequest("Phương thức thanh toán không hợp lệ tại quầy");
         }
+        Map<Long, Integer> daTruCuaDon = Map.of();
+        if (yeuCau.getIdHoaDon() != null) {
+            var draft = hoaDonThuocNhanVien(yeuCau.getIdHoaDon(), false);
+            if (PosDraftRules.daTruKho(draft)) daTruCuaDon = TonKhoHoaDonCho.soLuong(entityManager.createQuery(
+                            "select d from HoaDonChiTiet d where d.idHoaDon.id = :id", HoaDonChiTiet.class)
+                    .setParameter("id", draft.getId()).getResultList());
+        }
         Map<Long, SanPhamChiTiet> danhSachBienThe = new LinkedHashMap<>();
         BigDecimal tongTienHang = SO_KHONG;
         for (SalesRequest.Item item :
@@ -707,7 +714,7 @@ public class SalesService {
                     || !Integer.valueOf(1).equals(bienThe.getIdSanPham().getTrangThai())) {
                 throw AppException.badRequest("Biến thể không còn được bán");
             }
-            if (bienThe.getSoLuong() == null || bienThe.getSoLuong() < item.getSoLuong())
+            if (bienThe.getSoLuong() == null || ((long) bienThe.getSoLuong() + daTruCuaDon.getOrDefault(bienThe.getId(), 0)) < item.getSoLuong())
                 throw AppException.conflict("Tồn kho không đủ");
             danhSachBienThe.put(bienThe.getId(), bienThe);
         }
@@ -716,7 +723,7 @@ public class SalesService {
         for (var item : yeuCau.getDanhSachSanPham()) {
             if (item.getSoLuong()
                     > GiuHangTaiQuay.khaDung(
-                    danhSachBienThe.get(item.getIdSanPhamChiTiet()).getSoLuong(),
+                    danhSachBienThe.get(item.getIdSanPhamChiTiet()).getSoLuong() + daTruCuaDon.getOrDefault(item.getIdSanPhamChiTiet(), 0),
                     giuKhac.getOrDefault(item.getIdSanPhamChiTiet(), 0L)))
                 throw AppException.conflict(
                         "Không đủ tồn khả dụng; sản phẩm đang được giữ bởi hóa đơn khác");

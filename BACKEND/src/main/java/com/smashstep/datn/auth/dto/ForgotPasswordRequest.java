@@ -11,5 +11,6 @@ public class ForgotPasswordRequest {
 
     @NotBlank(message = "Email không được để trống")
     @Email(message = "Email không hợp lệ")
+    @jakarta.validation.constraints.Size(max = 255)
     private String email;
 }

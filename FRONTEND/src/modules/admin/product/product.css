@@ -101,3 +101,6 @@
 .product-page .p-price-effective { margin-top: 2px; font-weight: 700; color: #dc3545; }
 
 @media print { .product-toast { display: none !important; } }
+
+/* Native color selection with a read-only value; scoped to product forms. */
+.product-page .p-color-picker-row{display:flex;align-items:center;gap:12px}.product-page .p-form-grid input.p-color-picker{width:56px;height:40px;min-height:40px;padding:3px;border:1px solid var(--p-border,#dbe3ed);border-radius:8px;cursor:pointer;background:#fff;flex:0 0 56px}.product-page .p-color-hex-readonly{font-family:monospace;font-weight:600;color:#17365f;letter-spacing:.5px}

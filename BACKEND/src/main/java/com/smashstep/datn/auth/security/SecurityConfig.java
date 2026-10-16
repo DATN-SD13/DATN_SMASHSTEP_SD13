@@ -60,6 +60,8 @@ public class SecurityConfig {
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
+                // Public storefront exposes read-only catalogue endpoints.
+                .requestMatchers(HttpMethod.GET, "/api/store/**").permitAll()
                 // Auth endpoints — public
                 .requestMatchers("/api/auth/**").permitAll()
                 // Health check — public

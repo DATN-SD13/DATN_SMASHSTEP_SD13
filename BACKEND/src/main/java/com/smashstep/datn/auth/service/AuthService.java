@@ -40,6 +40,7 @@ public class AuthService {
      * Nếu có userType thì tìm đúng loại tài khoản.
      * Nếu không có userType thì tự nhận diện nhân viên hoặc khách hàng.
      */
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public LoginResponse login(LoginRequest request) {
         String username = request.getUsername() == null
                 ? ""
@@ -97,7 +98,7 @@ public class AuthService {
                 new AppException( HttpStatus.UNAUTHORIZED,"Tên đăng nhập/email hoặc mật khẩu không đúng"));
 
         return loginKhachHang(kh, password);
-        
+
     }
 
     // ===== NHÂN VIÊN =====
@@ -147,15 +148,12 @@ public class AuthService {
     }
 
     private String resolveNhanVienRole(NhanVien nv) {
-        if (nv.getIdVaiTro() == null) {
-            return "STAFF";
-        }
-
-        if (Long.valueOf(2L).equals(nv.getIdVaiTro().getId())) {
-            return "ADMIN";
-        }
-
-        return "STAFF";
+        if (nv.getIdVaiTro() == null) return "STAFF";
+        String name = nv.getIdVaiTro().getTenVaiTro();
+        if (name == null || name.isBlank()) return "STAFF";
+        String normalized = java.text.Normalizer.normalize(name,java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "").replace('đ','d').replace('Đ','D').trim().toLowerCase(java.util.Locale.ROOT);
+        return java.util.Set.of("admin","quan ly","quan tri","quan tri vien","manager").contains(normalized) ? "ADMIN" : "STAFF";
     }
 
     // ===== KHÁCH HÀNG =====

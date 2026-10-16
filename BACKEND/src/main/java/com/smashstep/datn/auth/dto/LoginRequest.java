@@ -20,5 +20,6 @@ public class LoginRequest {
      *   "KHACH_HANG" → chỉ tìm trong bảng khach_hang
      *   null / bỏ qua → tự động nhận biết
      */
+    @jakarta.validation.constraints.Pattern(regexp = "NHAN_VIEN|KHACH_HANG", message = "Loại tài khoản không hợp lệ")
     private String userType;
 }

@@ -3,6 +3,7 @@ import api from '../../../../utils/api'
 const unwrap = r => r?.data?.data
 
 const scheduleService = {
+  async capabilities() { return unwrap(await api.get('/lich-lam-viec/capabilities')) },
   // ── Ca làm việc ──────────────────────────────────────────
   async getCaLamViec() {
     return unwrap(await api.get('/ca-lam-viec'))
