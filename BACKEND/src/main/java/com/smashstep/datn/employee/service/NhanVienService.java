@@ -337,113 +337,62 @@ public class NhanVienService {
 
         /*
          * ============================
-         * 6. KIỂM TRA VAI TRÒ QUẢN LÝ
+         * 6. SINH TÀI KHOẢN ĐĂNG NHẬP
          * ============================
-         */
-
-        boolean laQuanLy =
-                isManager(
-                        vaiTro
-                );
-
-
-        /*
-         * ============================
-         * 7. SINH MẬT KHẨU
-         * ============================
+         *
+         * Mọi nhân viên được tạo mới đều được cấp:
+         * - username = mã nhân viên
+         * - mật khẩu tạm thời ngẫu nhiên
+         * - mật khẩu trong DB được mã hóa BCrypt
          */
 
         String temporaryPassword =
-                null;
+                PasswordGenerator.generate();
 
-        /*
-         * Chỉ Quản lý mới được cấp
-         * tài khoản/mật khẩu đăng nhập.
-         */
-        if (laQuanLy) {
-
-            temporaryPassword =
-                    PasswordGenerator
-                            .generate();
-
-            /*
-             * DB chỉ lưu BCrypt.
-             *
-             * Không lưu mật khẩu
-             * plaintext vào database.
-             */
-            saved.setMatKhau(
-                    passwordEncoder
-                            .encode(
-                                    temporaryPassword
-                            )
-            );
-
-        } else {
-
-            /*
-             * Nhân viên thường hiện tại
-             * chưa được cấp mật khẩu.
-             */
-            saved.setMatKhau(
-                    null
-            );
-        }
-
-
-        /*
-         * ============================
-         * 8. SAVE LẦN 2
-         * ============================
-         */
+        saved.setMatKhau(
+                passwordEncoder.encode(
+                        temporaryPassword
+                )
+        );
 
         saved.setNgayCapNhat(
                 LocalDateTime.now()
         );
 
-        saved =
-                nhanVienRepository
-                        .save(
-                                saved
-                        );
+        saved = nhanVienRepository.saveAndFlush(
+                saved
+        );
 
 
         /*
          * ============================
-         * 9. GỬI MAIL CHO QUẢN LÝ
+         * 7. GỬI EMAIL TÀI KHOẢN
          * ============================
+         *
+         * Nếu gửi email thất bại thì ném exception để
+         * transaction rollback, tránh tạo tài khoản mà
+         * nhân viên không nhận được thông tin đăng nhập.
          */
 
-        if (
-                laQuanLy
-                        &&
-                        temporaryPassword != null
-        ) {
+        try {
+            employeeMailService.sendEmployeeAccountEmail(
+                    saved.getEmail(),
+                    saved.getTenNhanVien(),
 
-            try {
+                    saved.getIdVaiTro() != null
+                            ? saved.getIdVaiTro().getTenVaiTro()
+                            : "Nhân viên",
 
-                employeeMailService
-                        .sendManagerAccountEmail(
-                                saved.getEmail(),
-                                saved.getTenNhanVien(),
-                                saved.getTenDangNhap(),
-                                temporaryPassword
-                        );
-
-            } catch (Exception e) {
-
-                /*
-                 * Không throw exception ở đây.
-                 *
-                 * Nếu Gmail lỗi thì nhân viên
-                 * vẫn được tạo trong database.
-                 */
-                System.err.println(
-                        "Tạo quản lý thành công "
-                                + "nhưng gửi email thất bại: "
-                                + e.getMessage()
-                );
-            }
+                    saved.getTenDangNhap(),
+                    temporaryPassword
+            );
+        } catch (Exception e) {
+            throw new RuntimeException(
+                    "Không thể gửi email thông tin tài khoản tới "
+                            + saved.getEmail()
+                            + ". Nhân viên chưa được tạo. Vui lòng kiểm tra cấu hình email và thử lại.",
+                    e
+            );
         }
 
 
@@ -744,44 +693,6 @@ public class NhanVienService {
 
 
     // =========================================================
-    // KIỂM TRA QUẢN LÝ
-    // =========================================================
-
-    private boolean isManager(
-            VaiTro vaiTro
-    ) {
-
-        if (
-                vaiTro == null
-                        ||
-                        vaiTro.getTenVaiTro() == null
-        ) {
-
-            return false;
-        }
-
-
-        String roleName =
-                vaiTro
-                        .getTenVaiTro()
-                        .trim();
-
-
-        return roleName.equalsIgnoreCase(
-                "Quản lý"
-        )
-                ||
-                roleName.equalsIgnoreCase(
-                        "Quan ly"
-                )
-                ||
-                roleName.equalsIgnoreCase(
-                        "Manager"
-                );
-    }
-
-
-    // =========================================================
     // VALIDATE REQUEST
     // =========================================================
 
@@ -802,19 +713,27 @@ public class NhanVienService {
         );
 
 
-        if (
-                request.getDob() != null
-                        &&
-                        request
-                                .getDob()
-                                .isAfter(
-                                        LocalDate.now()
-                                )
-        ) {
+        if (request.getDob() != null) {
 
-            throw AppException.badRequest(
-                    "Ngày sinh không được lớn hơn ngày hiện tại"
-            );
+            LocalDate today = LocalDate.now();
+            LocalDate latestAllowedDob = today.minusYears(18);
+
+            if (request.getDob().isAfter(today)) {
+                throw AppException.badRequest(
+                        "Ngày sinh không được lớn hơn ngày hiện tại"
+                );
+            }
+
+            /*
+             * Nhân viên phải đủ 18 tuổi trở lên.
+             * Ví dụ hôm nay 16/10/2026 thì ngày sinh
+             * phải <= 16/10/2008.
+             */
+            if (request.getDob().isAfter(latestAllowedDob)) {
+                throw AppException.badRequest(
+                        "Nhân viên phải đủ 18 tuổi trở lên"
+                );
+            }
         }
     }
 

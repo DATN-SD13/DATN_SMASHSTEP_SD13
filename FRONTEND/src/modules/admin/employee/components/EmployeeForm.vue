@@ -92,6 +92,17 @@ const edit = computed(
 const roles = ref([])
 const saving = ref(false)
 
+const maxDob = computed(() => {
+  const date = new Date()
+  date.setFullYear(date.getFullYear() - 18)
+
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+
+  return `${year}-${month}-${day}`
+})
+
 const active = ref(
   props.employee?.active ?? true
 )
@@ -275,6 +286,16 @@ function validate() {
     return 'Ngày sinh không được lớn hơn ngày hiện tại.'
   }
 
+  const minimumAgeDate = new Date()
+  minimumAgeDate.setFullYear(
+    minimumAgeDate.getFullYear() - 18
+  )
+  minimumAgeDate.setHours(0, 0, 0, 0)
+
+  if (dob > minimumAgeDate) {
+    return 'Nhân viên phải đủ 18 tuổi trở lên.'
+  }
+
   return ''
 }
 
@@ -360,8 +381,8 @@ async function submit() {
           )
 
           success(
-            'Thêm nhân viên thành công',
-            'Thêm thành công'
+            `Thêm nhân viên thành công. Thông tin tài khoản đã được gửi tới ${f.value.email}.`,
+            'Tạo tài khoản thành công'
           )
         }
 
@@ -728,6 +749,7 @@ onMounted(() => {
               class="ss-input"
               type="date"
               v-model="f.dob"
+              :max="maxDob"
             />
           </div>
 
