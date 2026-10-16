@@ -72,7 +72,7 @@ public class HoaDonListDto {
                 .trangThai(tt != null ? tt.getNhan() : "Không xác định")
                 .lopTrangThai(tt != null ? tt.getLop() : "unknown")
                 .maTrangThai(h.getTrangThai())
-                .phuongThucThanhToan(pt != null ? pt.getTenPhuongThuc() : null)
+                .phuongThucThanhToan(pt != null ? pt.getTenPhuongThuc() : com.smashstep.datn.invoice.rules.PosDraftRules.managed(h) && h.getNgayThanhToan() != null ? "Kết hợp" : null)
                 .diaChi(h.getDiaChiGiaoHang())
                 .build();
     }

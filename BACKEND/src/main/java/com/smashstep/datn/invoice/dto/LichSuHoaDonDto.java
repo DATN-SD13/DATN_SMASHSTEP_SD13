@@ -3,6 +3,7 @@ package com.smashstep.datn.invoice.dto;
 import com.smashstep.datn.employee.entity.NhanVien;
 import com.smashstep.datn.invoice.entity.LichSuHoaDon;
 import com.smashstep.datn.invoice.enums.TrangThaiHoaDon;
+
 import lombok.Builder;
 import lombok.Getter;
 
@@ -41,8 +42,14 @@ public class LichSuHoaDonDto {
                 .vaiTro(vaiTro)
                 .maTrangThai(lichSu.getTrangThai())
                 .trangThai(trangThai != null ? trangThai.getNhan() : "Không xác định")
-                .ghiChu(lichSu.getGhiChu())
-                .ngayTao(lichSu.getNgayTao() == null ? null : lichSu.getNgayTao().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss")))
+                .ghiChu(
+                        com.smashstep.datn.invoice.rules.PosHistoryRules.noiDung(
+                                lichSu.getGhiChu()))
+                .ngayTao(
+                        lichSu.getNgayTao() == null
+                                ? null
+                                : lichSu.getNgayTao()
+                                .format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss")))
                 .build();
     }
 }

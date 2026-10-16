@@ -1,4 +1,7 @@
 <script setup>
+import ProductThumbnail from '../../product/components/ProductThumbnail.vue';
+import { variantService } from '../../product/services/productService';
+
 import { askToLeave } from '../../../../utils/feedback'
 import AdminLayout from "../../../../layouts/AdminLayout.vue";
 import Select2Input from "../components/Select2Input.vue";
@@ -13,6 +16,26 @@ import {
 
 const route = useRoute();
 const router = useRouter();
+
+// Ảnh và badge lấy theo chính biến thể đang có hiệu lực, không lấy % đang nhập trên form.
+const selectedProductVisuals = ref({});
+const selectedProductVisual = (id) => selectedProductVisuals.value[id] || {};
+onMounted(async () => {
+  try {
+    const variants = await variantService.all();
+    selectedProductVisuals.value = Object.fromEntries(
+      variants.map((variant) => [variant.id, {
+        anhChinh: variant.anhChinh,
+        dangGiamGia: variant.dangGiamGia === true,
+        phanTramGiamHienTai: variant.phanTramGiamHienTai,
+      }]),
+    );
+  } catch (error) {
+    showError('Không tải được ảnh và mức giảm hiện tại của sản phẩm. Vui lòng tải lại trang.');
+  }
+});
+
+
 
 // ======================================
 // TRẠNG THÁI
@@ -802,6 +825,7 @@ onMounted(loadEditData);
               <thead>
                 <tr>
                   <th class="w-stt c">STT</th>
+                  <th style="width: 80px">Ảnh</th>
                   <th>Sản phẩm</th>
                   <th>Biến thể</th>
                   <th>Giá bán</th>
@@ -814,6 +838,13 @@ onMounted(loadEditData);
               <tbody>
                 <tr v-for="(x, i) in chosenRows" :key="x.id">
                   <td class="c">{{ i + 1 }}</td>
+                  <td>
+                    <ProductThumbnail
+                      :url="selectedProductVisual(x.id).anhChinh"
+                      :item="selectedProductVisual(x.id)"
+                      :alt="x.product"
+                    />
+                  </td>
 
                   <td>
                     <span class="ss-strong">{{ x.product }}</span>
@@ -850,7 +881,7 @@ onMounted(loadEditData);
                 </tr>
 
                 <tr v-if="!chosenRows.length">
-                  <td colspan="7" class="ss-empty">
+                  <td colspan="8" class="ss-empty">
                     <i class="bi bi-inbox"></i>
                     Chưa có biến thể nào được chọn.
                   </td>

@@ -1,6 +1,6 @@
 <script setup>
 import { useProductToast } from '../../product/composables/useProductToast'
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import { invoiceService } from '../services/invoiceService'
@@ -48,6 +48,10 @@ const pickupSteps = [
 ]
 
 const steps = computed(() => {
+  if (invoice.value?.posManaged) {
+    const pending = { key: 'pending', label: 'Hóa đơn chờ', icon: 'bi-hourglass-split', value: 8 }
+    return invoice.value.receiveMethodCode === 1 ? [pending, ...deliverySteps] : [pending, pickupSteps.at(-1)]
+  }
   if (invoice.value?.statusCode === 8 || invoice.value?.history?.some(item => Number(item.maTrangThai) === 8)) {
     return [{ key: 'pending', label: 'Hóa đơn chờ', icon: 'bi-hourglass-split', value: 8 }, pickupSteps.at(-1)]
   }
@@ -79,6 +83,7 @@ const nextStatus = computed(() => {
 const canUpdateStatus = computed(() => Boolean(nextStatus.value))
 
 const canCancelOrder = computed(() => {
+  if (invoice.value?.posManaged && invoice.value?.paymentStatusCode === 1) return false
   const code = invoice.value?.statusCode
   if (!Number.isInteger(code)) return false
   return invoice.value?.receiveMethodCode === 0 ? (code === 8 || code <= 1) : code <= 4
@@ -188,11 +193,11 @@ function money(value) {
 const hasVoucher = computed(() => Boolean(invoice.value?.voucherCode))
 
 const voucherLabel = computed(() => {
-  if (!invoice.value?.voucherCode) return ''
+  if (!invoice.value?.voucherCode || !invoice.value?.voucherSnapshot) return ''
   if (Number(invoice.value?.voucherType) === 1 && Number(invoice.value?.voucherValue) > 0) {
     return `${Number(invoice.value.voucherValue).toLocaleString('vi-VN')}%`
   }
-  return ''
+  return Number(invoice.value?.voucherValue) > 0 ? money(invoice.value.voucherValue) : ''
 })
 
 const isGHN = computed(() => String(invoice.value?.shippingCarrier || '').trim().toUpperCase() === 'GHN' || String(invoice.value?.shippingCarrier || '').toUpperCase().includes('GIAO HÀNG NHANH'))
@@ -243,12 +248,14 @@ function mapInvoice(data) {
     total: Number(data?.thanhTien ?? 0),
     discount: Number(data?.tienGiamGia ?? 0),
     voucherCode: data?.maPhieuGiamGia || '',
+    voucherSnapshot: data?.voucherSnapshot === true,
     voucherType: data?.loaiGiamGia == null ? null : Number(data.loaiGiamGia),
     voucherValue: Number(data?.giaTriGiam ?? 0),
     shippingFee: Number(data?.phiVanChuyen ?? 0),
     status: data?.trangThai || status?.label || 'Không xác định',
     statusClass: data?.lopTrangThai || status?.key || 'unknown',
     statusCode: statusCode,
+    posManaged: data?.posManaged === true,
     nextStatusCode: data?.maTrangThaiTiepTheo,
     nextStatusLabel: data?.trangThaiTiepTheo,
     payment: data?.phuongThucThanhToan || 'Chưa cập nhật',
@@ -286,6 +293,8 @@ function mapInvoice(data) {
       variant: [item?.mauSac, item?.kichThuoc].filter(Boolean).join(' / ') || '—',
       quantity: Number(item?.soLuong || 0),
       price: Number(item?.donGia || 0),
+      originalPrice: item?.giaGoc == null ? null : Number(item.giaGoc),
+      discountPercent: item?.phanTramGiam == null ? null : Number(item.phanTramGiam),
       lineTotal: Number(item?.thanhTien ?? (Number(item?.donGia || 0) * Number(item?.soLuong || 0)))
     }))
   }
@@ -548,10 +557,15 @@ window.addEventListener('afterprint', clearPrintMode)
 
 function stepDate(status) {
   const entry = invoice.value?.history?.find(item => Number(item?.maTrangThai) === status)
-  return entry?.ngayTao || '—'
+  if (entry?.ngayTao) return entry.ngayTao
+  if (status === 8 && invoice.value?.posManaged) return invoice.value.date || '—'
+  return '—'
 }
 
-onMounted(loadInvoice)
+onMounted(async () => {
+  await loadInvoice()
+  if (route.query?.print === '1' && canPrintInvoice.value) { await nextTick(); printInvoice() }
+})
 watch(() => route.params.code, () => {
   showEditOrderModal.value = false
   showCancelModal.value = false
@@ -681,12 +695,8 @@ onUnmounted(() => {
             <h2><i class="bi bi-calendar2-check"></i> Tổng kết thanh toán</h2>
             <div class="amount-row"><span>Tổng tiền hàng</span><strong>{{ money(subtotal) }}</strong></div>
             <div class="amount-row discount-row">
-              <span>Giảm giá</span>
-              <div class="discount-value">
-                <strong class="discount">− {{ money(invoice.discount) }}</strong>
-                <span v-if="hasVoucher" class="voucher-code">{{ invoice.voucherCode }}</span>
-                <span v-if="voucherLabel" class="voucher-percent">{{ voucherLabel }}</span>
-              </div>
+              <span class="voucher-summary-label">Phiếu giảm giá <b v-if="hasVoucher">{{ invoice.voucherCode }}</b></span>
+              <strong class="discount voucher-summary-value"><template v-if="voucherLabel">{{ voucherLabel }} </template>(− {{ money(invoice.discount) }})</strong>
             </div>
             <div v-if="isDeliveryOrder" class="amount-row">
               <span>Phí vận chuyển</span>
@@ -855,8 +865,8 @@ onUnmounted(() => {
                   {{ invoice.date?.split(' ')[1] || invoice.date }}
                   <small>{{ invoice.date?.split(' ')[0] || '' }}</small>
                 </td>
-                <td><span class="discount-empty">—</span></td>
-                <td class="nowrap">{{ money(item.price) }}</td>
+                <td><div v-if="item.discountPercent != null" class="line-discount"><span>{{ item.discountPercent }}%</span><small v-if="item.originalPrice > item.price">−{{ money((item.originalPrice - item.price) * item.quantity) }}</small></div><span v-else class="discount-empty">—</span></td>
+                <td class="nowrap"><del v-if="item.originalPrice > item.price" class="historical-price">{{ money(item.originalPrice) }}</del><strong :class="{ 'historical-sale': item.originalPrice > item.price }">{{ money(item.price) }}</strong></td>
                 <td class="product-total">{{ money(item.lineTotal) }}</td>
               </tr>
               <tr v-if="!filteredItems.length">
@@ -902,7 +912,7 @@ onUnmounted(() => {
               <td>{{ index + 1 }}</td>
               <td>{{ item.name }}</td>
               <td>{{ item.variant }}</td>
-              <td>{{ money(item.price) }}</td>
+              <td><del v-if="item.originalPrice > item.price" class="historical-price">{{ money(item.originalPrice) }}</del>{{ money(item.price) }}<small v-if="item.discountPercent > 0"> (−{{ item.discountPercent }}%)</small></td>
               <td>{{ item.quantity }}</td>
               <td>{{ money(item.lineTotal) }}</td>
             </tr>
@@ -925,6 +935,7 @@ onUnmounted(() => {
         <div class="print-payment">
           <div><span>Trạng thái thanh toán:</span> {{ invoice.paymentStatus }}</div>
           <div v-if="invoice.paymentDate"><span>Ngày thanh toán:</span> {{ invoice.paymentDate }}</div>
+          <div v-for="payment in paymentHistory" :key="payment.id"><span>{{ payment.method }}:</span> {{ money(payment.amount) }} <small>{{ payment.transactionCode }}</small></div>
         </div>
 
         <div v-if="hasShippingInfo" class="print-shipping">
@@ -1193,6 +1204,9 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.voucher-summary-label{display:flex;gap:7px;align-items:baseline;flex-wrap:wrap}.voucher-summary-label b{color:#344e5b;font-size:11px;font-weight:650}.voucher-summary-value{color:#1a9a73!important;font-size:12px;white-space:normal!important;text-align:right}.line-discount{display:grid;justify-items:start;gap:5px}.line-discount>span{display:inline-flex;padding:4px 8px;background:#e5f7ef;color:#18865e;border-radius:6px;font-weight:700;font-size:11px}.line-discount small{font-size:10px;color:#18865e;white-space:nowrap}.payment-panel .grand-total{margin-top:12px;padding-top:16px}.payment-panel .grand-total strong{font-size:19px;color:var(--ss-primary,#1689cf)}
+
+.historical-price{display:block;color:#8b9aa2;font-size:11px}.historical-sale{color:#d32c50}
 .detail-page{max-width:1700px;margin:0 auto;padding:24px 24px 36px;color:#263943}
 .page-title-row{margin-bottom:20px}.breadcrumb{font-size:11px;color:#8c9ba5;margin-bottom:5px}.breadcrumb b{padding:0 9px;color:#c4d0d7}.breadcrumb a{color:#536c79;text-decoration:none}.breadcrumb strong{color:#1689cf;font-weight:600}.page-title-row h1{margin:0;font-size:23px;color:#203744;font-weight:750}
 .back-link{display:flex;align-items:center;gap:10px;border:0;background:transparent;color:#435b67;padding:0 0 16px 3px;font-size:15px;font-weight:650;cursor:pointer}.back-link i{font-size:15px;color:#1689cf}.back-link b{color:#1689cf}
