@@ -56,10 +56,21 @@ class ManagerAccountServiceTest {
         assertNotEquals(temporary, saved.getValue().getMatKhau());
         assertTrue(encoder.matches(temporary, saved.getValue().getMatKhau()));
     }
-    @Test void ordinaryEmployeeDoesNotReceiveManagerCredentials() {
-        role.setTenVaiTro("Nhân viên"); service.them(request());
+    @Test void ordinaryEmployeeReceivesOwnCredentialsWithoutManagerEmail() {
+        role.setTenVaiTro("Nhân viên"); var response = service.them(request());
         ArgumentCaptor<NhanVien> saved = ArgumentCaptor.forClass(NhanVien.class);
-        verify(employees).save(saved.capture()); assertNull(saved.getValue().getMatKhau()); verifyNoInteractions(mail);
+        verify(employees).save(saved.capture());
+        ArgumentCaptor<String> password = ArgumentCaptor.forClass(String.class);
+        verify(mail).sendEmployeeAccountEmail(eq("manager@example.test"), eq("Quản lý kiểm thử"),
+                eq("Nhân viên"), eq(response.getUsername()), password.capture());
+        String temporary = password.getValue();
+        assertEquals(10, temporary.length());
+        assertTrue(temporary.matches(".*[A-Z].*")); assertTrue(temporary.matches(".*[a-z].*"));
+        assertTrue(temporary.matches(".*[0-9].*")); assertTrue(temporary.matches(".*[@#$%].*"));
+        assertNotEquals(temporary, saved.getValue().getMatKhau());
+        assertTrue(encoder.matches(temporary, saved.getValue().getMatKhau()));
+        assertSame(role, saved.getValue().getIdVaiTro());
+        verify(mail, never()).sendManagerAccountEmail(anyString(), anyString(), anyString(), anyString());
     }
     @Test void mailIsDeferredUntilSuccessfulTransactionCommit() {
         TransactionSynchronizationManager.initSynchronization();

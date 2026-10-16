@@ -35,6 +35,11 @@ const edit = computed(
 
 const roles = ref([])
 const saving = ref(false)
+const maxDob = computed(() => {
+  const date = new Date()
+  date.setFullYear(date.getFullYear() - 18)
+  return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-')
+})
 const changingStatus = ref(false)
 
 const active = ref(
@@ -207,6 +212,9 @@ function validate() {
   if (dob > today) {
     return 'Ngày sinh không được lớn hơn ngày hiện tại.'
   }
+  const minimumAgeDate = new Date(today)
+  minimumAgeDate.setFullYear(minimumAgeDate.getFullYear() - 18)
+  if (dob > minimumAgeDate) return 'Nhân viên phải đủ 18 tuổi trở lên.'
 
   return ''
 }
@@ -280,7 +288,7 @@ async function submit() {
       )
 
       showSuccess(
-        'Thêm nhân viên thành công.'
+        'Nhân viên và tài khoản đăng nhập đã được tạo. Hệ thống gửi thông tin tài khoản qua email.'
       )
 
       router.push('/nhan-vien')
@@ -566,6 +574,7 @@ onMounted(() => {
               class="ss-input"
               type="date"
               v-model="f.dob"
+              :max="maxDob"
             />
           </div>
 
