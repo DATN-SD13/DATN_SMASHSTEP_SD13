@@ -40,18 +40,43 @@ class DotGiamGiaServiceTest {
         verify(campaigns, never()).save(any());
     }
 
-    @Test void overlappingDatesForSameVariantAreConflict() {
+    @Test void overlappingCampaignIsCreatedWithoutChangingBaseVariantPrice() {
         var product = new SanPham(); product.setTrangThai(1);
-        var variant = new SanPhamChiTiet(); variant.setId(1L); variant.setIdSanPham(product); variant.setKichHoat(true); variant.setTrangThai(1);
+        var variant = new SanPhamChiTiet(); variant.setId(1L); variant.setIdSanPham(product);
+        variant.setKichHoat(true); variant.setTrangThai(1); variant.setGiaBan(new BigDecimal("1000000.00"));
         when(variants.findById(1L)).thenReturn(Optional.of(variant));
         var existing = new DotGiamGia(); existing.setId(10L); existing.setMaDotGiamGia("DGG010");
-        existing.setNgayBatDau(LocalDate.of(2097, 10, 1).atStartOfDay()); existing.setNgayKetThuc(LocalDate.of(2097, 10, 31).atTime(23,59,59));
-        var link = new com.smashstep.datn.promotion.entity.ChiTietDotGiamGia(); link.setIdDotGiamGia(existing);
-        when(details.findActiveByProductDetailId(1L)).thenReturn(List.of(link));
+        existing.setKichHoat(true); existing.setTrangThai(1); existing.setPhanTramGiamDot(new BigDecimal("20"));
+        existing.setNgayBatDau(LocalDate.of(2097, 10, 1).atStartOfDay());
+        existing.setNgayKetThuc(LocalDate.of(2097, 10, 31).atTime(23,59,59));
+        var existingLink = new com.smashstep.datn.promotion.entity.ChiTietDotGiamGia();
+        existingLink.setIdDotGiamGia(existing); existingLink.setIdSanPhamChiTiet(variant);
+        when(details.findActiveByProductDetailId(1L)).thenReturn(List.of(existingLink));
+        when(campaigns.findAllCodes()).thenReturn(List.of(existing.getMaDotGiamGia()));
+        when(campaigns.save(any())).thenAnswer(call -> {
+            DotGiamGia campaign = call.getArgument(0); campaign.setId(11L); return campaign;
+        });
         var request = new DotGiamGiaRequest(); request.setName("Overlap"); request.setDiscountValue(BigDecimal.TEN);
         request.setStartDate(LocalDateTime.of(2097, 10, 15, 8, 0, 0));
-        request.setEndDate(LocalDateTime.of(2097, 11, 15, 18, 0, 0)); request.setProductDetailIds(List.of(1L));        assertEquals(HttpStatus.CONFLICT, assertThrows(AppException.class, () -> service.create(request)).getStatus());
-        verify(campaigns, never()).save(any());
+        request.setEndDate(LocalDateTime.of(2097, 11, 15, 18, 0, 0)); request.setProductDetailIds(List.of(1L));
+
+        assertTrue(request.getStartDate().isBefore(existing.getNgayKetThuc()));
+        assertTrue(request.getEndDate().isAfter(existing.getNgayBatDau()));
+        assertEquals("DGG011", assertDoesNotThrow(() -> service.create(request)).getCode());
+        var saved = ArgumentCaptor.forClass(DotGiamGia.class);
+        verify(campaigns).save(saved.capture());
+        assertEquals(request.getStartDate(), saved.getValue().getNgayBatDau());
+        assertEquals(request.getEndDate(), saved.getValue().getNgayKetThuc());
+        assertEquals(BigDecimal.TEN, saved.getValue().getPhanTramGiamDot());
+        var link = ArgumentCaptor.forClass(com.smashstep.datn.promotion.entity.ChiTietDotGiamGia.class);
+        verify(details).save(link.capture());
+        assertSame(variant, link.getValue().getIdSanPhamChiTiet());
+        assertSame(saved.getValue(), link.getValue().getIdDotGiamGia());
+        assertEquals(BigDecimal.TEN, link.getValue().getPhanTramGiamBienThe());
+        assertEquals(new BigDecimal("1000000.00"), variant.getGiaBan());
+        assertEquals(new BigDecimal("20"), existing.getPhanTramGiamDot());
+        assertTrue(existing.getKichHoat());
+        verify(variants, never()).save(any());
     }
     private final DotGiamGiaRepository campaigns = mock(DotGiamGiaRepository.class);
     private final ChiTietDotGiamGiaRepository details = mock(ChiTietDotGiamGiaRepository.class);
