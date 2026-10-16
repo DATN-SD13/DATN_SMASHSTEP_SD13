@@ -1,6 +1,7 @@
 package com.smashstep.datn.customer.repository;
 
 import com.smashstep.datn.customer.entity.KhachHang;
+import com.smashstep.datn.employee.entity.NhanVien;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -29,6 +30,7 @@ public interface KhachHangRepository extends JpaRepository<KhachHang, Long> {
 
     Optional<KhachHang> findByTenTaiKhoanIgnoreCaseOrEmailIgnoreCase(
             String tenTaiKhoan, String email);
+    Optional<KhachHang> findByEmailIgnoreCase(String email);
 
     @Query("""
         SELECT k FROM KhachHang k

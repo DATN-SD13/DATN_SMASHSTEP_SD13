@@ -21,6 +21,8 @@ import AdminLogin from '../modules/auth/views/AdminLogin.vue'
 import CustomerLogin from '../modules/auth/views/CustomerLogin.vue'
 import CustomerHome from '../modules/auth/views/CustomerHome.vue'
 import LoginView from '../modules/auth/views/LoginView.vue'
+import ForgotPassword from '../modules/auth/views/ForgotPassword.vue'
+import ResetPassword from '../modules/auth/views/ResetPassword.vue'
 
 const promo = { label: 'Quản lý giảm giá', to: '/giam-gia' }
 const prod  = { label: 'Quản lý sản phẩm', to: '/san-pham' }
@@ -30,11 +32,14 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     // ── Auth (public) ───────────────────────────────────
-    { path: '/dang-nhap',            component: LoginView,     meta: { public: true, guestOnly: true } },
-    { path: '/khach-hang/trang-chu', component: CustomerHome,  meta: { requiresAuth: true, userType: 'KHACH_HANG' } },
+    { path: '/dang-nhap',                    component: AdminLogin,    meta: { public: true, guestOnly: true } },
+    { path: '/khach-hang/dang-nhap',         component: CustomerLogin, meta: { public: true, guestOnly: true } },
+    { path: '/khach-hang/quen-mat-khau',     component: ForgotPassword, meta: { public: true, guestOnly: true } },
+    { path: '/khach-hang/dat-lai-mat-khau',  component: ResetPassword,  meta: { public: true } },
+    { path: '/khach-hang/trang-chu',         component: CustomerHome,  meta: { requiresAuth: true, userType: 'KHACH_HANG' } },
 
     // ── Admin area (requiresAuth + NHAN_VIEN) ───────────
-    { path: '/', redirect: '/hoa-don' },
+    { path: '/', redirect: '/thong-ke' },
     { path: '/hoa-don',         component: InvoiceList,   meta: { title: 'Quản lý hóa đơn', requiresAuth: true, userType: 'NHAN_VIEN' } },
     { path: '/hoa-don/:code',   component: InvoiceDetail, meta: { title: 'Chi tiết hóa đơn', parent: { label: 'Hóa đơn', to: '/hoa-don' }, requiresAuth: true, userType: 'NHAN_VIEN' } },
 
@@ -77,6 +82,9 @@ const router = createRouter({
     { path: '/nhan-vien/them',  component: AddEmployee,    meta: { title: 'Thêm nhân viên', parent: { label: 'Nhân viên', to: '/nhan-vien' }, requiresAuth: true, userType: 'NHAN_VIEN', role: 'ADMIN' } },
     { path: '/nhan-vien/:code', component: EmployeeDetail, meta: { title: 'Chi tiết nhân viên', parent: { label: 'Nhân viên', to: '/nhan-vien' }, requiresAuth: true, userType: 'NHAN_VIEN', role: 'ADMIN' } },
 
+    // ── Lịch làm việc ───────────────────────────────────
+    { path: '/lich-lam-viec', component: () => import('../modules/admin/schedule/views/ScheduleList.vue'), meta: { title: 'Lịch làm việc', parent: { label: 'Quản lý lịch làm', to: '/lich-lam-viec' }, requiresAuth: true, userType: 'NHAN_VIEN', role: 'ADMIN' } },
+
     { path: '/invoice', redirect: '/hoa-don' },
     { path: '/:pathMatch(.*)*', component: ComingSoon, meta: { title: 'Đang phát triển' } }
   ]
@@ -88,7 +96,7 @@ router.beforeEach((to, _from, next) => {
   import('../stores/auth').then(({ useAuthStore }) => {
     const auth = useAuthStore()
 
-    // Trang chỉ dành cho guest (login): nếu đã login thì redirect
+    // Trang chỉ dành cho guest: nếu đã login thì redirect đúng chỗ
     if (to.meta.guestOnly && auth.isAuthenticated) {
       return next(auth.isCustomer ? '/khach-hang/trang-chu' : '/')
     }
@@ -96,9 +104,12 @@ router.beforeEach((to, _from, next) => {
     // Route không yêu cầu auth → cho qua
     if (!to.meta.requiresAuth) return next()
 
-    // Chưa đăng nhập → về trang login duy nhất
+    // Chưa đăng nhập → về trang login tương ứng
     if (!auth.isAuthenticated) {
-      return next({ path: '/dang-nhap', query: { redirect: to.fullPath } })
+      const loginPath = to.meta.userType === 'KHACH_HANG'
+        ? '/khach-hang/dang-nhap'
+        : '/dang-nhap'
+      return next({ path: loginPath, query: { redirect: to.fullPath } })
     }
 
     // Khách hàng cố vào khu vực admin → về trang khách hàng

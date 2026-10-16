@@ -7,8 +7,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
-
 import java.util.Optional;
+
 
 @Repository
 public interface NhanVienRepository extends JpaRepository<NhanVien, Long> {
@@ -53,4 +53,5 @@ public interface NhanVienRepository extends JpaRepository<NhanVien, Long> {
     boolean existsByTenDangNhap(String tenDangNhap);
 
     Optional<NhanVien> findByTenDangNhap(String tenDangNhap);
+    Optional<NhanVien> findByEmailIgnoreCase(String email);
 }

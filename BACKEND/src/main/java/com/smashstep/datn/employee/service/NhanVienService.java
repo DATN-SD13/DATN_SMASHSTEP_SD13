@@ -256,6 +256,17 @@ public class NhanVienService {
 
         NhanVien nhanVien = findByMa(ma);
 
+        // Không cho phép admin tự khóa chính mình
+        var authentication = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        String currentUsername = authentication == null ? null : authentication.getName();
+        boolean sameAccount = authentication != null
+                && authentication.getDetails() instanceof com.smashstep.datn.auth.security.JwtAuthFilter.AuthDetails actor
+                && "NHAN_VIEN".equals(actor.userType()) && java.util.Objects.equals(nhanVien.getId(),actor.userId());
+        if ((sameAccount || nhanVien.getMaNhanVien() != null && nhanVien.getMaNhanVien().equalsIgnoreCase(currentUsername))
+                && Integer.valueOf(0).equals(request.getStatus())) {
+            throw AppException.badRequest("Không thể tự khóa tài khoản của chính mình");
+        }
+
         nhanVien.setTrangThai(request.getStatus());
         nhanVien.setNgayCapNhat(LocalDateTime.now());
 

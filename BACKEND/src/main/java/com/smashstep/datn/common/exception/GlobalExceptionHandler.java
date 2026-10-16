@@ -109,7 +109,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleOther(Exception ex) {
-        log.error("Lỗi không xác định", ex);
+        log.error("Lỗi không xác định: {} - {}", ex.getClass().getName(), ex.getMessage(), ex);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(ApiResponse.error("Lỗi hệ thống, vui lòng thử lại"));
     }

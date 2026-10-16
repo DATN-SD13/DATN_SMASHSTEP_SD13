@@ -29,6 +29,7 @@ async function doLogout() {
 // Menu theo Figma: Thống kê → Bán hàng → Hóa đơn → Sản phẩm → Khách hàng → Nhân viên → Giảm giá
 const nav = [
   { label: 'Thống kê', icon: 'bi-grid-1x2', to: '/thong-ke' },
+  { label: 'Thống kê tổng hợp', icon: 'bi-bar-chart-line', to: '/thong-ke-tong-hop' },
   { label: 'Bán hàng tại quầy', icon: 'bi-cart3', to: '/ban-hang' },
   { label: 'Quản lý hóa đơn', icon: 'bi-receipt', to: '/hoa-don' },
   {
@@ -59,12 +60,18 @@ const nav = [
     ]
   },
   { label: 'Quản lý khách hàng', icon: 'bi-people', to: '/khach-hang' },
-  { label: 'Quản lý nhân viên', icon: 'bi-person-badge', to: '/nhan-vien', adminOnly: true }
+  { label: 'Quản lý nhân viên', icon: 'bi-person-badge', to: '/nhan-vien', adminOnly: true },
+  {
+    key: 'schedule', label: 'Quản lý lịch làm', icon: 'bi-calendar-week', adminOnly: true,
+    children: [
+      { label: 'Lịch làm việc', to: '/lich-lam-viec' }
+    ]
+  }
 ]
 
 const isOn = (to) => route.path === to || route.path.startsWith(to + '/')
 const groupActive = (item) => item.children ? item.children.some(c => isOn(c.to)) : isOn(item.to)
-const open = reactive({ product: true, attributes: true, promo: true })
+const open = reactive({ product: true, attributes: true, promo: true, schedule: true })
 
 // Chỉ hiện menu có adminOnly khi role là ADMIN
 const visibleNav = computed(() =>

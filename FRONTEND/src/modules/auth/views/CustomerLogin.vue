@@ -85,6 +85,10 @@ async function handleLogin() {
           Chưa có tài khoản?
           <RouterLink to="/khach-hang/dang-ky">Đăng ký ngay</RouterLink>
         </p>
+
+        <p class="forgot-link">
+          <RouterLink to="/khach-hang/quen-mat-khau">Quên mật khẩu?</RouterLink>
+        </p>
       </form>
     </div>
   </div>
@@ -228,6 +232,21 @@ async function handleLogin() {
   color: #7c4dff;
   font-weight: 600;
   text-decoration: none;
+}
+
+.forgot-link {
+  text-align: center;
+  font-size: 13px;
+  margin-top: 8px;
+}
+
+.forgot-link a {
+  color: #7a8fa6;
+  text-decoration: none;
+}
+
+.forgot-link a:hover {
+  color: #7c4dff;
 }
 
 .spin {
