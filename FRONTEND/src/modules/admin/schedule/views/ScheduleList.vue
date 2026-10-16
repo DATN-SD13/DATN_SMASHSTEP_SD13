@@ -516,7 +516,7 @@ async function submitModal() {
             </div>
             <div class="ss-field full">
               <label class="ss-label">Ghi chú</label>
-              <input class="ss-input" v-model="form.ghiChu" placeholder="Tuỳ chọn" />
+              <input class="ss-input" v-model="form.ghiChu" maxlength="500" placeholder="Tuỳ chọn" />
             </div>
           </div>
           <div class="ss-field">

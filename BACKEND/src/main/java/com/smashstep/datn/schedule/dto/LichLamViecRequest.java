@@ -23,6 +23,6 @@ public class LichLamViecRequest {
     @NotNull(message = "Ngày làm không được để trống")
     private LocalDate ngayLam;
 
-    @jakarta.validation.constraints.Size(max=1000)
+    @jakarta.validation.constraints.Size(max=500)
     private String ghiChu;
 }

@@ -11,5 +11,6 @@ public class CapNhatTrangThaiRequest {
     @NotNull(message = "Trạng thái không được để trống")
     private Integer trangThai;
 
+    @jakarta.validation.constraints.Size(max=500)
     private String ghiChu;
 }
