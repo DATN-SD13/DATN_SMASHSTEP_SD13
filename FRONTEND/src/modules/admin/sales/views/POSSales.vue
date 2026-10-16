@@ -163,7 +163,7 @@ async function applyVoucher(code, target = order.value, automatic = false) {
   if (!target || locked.value) return
   if (!automatic) target.autoVoucher = Boolean(code)
   target.voucherCode = code
-  await saveOrder(target)
+  await saveOrder(target, automatic ? '' : code ? `Áp dụng phiếu giảm giá ${code} thành công.` : 'Bỏ phiếu giảm giá thành công.')
 }
 async function loadPaymentOptions() {
   try {
@@ -200,7 +200,7 @@ function selectDeliveryAddress(a) {
 async function toggleDelivery(enabled) {
   if (locked.value || !order.value) return
   const target = order.value
-  if (!enabled) { target.delivery.enabled = false; await saveOrder(target); return }
+  if (!enabled) { target.delivery.enabled = false; await saveOrder(target, 'Đã chuyển sang nhận hàng tại quầy.'); return }
   const customer = selectedCustomer.value
   let defaultAddress
   deliveryLoading.value = true; error.value = ''
@@ -220,8 +220,8 @@ async function toggleDelivery(enabled) {
     // Incomplete delivery stays in this tab until the operator edits it or disables delivery.
     if (!completeDelivery(delivery)) { target.delivery = delivery; return }
     deliveryLoading.value = false
-    await saveOrder({ ...target, delivery })
-  } catch (e) { if (alive && order.value?.id === target.id) error.value = message(e) }
+    await saveOrder({ ...target, delivery }, 'Bật giao hàng thành công. Đã điền thông tin người nhận và địa chỉ giao hàng.')
+  } catch (e) { if (alive && order.value?.id === target.id) { error.value = message(e); showError(error.value, 'Không thể tải thông tin giao hàng') } }
   finally { deliveryLoading.value = false }
 }
 async function saveDelivery() {
@@ -237,7 +237,7 @@ async function saveDelivery() {
     deliveryError.value = 'Kiểm tra người nhận, số điện thoại 10 số, địa chỉ và phí vận chuyển không âm.'; return
   }
   const target = { ...order.value, delivery: candidate }
-  if (await saveOrder(target)) deliveryEditor.value = null
+  if (await saveOrder(target, 'Cập nhật thông tin giao hàng thành công.')) deliveryEditor.value = null
   else deliveryError.value = error.value
 }
 const imageRequests = new Map(), parentImages = new Map(), imageSources = ref({})
@@ -273,7 +273,8 @@ async function changeCustomer() {
   if (locked.value || !order.value) return
   order.value.voucherCode = ''; order.value.autoVoucher = true
   order.value.delivery = { enabled: false, addressId: null, recipientName: '', recipientPhone: '', address: '', shippingFee: 0 }
-  return await saveOrder()
+  const customer = selectedCustomer.value
+  return await saveOrder(order.value, customer ? `Chọn khách hàng ${customer.name || customer.code} thành công.` : 'Đã bỏ khách hàng, chuyển sang khách lẻ.')
 }
 async function useAddress(event) {
   if (locked.value || !order.value) return
@@ -281,7 +282,7 @@ async function useAddress(event) {
   if (!selected) { order.value.delivery.addressId = null; return }
   Object.assign(order.value.delivery, { addressId: selected.id, recipientName: selected.receiverName,
     recipientPhone: selected.receiverPhone, address: selected.fullAddress })
-  await saveOrder()
+  await saveOrder(order.value, 'Cập nhật địa chỉ giao hàng thành công.')
 }
 watch(() => selectedCustomer.value?.id, loadAddresses)
 
@@ -358,6 +359,7 @@ async function confirmPayment() {
   if (dialog.bank > 0) {
     bankAccepted.value = { context: dialog.context, total: dialog.total }
     checkoutDialog.value = null
+    showSuccess('Đã xác nhận nhận tiền chuyển khoản. Bấm Thanh toán để hoàn tất hóa đơn.', 'Xác nhận chuyển khoản')
     return
   }
   dialog.payload.transferConfirmed = false
@@ -371,6 +373,7 @@ async function performPayment(saved) {
     sessionStorage.setItem(RECOVERY_KEY, JSON.stringify(saved))
   } catch (e) {
     error.value = 'Không lưu được phiên thanh toán. Yêu cầu chưa được gửi: ' + message(e)
+    showError(error.value, 'Chưa gửi thanh toán')
     busy.value = false; return
   }
   pendingPayment.value = saved
@@ -382,7 +385,7 @@ async function performPayment(saved) {
     clearCheckout()
     orders.value = orders.value.filter(o => o.id !== saved.payload.invoiceId)
     activeId.value = orders.value[0]?.id ?? null
-    showSuccess(`Đã thanh toán ${receipt.invoiceCode}: ${money(receipt.total)}`)
+    showSuccess(`Thanh toán hóa đơn ${receipt.invoiceCode} thành công. Tổng thanh toán: ${money(receipt.total)}.`)
     await Promise.allSettled([reloadOrders(), loadCatalog()])
   } catch (e) {
     checkoutDialog.value = null
@@ -393,6 +396,7 @@ async function performPayment(saved) {
       if (order.value) order.value.requestId = crypto.randomUUID()
       try { await reloadOrders() } catch {}
     }
+    showError(error.value, pendingPayment.value ? 'Cần kiểm tra kết quả thanh toán' : 'Thanh toán chưa hoàn tất')
   } finally { busy.value = false }
 }
 async function retryPayment() { if (pendingPayment.value) await performPayment(pendingPayment.value) }
@@ -412,7 +416,7 @@ async function reloadOrders() {
   orders.value = rows.map(d => hydrate(d, orders.value.find(o => o.id === d.id)))
   if (!orders.value.some(o => o.id === activeId.value)) activeId.value = orders.value[0]?.id ?? null
 }
-async function saveOrder(target = order.value) {
+async function saveOrder(target = order.value, successMessage = '') {
   if (!target) return true
   if (busy.value || deliveryLoading.value) return false
   if (!target.items.length) {
@@ -421,6 +425,7 @@ async function saveOrder(target = order.value) {
   if (!target.items.length && !completeDelivery(target.delivery)) target.delivery.enabled = false
   if (!completeDelivery(target.delivery)) {
     error.value = 'Thông tin giao hàng chưa đầy đủ. Bấm Chỉnh sửa để bổ sung hoặc bỏ tích Giao hàng.'
+    showError(error.value, 'Chưa thể lưu hóa đơn')
     return false
   }
   if (signature(target) === target.saved) return true
@@ -433,10 +438,10 @@ async function saveOrder(target = order.value) {
     const index = orders.value.findIndex(o => o.id === target.id)
     if (index >= 0) orders.value[index] = hydrate(result, target)
     await loadCatalog()
-    showSuccess(`Đã lưu ${target.name}`)
+    if (successMessage) showSuccess(successMessage)
     return true
   } catch (e) {
-    if (alive) error.value = message(e) + ' Thay đổi chưa được lưu.'
+    if (alive) { error.value = message(e) + ' Thay đổi chưa được lưu.'; showError(error.value, 'Không thể lưu hóa đơn') }
     if (e.response?.status === 409 && !pendingPayment.value) await reviewChangedCart(target)
     return false
   } finally { busy.value = false }
@@ -460,7 +465,7 @@ async function reviewChangedCart(target) {
     confirmAction('Giá sản phẩm đã thay đổi. Cập nhật giá mới rồi kiểm tra lại tổng tiền?', async () => {
     if (locked.value || order.value?.id !== target.id) return
     for (const { item, current } of changed) Object.assign(item, current, { qty: item.qty, currentPrice: current.price })
-    await saveOrder()
+    await saveOrder(order.value, 'Cập nhật giá sản phẩm trong giỏ hàng thành công.')
   }, { title: 'Xác nhận giá mới', confirmText: 'Cập nhật giá' })
   }
 }
@@ -475,9 +480,10 @@ async function addOrder() {
     const result = await salesService.taoHoaDonCho()
     if (!alive) return
     orders.value.push(hydrate(result)); activeId.value = result.id
-    showSuccess(`Đã tạo ${result.invoiceCode}`)
+    showSuccess(`Tạo hóa đơn chờ ${result.invoiceCode} thành công.`)
   } catch (e) {
     error.value = message(e)
+    showError('Chưa tạo được hoặc chưa xác định được kết quả tạo hóa đơn. ' + error.value, 'Cần kiểm tra hóa đơn chờ')
     // A lost create response can still have committed; re-read instead of blindly retrying POST.
     try { await reloadOrders() } catch { ready.value = false; error.value += ' Tải lại trang để xác minh trước khi tạo tiếp.' }
   } finally { busy.value = false }
@@ -493,8 +499,8 @@ function removeOrder(id) {
     try {
       await salesService.huyHoaDonCho(target.name)
       await reloadOrders(); await loadCatalog()
-      showSuccess(`Đã hủy ${target.name}`)
-    } catch (e) { error.value = message(e); try { await reloadOrders() } catch {} }
+      showSuccess(`Hủy hóa đơn chờ ${target.name} thành công.`)
+    } catch (e) { error.value = message(e); showError(error.value, 'Cần kiểm tra lại thao tác hủy hóa đơn'); try { await reloadOrders() } catch {} }
     finally { busy.value = false }
   }, { title: 'Hủy hóa đơn chờ', confirmText: 'Hủy hóa đơn' })
 }
@@ -502,20 +508,24 @@ function cancelOrder() { if (order.value) removeOrder(order.value.id) }
 async function addItem(v) {
   if (locked.value || !order.value) return
   const cur = order.value.items.find(i => i.id === v.id)
-  if (v.stock < 1) { error.value = 'Số lượng đã đạt tồn kho hiện tại'; return }
+  if (v.stock < 1) { error.value = 'Số lượng đã đạt tồn kho hiện tại'; showError(error.value, 'Không thể thêm sản phẩm'); return }
   if (cur) cur.qty++
   else order.value.items.push({ ...v, qty: 1, currentPrice: v.price, available: true })
-  await saveOrder()
+  await saveOrder(order.value, `Thêm sản phẩm ${v.name || v.code || ''} vào giỏ hàng thành công.`)
 }
 async function setQty(i, n) {
   if (locked.value) return
   const qty = Number(n)
-  if (!Number.isInteger(qty) || qty < 1 || qty > 10000) { error.value = 'Số lượng phải là số nguyên từ 1 đến 10000'; return }
-  i.qty = qty; await saveOrder()
+  if (!Number.isInteger(qty) || qty < 1 || qty > 10000) { error.value = 'Số lượng phải là số nguyên từ 1 đến 10000'; showError(error.value, 'Số lượng không hợp lệ'); return }
+  if (qty === i.qty) return
+  i.qty = qty; await saveOrder(order.value, `Cập nhật số lượng sản phẩm ${i.name || i.code || ''} thành ${qty} thành công.`)
 }
 async function removeItem(code) {
   if (locked.value || !order.value) return
-  order.value.items = order.value.items.filter(i => i.code !== code); await saveOrder()
+  const item = order.value.items.find(i => i.code === code)
+  if (!item) return
+  order.value.items = order.value.items.filter(i => i.code !== code)
+  await saveOrder(order.value, `Xóa sản phẩm ${item.name || item.code} khỏi giỏ hàng thành công.`)
 }
 async function refreshCart() {
   if (locked.value || !order.value?.items.length) return
@@ -544,7 +554,8 @@ function reloadCurrent() {
       const index = orders.value.findIndex(o => o.id === target.id)
       if (alive && index >= 0) orders.value[index] = hydrate(result, target)
       error.value = ''
-    } catch (e) { error.value = message(e) }
+      if (alive && index >= 0) showSuccess(`Tải lại hóa đơn chờ ${target.name} thành công.`)
+    } catch (e) { error.value = message(e); showError(error.value, 'Không thể tải lại hóa đơn') }
     finally { busy.value = false }
   })
 }
@@ -731,10 +742,10 @@ onBeforeUnmount(() => { alive = false; ++quoteVersion; ++addressVersion; clearTi
           <p v-if="order.paymentMode === 'BANK' && bankConfirmed" class="bank-confirmed" role="status"><i class="bi bi-check-circle"></i> Đã xác nhận chuyển khoản, chưa hoàn tất hóa đơn. Bấm Thanh toán để hoàn tất.</p>
           <div class="kv"><span>Tiền thừa trả khách</span><b>{{ money(change) }}</b></div>
           <div class="ss-field"><span class="ss-label strong">Ghi chú thanh toán</span>
-            <textarea class="ss-textarea" v-model="order.note" @change="saveOrder()" maxlength="980" :disabled="locked" placeholder="Ghi chú thêm nếu cần"></textarea></div>
+            <textarea class="ss-textarea" v-model="order.note" @change="saveOrder(order, 'Cập nhật ghi chú thanh toán thành công.')" maxlength="980" :disabled="locked" placeholder="Ghi chú thêm nếu cần"></textarea></div>
 
           <div v-if="dirty || error" class="pos-save-actions">
-            <button v-if="dirty" class="ss-btn sm" :disabled="locked" @click="saveOrder()">Lưu</button>
+            <button v-if="dirty" class="ss-btn sm" :disabled="locked" @click="saveOrder(order, 'Lưu hóa đơn chờ thành công.')">Lưu</button>
             <button v-if="error" class="ss-btn sm" :disabled="locked" @click="reloadCurrent">Tải lại hóa đơn</button>
           </div>
           <p v-if="cartWarnings.length" role="alert">Có sản phẩm thay đổi giá hoặc tồn kho. Vui lòng kiểm tra lại.</p>
