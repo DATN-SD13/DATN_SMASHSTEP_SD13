@@ -48,6 +48,8 @@ class LatestCampaignPriceTichHopTest {
     @Autowired ThongKeHoaDonService statistics;
     @Autowired GiaSauGiamService legacyPrices;
     MockMvc mvc;
+    @org.junit.jupiter.api.BeforeEach void authenticateEmployee() { com.smashstep.datn.support.EmployeeSecurityFixture.authenticate(em); }
+    @org.junit.jupiter.api.AfterEach void clearEmployee() { com.smashstep.datn.support.EmployeeSecurityFixture.clear(); }
     SanPham product;
     SanPhamChiTiet a, b;
     final Map<String, Object> evidence = new LinkedHashMap<>();
@@ -94,6 +96,9 @@ class LatestCampaignPriceTichHopTest {
         em.flush();
         var row = new LinkedHashMap<String, String>();
         row.put("product", read("/api/products/" + product.getId()));
+        row.put("storefront", read("/api/store/products/" + product.getId()));
+        var publicPrice = mapper.readTree(row.get("storefront")).path("data").path("product").path("giaSauGiam").decimalValue();
+        assertEquals(0, sales.chiTietSanPhamBan(a.getId()).getGiaBan().compareTo(publicPrice));
         row.put("productList", read("/api/products?keyword=" + product.getMaSanPham()));
         row.put("variants", read("/api/product-details?keyword=" + product.getMaSanPham()));
         row.put("pos", read("/api/ban-hang/san-pham/" + a.getId()));
@@ -104,6 +109,9 @@ class LatestCampaignPriceTichHopTest {
     void currentCampaignPriceAcrossProductPosCheckoutHistoricalInvoiceAndStatistics()
             throws Exception {
         mvc = MockMvcBuilders.webAppContextSetup(context).build();
+        String today = java.time.LocalDate.now().toString();
+        String summaryUrl = "/api/thong-ke-tong-hop/tong-quan?tuNgay=" + today + "&denNgay=" + today;
+        BigDecimal revenueBefore = mapper.readTree(read(summaryUrl)).path("data").path("totalRevenue").decimalValue();
         product = new SanPham();
         product.setMaSanPham("LATEST" + UUID.randomUUID());
         product.setTenSanPham("Latest integration pricing fixture");
@@ -222,6 +230,17 @@ class LatestCampaignPriceTichHopTest {
         invoice = invoices.chiTiet(chuyenKetQuaThanhToan.getMaHoaDon());
         soTien("900000", invoice.getChiTietHoaDon().get(0).getDonGia());
         soTien("850000", invoice.getThanhTien());
+        em.flush();
+        BigDecimal revenueAfter = mapper.readTree(read(summaryUrl)).path("data").path("totalRevenue").decimalValue();
+        soTien("850000", revenueAfter.subtract(revenueBefore));
+        var productStats = mapper.readTree(read("/api/thong-ke-tong-hop/san-pham?tuNgay=" + today + "&denNgay=" + today)).path("data");
+        boolean historicalRow = false;
+        for (var row : productStats) if (row.path("id").asLong() == product.getId()) {
+            assertEquals(1, row.path("sold").asLong());
+            soTien("900000", row.path("revenue").decimalValue());
+            historicalRow = true;
+        }
+        assertTrue(historicalRow, "New statistics must use saved invoice detail prices after campaign ends");
         var stats = statistics.tongHop(null, null, chuyenKetQuaThanhToan.getMaHoaDon(), null);
         assertEquals(1, stats.tongHoaDon());
         soTien("850000", stats.doanhThuDaThanhToan());
