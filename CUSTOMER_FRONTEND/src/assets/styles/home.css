@@ -1,0 +1,52 @@
+/* Homepage only: list, detail, shared cards and pricing keep their existing styles. */
+.home-page{background:#fff}
+.home-page .container{width:min(1100px,calc(100% - 64px))}
+.home-page .hero{background:linear-gradient(110deg,#102A4C 0%,#17365F 42%,#2879E3 100%);color:#fff}
+.home-page .hero:after{display:none}
+.home-page .hero-inner{display:flex;align-items:center;position:relative;min-height:480px;padding-block:38px;gap:0}
+.home-page .hero-copy{position:relative;z-index:2;width:43%;max-width:410px;pointer-events:none}
+.home-page .hero-copy a{pointer-events:auto}
+.home-page .hero-eyebrow{font-size:10px;letter-spacing:0;padding:6px 12px;border-color:#ffffff40;background:#ffffff0c;color:#fff}
+.home-page .hero-kicker{display:block;margin-top:24px;color:#a7d2ff;font-size:12px;font-weight:650}
+.home-page .hero h1{font-size:44px;line-height:1.08;letter-spacing:-1.2px;margin-top:14px;font-weight:750}
+.home-page .hero-copy>p{margin-top:17px;font-size:12px;line-height:1.65;color:#e0ebfa;max-width:350px}
+.home-page .hero-actions{margin-top:20px;gap:10px}
+.home-page .hero-actions .button{font-size:11px;min-height:38px;padding:9px 15px;border-radius:7px;gap:8px}
+.home-page .hero-actions .icon{width:15px;height:15px}
+.home-page .hero-stats{margin-top:22px;padding-top:0;border:0;gap:36px}
+.home-page .hero-stats strong{font-size:22px;color:#a7d2ff;font-weight:750}
+.home-page .hero-stats span{font-size:10px;color:#e0ebfa;margin-top:4px}
+.home-page .hero-banner-image{position:absolute;right:-5%;top:0;bottom:0;width:65%;display:block;z-index:1;overflow:hidden}
+.home-page .hero-banner-image .product-image{height:100%;width:100%}
+.home-page .hero-banner-image img{object-fit:contain;object-position:center;width:100%;height:100%;padding:20px 0}
+.home-page .hero-banner-image .image-placeholder{color:#d1e5ff;background:transparent}
+.home-page .hero-banner-image{mix-blend-mode:multiply}
+.home-page .hero-arrow{position:absolute;top:50%;transform:translateY(-50%);z-index:3;display:grid;place-items:center;width:34px;height:34px;padding:6px;border:1px solid #ffffff65;border-radius:50%;background:#ffffff10;color:#fff}
+.home-page .hero-arrow:hover{background:#ffffff28}
+.home-page .hero-arrow-left{left:14px}
+.home-page .hero-arrow-right{right:14px}
+.home-page .hero-carousel{position:absolute;z-index:3;left:50%;bottom:17px;transform:translateX(-50%);display:flex;gap:7px;margin:0}
+.home-page .hero-dot{position:relative;width:7px;height:7px;border:0;background:#ffffff70;border-radius:20px;padding:0}
+.home-page .hero-dot:before{content:'';position:absolute;inset:-8px}
+.home-page .hero-dot.selected{background:#fff;width:22px}
+.home-page .home-brands{padding-top:46px;padding-bottom:46px}
+.home-page .home-brands .section-heading{justify-content:center;text-align:center;margin-bottom:30px}
+.home-page .section-heading h2{font-size:23px;letter-spacing:-.4px}
+.home-page .brand-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.home-page .brand-card{min-height:170px;border-radius:13px;background:#eaf1fa;display:block}
+.home-page .brand-card>.product-image{position:absolute;inset:0;width:100%;height:100%;transform:none;opacity:1;mix-blend-mode:normal}
+.home-page .brand-card .product-image img{padding:0;object-fit:cover;object-position:center}
+.home-page .brand-card-copy{position:absolute;inset:auto 0 0;z-index:1;padding:32px 16px 15px;background:linear-gradient(transparent,#0f2747e8);color:#fff;display:block}
+.home-page .brand-card h3{font-size:18px;max-width:none}
+.home-page .brand-card p{font-size:11px;color:#e3edfa;margin-top:4px}
+.home-page .featured-section{padding-top:22px;padding-bottom:60px}
+.home-page .featured-section .section-heading{align-items:center;margin-bottom:24px}
+.home-page .featured-section .section-heading .button{font-size:11px;padding:8px 13px;min-height:36px}
+.home-page .product-grid{gap:16px}
+.home-page .product-card{border-radius:12px}
+.home-page .product-card-media{aspect-ratio:1;background:#fafbfd}
+.home-page .product-card-body{padding:15px 14px}
+@media(min-width:1600px){.home-page .hero-inner{min-height:500px}}
+@media(max-width:1100px){.home-page .hero-copy{width:47%}.home-page .hero h1{font-size:40px}.home-page .hero-banner-image{right:-1%;width:59%}.home-page .hero-arrow-left{left:8px}.home-page .hero-arrow-right{right:8px}}
+@media(max-width:800px){.home-page .container{width:calc(100% - 48px)}.home-page .hero-inner{min-height:470px}.home-page .hero-copy{width:52%}.home-page .hero h1{font-size:36px}.home-page .hero-copy>p br{display:none}.home-page .hero-banner-image{right:-8%;width:59%}.home-page .hero-arrow{width:28px;height:28px;padding:5px}.home-page .hero-arrow-left{left:4px}.home-page .hero-arrow-right{right:4px}.home-page .brand-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.home-page .brand-card{min-height:180px}.home-page .product-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.home-page .container{width:calc(100% - 40px)}.home-page .hero-inner{display:flex;flex-direction:column;align-items:stretch;padding-top:30px;padding-bottom:40px;min-height:0}.home-page .hero-copy{width:100%;max-width:none;padding-inline:5px}.home-page .hero-kicker{margin-top:18px;font-size:11px}.home-page .hero h1{font-size:36px;line-height:1.1;margin-top:11px}.home-page .hero-copy>p{font-size:11px;margin-top:13px;max-width:320px}.home-page .hero-actions{gap:8px;margin-top:18px}.home-page .hero-actions .button{font-size:10px;padding:9px 12px}.home-page .hero-stats{gap:30px;margin-top:20px}.home-page .hero-stats strong{font-size:20px}.home-page .hero-stats span{font-size:9px}.home-page .hero-banner-image{position:relative;inset:auto;width:100%;height:230px;margin-top:15px}.home-page .hero-banner-image img{padding:0}.home-page .hero-arrow{top:auto;bottom:125px;transform:none}.home-page .hero-arrow-left{left:8px}.home-page .hero-arrow-right{right:8px}.home-page .hero-carousel{bottom:15px}.home-page .home-brands{padding-top:32px;padding-bottom:27px}.home-page .home-brands .section-heading{margin-bottom:20px}.home-page .section-heading h2{font-size:19px}.home-page .brand-grid{gap:11px}.home-page .brand-card{min-height:145px}.home-page .brand-card-copy{padding:25px 12px 12px}.home-page .brand-card h3{font-size:16px}.home-page .brand-card p{font-size:10px}.home-page .featured-section{padding-top:18px;padding-bottom:35px}.home-page .featured-section .section-heading{gap:10px}.home-page .featured-section .section-heading .button{font-size:10px;min-height:32px;padding:7px 10px}.home-page .product-grid{gap:12px}.home-page .product-card-body{padding:12px 10px}}

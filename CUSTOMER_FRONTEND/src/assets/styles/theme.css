@@ -1,0 +1,13 @@
+:root {
+  --customer-primary: #2879E3;
+  --customer-primary-hover: #1F6BD1;
+  --customer-primary-soft: #EAF4FF;
+  --customer-text: #17365F;
+  --customer-ink: #0F172A;
+  --customer-muted: #718096;
+  --customer-border: #DDE6F0;
+  --customer-bg: #F6F9FD;
+  --customer-surface: #F8FAFC;
+  --customer-white: #FFFFFF;
+  --customer-font: Inter, "Segoe UI", Arial, sans-serif;
+}
