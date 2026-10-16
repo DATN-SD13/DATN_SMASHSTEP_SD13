@@ -9,6 +9,7 @@ import {
   getStatisticsOrderStatus,
   getStatisticsEmployee,
   getStatisticsProduct,
+  getStatisticsBrands,
 } from "../service/statisticsService";
 
 import { Bar, Line, Pie } from "vue-chartjs";
@@ -54,26 +55,68 @@ const fromDate = ref(
 );
 const toDate = ref(formatDate(today));
 
+const dateValidationMessage = computed(() => {
+  if (!fromDate.value || !toDate.value) {
+    return "Vui lòng chọn đầy đủ ngày bắt đầu và ngày kết thúc.";
+  }
+
+  if (fromDate.value > toDate.value) {
+    return "Ngày bắt đầu không được lớn hơn ngày kết thúc.";
+  }
+
+  return "";
+});
+
 const groupBy = ref("day");
 const selectedBrand = ref("");
 const brandSearch = ref("");
 
 // Sẽ lấy dữ liệu thật từ API ở bước kết nối backend
 const brandOptions = ref([]);
+const filteredBrandOptions = computed(() =>
+  brandOptions.value.filter((brand) =>
+    brand.name.toLowerCase().includes(brandSearch.value.trim().toLowerCase()),
+  ),
+);
+
+async function loadBrands() {
+  try {
+    const response = await getStatisticsBrands();
+
+    // Hỗ trợ API trả về mảng trực tiếp hoặc ApiResponse
+    const data = Array.isArray(response)
+      ? response
+      : Array.isArray(response?.data?.data)
+        ? response.data.data
+        : Array.isArray(response?.data)
+          ? response.data
+          : [];
+
+    // Chỉ giữ thương hiệu hợp lệ
+    brandOptions.value = data.filter(
+      (brand) => brand && brand.id != null && typeof brand.name === "string",
+    );
+  } catch (error) {
+    console.error("Lỗi tải thương hiệu:", error);
+
+    brandOptions.value = [];
+  }
+}
+
 const dashboardSummary = ref(null);
 
 const orderStatusData = ref([]);
 
 const orderStatusColors = {
-  waiting: "#f59e0b",
-  confirmed: "#3b82f6",
-  ready: "#8b5cf6",
-  shipping: "#06b6d4",
-  delivered: "#10b981",
-  done: "#22c55e",
-  cancel: "#ef4444",
-  refund: "#a855f7",
-  pending: "#64748b",
+  waiting: "#60A5FA", // Chờ xác nhận
+  confirmed: "#2563EB", // Đã xác nhận
+  ready: "#818CF8", // Chờ giao hàng
+  shipping: "#06B6D4", // Đang giao hàng
+  delivered: "#0EA5E9", // Đã giao hàng
+  done: "#1D4ED8", // Hoàn thành
+  cancel: "#64748B", // Đã hủy - xám xanh
+  refund: "#A5B4FC", // Hoàn tiền
+  pending: "#94A3B8", // Hóa đơn chờ
 };
 
 // Chỉ lấy trạng thái có hóa đơn
@@ -165,6 +208,8 @@ async function loadOrderStatus() {
 const productData = ref([]);
 const loadingProduct = ref(false);
 
+let productRequestId = 0;
+
 const productError = ref("");
 
 const productSearch = ref("");
@@ -222,45 +267,65 @@ watch([productSearch, productStockFilter, productSort, productData], () => {
   productPage.value = 1;
 });
 
-function resetProductFilters() {
-  function exportProductExcel() {
-    if (!filteredProducts.value.length) {
-      alert("Không có dữ liệu sản phẩm để xuất Excel");
-      return;
-    }
-
-    const rows = filteredProducts.value.map((product, index) => ({
-      STT: index + 1,
-      "Mã sản phẩm": product.code,
-      "Tên sản phẩm": product.name,
-      "Số lượng đã bán": Number(product.sold || 0),
-      "Số lượng hoàn tiền": Number(product.returned || 0),
-      "Doanh thu (VNĐ)": Number(product.revenue || 0),
-      "Tồn kho": Number(product.stock || 0),
-    }));
-
-    const worksheet = XLSX.utils.json_to_sheet(rows);
-
-    worksheet["!cols"] = [
-      { wch: 8 },
-      { wch: 18 },
-      { wch: 35 },
-      { wch: 20 },
-      { wch: 22 },
-      { wch: 22 },
-      { wch: 15 },
-    ];
-
-    const workbook = XLSX.utils.book_new();
-
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Thong ke san pham");
-
-    XLSX.writeFile(
-      workbook,
-      `thong-ke-san-pham_${fromDate.value}_${toDate.value}.xlsx`,
-    );
+function exportProductExcel() {
+  // Kiểm tra API đang tải
+  if (loadingProduct.value) {
+    alert("Dữ liệu sản phẩm đang tải. Vui lòng đợi!");
+    return;
   }
 
+  // Kiểm tra API gặp lỗi
+  if (productError.value) {
+    alert("Không thể xuất Excel vì dữ liệu sản phẩm đang bị lỗi.");
+    return;
+  }
+
+  // Kiểm tra khoảng ngày
+  if (!fromDate.value || !toDate.value || fromDate.value > toDate.value) {
+    alert("Vui lòng chọn khoảng ngày hợp lệ trước khi xuất Excel.");
+    return;
+  }
+
+  // Kiểm tra dữ liệu rỗng
+  if (!filteredProducts.value.length) {
+    alert("Không có dữ liệu sản phẩm để xuất Excel.");
+    return;
+  }
+
+  const rows = filteredProducts.value.map((product, index) => ({
+    STT: index + 1,
+    "Mã sản phẩm": product.code,
+    "Tên sản phẩm": product.name,
+    "Số lượng đã bán": Number(product.sold || 0),
+    "Số lượng hoàn tiền": Number(product.returned || 0),
+
+    "Doanh số SP trước giảm giá (VNĐ)": Number(product.revenue || 0),
+    "Tồn kho": Number(product.stock || 0),
+  }));
+
+  const worksheet = XLSX.utils.json_to_sheet(rows);
+
+  worksheet["!cols"] = [
+    { wch: 8 },
+    { wch: 18 },
+    { wch: 35 },
+    { wch: 20 },
+    { wch: 22 },
+    { wch: 22 },
+    { wch: 15 },
+  ];
+
+  const workbook = XLSX.utils.book_new();
+
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Thong ke san pham");
+
+  XLSX.writeFile(
+    workbook,
+    `thong-ke-san-pham_${fromDate.value}_${toDate.value}.xlsx`,
+  );
+}
+
+function resetProductFilters() {
   productSearch.value = "";
   productStockFilter.value = "all";
   productSort.value = "sold";
@@ -268,8 +333,14 @@ function resetProductFilters() {
 }
 
 async function loadProduct() {
+  // Đánh dấu lần gọi API mới nhất
+  const currentRequestId = ++productRequestId;
+
+  // Validate khoảng ngày
   if (!fromDate.value || !toDate.value || fromDate.value > toDate.value) {
     productData.value = [];
+    productError.value = "";
+    loadingProduct.value = false;
     return;
   }
 
@@ -282,16 +353,27 @@ async function loadProduct() {
       denNgay: toDate.value,
     });
 
+    // Bỏ qua kết quả của API cũ
+    if (currentRequestId !== productRequestId) {
+      return;
+    }
+
     if (!response.data?.success) {
       throw new Error(
         response.data?.message || "Không thể tải thống kê sản phẩm",
       );
     }
 
-    productData.value = response.data.data || [];
-
-    console.log("TỔNG QUAN SẢN PHẨM:", productData.value);
+    // Kiểm tra dữ liệu trả về phải là mảng
+    productData.value = Array.isArray(response.data.data)
+      ? response.data.data
+      : [];
   } catch (error) {
+    // Không xử lý lỗi từ API cũ
+    if (currentRequestId !== productRequestId) {
+      return;
+    }
+
     console.error("Lỗi thống kê sản phẩm:", error);
 
     productError.value =
@@ -301,7 +383,10 @@ async function loadProduct() {
 
     productData.value = [];
   } finally {
-    loadingProduct.value = false;
+    // Chỉ API mới nhất được tắt loading
+    if (currentRequestId === productRequestId) {
+      loadingProduct.value = false;
+    }
   }
 }
 
@@ -360,8 +445,27 @@ function resetEmployeeFilters() {
 
 // Xuất danh sách nhân viên ra Excel
 function exportEmployeeExcel() {
+  // Kiểm tra API đang tải
+  if (loadingEmployee.value) {
+    alert("Dữ liệu nhân viên đang tải. Vui lòng đợi!");
+    return;
+  }
+
+  // Kiểm tra API gặp lỗi
+  if (employeeError.value) {
+    alert("Không thể xuất Excel vì dữ liệu nhân viên đang bị lỗi.");
+    return;
+  }
+
+  // Kiểm tra khoảng ngày
+  if (!fromDate.value || !toDate.value || fromDate.value > toDate.value) {
+    alert("Vui lòng chọn khoảng ngày hợp lệ trước khi xuất Excel.");
+    return;
+  }
+
+  // Kiểm tra dữ liệu rỗng
   if (!filteredEmployees.value.length) {
-    alert("Không có dữ liệu nhân viên để xuất Excel");
+    alert("Không có dữ liệu nhân viên để xuất Excel.");
     return;
   }
 
@@ -398,9 +502,16 @@ function exportEmployeeExcel() {
 const loadingEmployee = ref(false);
 const employeeError = ref("");
 
+let employeeRequestId = 0;
+
 async function loadEmployee() {
+  const currentRequestId = ++employeeRequestId;
+
+  // Validate khoảng ngày
   if (!fromDate.value || !toDate.value || fromDate.value > toDate.value) {
     employeeData.value = [];
+    employeeError.value = "";
+    loadingEmployee.value = false;
     return;
   }
 
@@ -413,16 +524,27 @@ async function loadEmployee() {
       denNgay: toDate.value,
     });
 
+    // Bỏ qua kết quả của API cũ
+    if (currentRequestId !== employeeRequestId) {
+      return;
+    }
+
     if (!response.data?.success) {
       throw new Error(
         response.data?.message || "Không thể tải thống kê nhân viên",
       );
     }
 
-    employeeData.value = response.data.data || [];
-
-    console.log("DOANH THU NHÂN VIÊN:", employeeData.value);
+    // Kiểm tra dữ liệu trả về
+    employeeData.value = Array.isArray(response.data.data)
+      ? response.data.data
+      : [];
   } catch (error) {
+    // Bỏ qua lỗi của API cũ
+    if (currentRequestId !== employeeRequestId) {
+      return;
+    }
+
     console.error("Lỗi thống kê nhân viên:", error);
 
     employeeError.value =
@@ -432,7 +554,10 @@ async function loadEmployee() {
 
     employeeData.value = [];
   } finally {
-    loadingEmployee.value = false;
+    // Chỉ API mới nhất được cập nhật trạng thái loading
+    if (currentRequestId === employeeRequestId) {
+      loadingEmployee.value = false;
+    }
   }
 }
 
@@ -465,6 +590,53 @@ async function loadPeriod() {
   } finally {
     loadingPeriod.value = false;
   }
+}
+
+// Xuất Excel thống kê theo chu kỳ thời gian
+function exportPeriodExcel() {
+  // Kiểm tra API đang tải
+  if (loadingPeriod.value) {
+    alert("Dữ liệu đang được tải. Vui lòng đợi!");
+    return;
+  }
+
+  // Kiểm tra API gặp lỗi
+  if (periodError.value) {
+    alert("Không thể xuất Excel vì dữ liệu thống kê đang bị lỗi.");
+    return;
+  }
+
+  // Kiểm tra dữ liệu rỗng
+  if (!periodData.value.length) {
+    alert("Không có dữ liệu thống kê để xuất Excel.");
+    return;
+  }
+
+  const rows = periodData.value.map((item, index) => ({
+    STT: index + 1,
+    "Thời gian": item.period,
+    "Doanh thu (VNĐ)": Number(item.revenue || 0),
+    "Số đơn hàng": Number(item.orders || 0),
+    "AOV (VNĐ)": Number(item.aov || 0),
+    "Tăng trưởng (%)": item.growth == null ? "—" : Number(item.growth),
+  }));
+
+  const worksheet = XLSX.utils.json_to_sheet(rows);
+
+  worksheet["!cols"] = [
+    { wch: 8 },
+    { wch: 20 },
+    { wch: 24 },
+    { wch: 18 },
+    { wch: 24 },
+    { wch: 20 },
+  ];
+
+  const workbook = XLSX.utils.book_new();
+
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Thong ke chu ky");
+
+  XLSX.writeFile(workbook, "tong-quan-theo-chu-ky.xlsx");
 }
 
 function growthText(value) {
@@ -524,21 +696,27 @@ const salesChartData = ref([]);
 const brandChartData = ref([]);
 
 const brandColors = [
-  "#ef4444",
-  "#f97316",
-  "#f59e0b",
-  "#10b981",
-  "#06b6d4",
-  "#64748b",
-  "#8b5cf6",
+  "#2563EB",
+  "#60A5FA",
+  "#F59E0B",
+  "#10B981",
+  "#06B6D4",
+  "#8B5CF6",
+  "#64748B",
 ];
 
 const sortedBrands = computed(() => {
-  return [...brandChartData.value].sort(
-    (a, b) =>
-      Number(b[brandChartSort.value] || 0) -
-      Number(a[brandChartSort.value] || 0),
-  );
+  return brandChartData.value
+    .filter((brand) =>
+      String(brand.name || "")
+        .toLowerCase()
+        .includes(brandSearch.value.trim().toLowerCase()),
+    )
+    .sort(
+      (a, b) =>
+        Number(b[brandChartSort.value] || 0) -
+        Number(a[brandChartSort.value] || 0),
+    );
 });
 
 const brandChart = computed(() => ({
@@ -622,8 +800,10 @@ const salesChart = computed(() => ({
     {
       label: "Sản phẩm bán được",
       data: salesChartData.value.map((item) => Number(item.quantity || 0)),
-      backgroundColor: "#dc172c",
-      borderColor: "#dc172c",
+
+      borderColor: "#2563EB",
+      backgroundColor: "#2563EB",
+
       borderWidth: 2,
       borderRadius: 8,
       maxBarThickness: 42,
@@ -674,9 +854,18 @@ const salesChartOptions = {
 const loadingCharts = ref(false);
 const chartError = ref("");
 
+let chartRequestId = 0;
+
 async function loadCharts() {
+  // Đánh dấu lần gọi API mới nhất
+  const currentRequestId = ++chartRequestId;
+
+  // Validate khoảng ngày
   if (!fromDate.value || !toDate.value || fromDate.value > toDate.value) {
     chartError.value = "Khoảng ngày không hợp lệ";
+    salesChartData.value = [];
+    brandChartData.value = [];
+    loadingCharts.value = false;
     return;
   }
 
@@ -691,6 +880,11 @@ async function loadCharts() {
       thuongHieuId: selectedBrand.value || undefined,
     });
 
+    // Bỏ qua kết quả từ yêu cầu cũ
+    if (currentRequestId !== chartRequestId) {
+      return;
+    }
+
     if (!response.data?.success) {
       throw new Error(
         response.data?.message || "Không thể lấy dữ liệu biểu đồ",
@@ -699,11 +893,13 @@ async function loadCharts() {
 
     salesChartData.value = response.data.data?.sales || [];
     brandChartData.value = response.data.data?.brands || [];
-
-    console.log("DỮ LIỆU BÁN HÀNG:", salesChartData.value);
-    console.log("DỮ LIỆU THƯƠNG HIỆU:", brandChartData.value);
   } catch (error) {
-    console.error("LỖI THỐNG KÊ:", error);
+    // Không xử lý lỗi của yêu cầu cũ
+    if (currentRequestId !== chartRequestId) {
+      return;
+    }
+
+    console.error("Lỗi thống kê:", error);
 
     chartError.value =
       error.response?.data?.message ||
@@ -713,11 +909,15 @@ async function loadCharts() {
     salesChartData.value = [];
     brandChartData.value = [];
   } finally {
-    loadingCharts.value = false;
+    // Chỉ yêu cầu mới nhất được tắt loading
+    if (currentRequestId === chartRequestId) {
+      loadingCharts.value = false;
+    }
   }
 }
 
 onMounted(() => {
+  loadBrands();
   loadCharts();
   loadSummary();
   loadPeriod();
@@ -796,6 +996,22 @@ function number(value) {
 <template>
   <AdminLayout>
     <main class="statistics-page">
+      <!-- TIÊU ĐỀ THỐNG KÊ -->
+      <header class="dashboard-hero">
+        <div>
+          <div class="dashboard-eyebrow">SMASHSTEP / ANALYTICS</div>
+
+          <h1>Thống kê tổng hợp</h1>
+
+          <p>Theo dõi doanh thu, hiệu suất bán hàng và hoạt động kinh doanh.</p>
+        </div>
+
+        <div class="dashboard-hero-mark">
+          <i class="bi bi-bar-chart-line-fill"></i>
+          Báo cáo quản trị
+        </div>
+      </header>
+
       <!-- BỘ LỌC TỔNG QUAN -->
       <section class="filter-card">
         <div class="filter-header">
@@ -849,7 +1065,7 @@ function number(value) {
               <option value="">Tất cả thương hiệu</option>
 
               <option
-                v-for="brand in brandOptions"
+                v-for="brand in filteredBrandOptions"
                 :key="brand.id"
                 :value="brand.id"
               >
@@ -893,14 +1109,35 @@ function number(value) {
         </div>
       </section>
 
-      <p v-if="fromDate && toDate && fromDate > toDate" class="date-error">
-        Từ ngày không được lớn hơn đến ngày.
+      <p v-if="dateValidationMessage" class="date-error" role="alert">
+        <i class="bi bi-exclamation-triangle"></i>
+        {{ dateValidationMessage }}
       </p>
 
       <!-- 7 Ô DOANH THU -->
       <section class="summary-section">
         <!-- HÀNG TRÊN -->
-        <div class="summary-grid top-grid">
+
+        <!-- Trạng thái đang tải -->
+        <div v-if="loadingSummary" class="summary-message">
+          <i class="bi bi-hourglass-split"></i>
+          Đang tải dữ liệu tổng quan doanh thu...
+        </div>
+
+        <!-- Trạng thái API lỗi -->
+        <div
+          v-else-if="summaryError"
+          class="summary-message summary-message-error"
+          role="alert"
+        >
+          <i class="bi bi-exclamation-triangle"></i>
+          {{ summaryError }}
+        </div>
+
+        <div
+          v-if="!loadingSummary && !summaryError"
+          class="summary-grid top-grid"
+        >
           <div class="stat-card">
             <div class="stat-icon mint">
               <i class="bi bi-graph-up-arrow"></i>
@@ -927,7 +1164,10 @@ function number(value) {
         </div>
 
         <!-- HÀNG DƯỚI -->
-        <div class="summary-grid bottom-grid">
+        <div
+          v-if="!loadingSummary && !summaryError"
+          class="summary-grid bottom-grid"
+        >
           <div class="stat-card">
             <div class="stat-icon blue">
               <i class="bi bi-cart3"></i>
@@ -1115,6 +1355,15 @@ function number(value) {
               <i class="bi bi-calendar3"></i>
               Tổng quan theo chu kỳ thời gian
             </h3>
+
+            <button
+              type="button"
+              class="period-export-btn"
+              @click="exportPeriodExcel"
+            >
+              <i class="bi bi-file-earmark-excel"></i>
+              Xuất Excel
+            </button>
           </div>
 
           <div v-if="loadingPeriod" class="period-message">
@@ -1387,6 +1636,12 @@ function number(value) {
             </button>
           </div>
 
+          <p class="product-revenue-note">
+            <i class="bi bi-info-circle"></i>
+            Doanh số sản phẩm được tính từ chi tiết hóa đơn, chưa phân bổ giảm
+            giá và phí vận chuyển ở cấp hóa đơn nên có thể khác tổng doanh thu.
+          </p>
+
           <!-- BỘ LỌC -->
           <div class="employee-filters">
             <input
@@ -1437,7 +1692,7 @@ function number(value) {
                   <th>Tên sản phẩm</th>
                   <th>Đã bán</th>
                   <th>Hoàn tiền</th>
-                  <th>Doanh thu</th>
+                  <th>Doanh số SP (trước giảm giá)</th>
                   <th>Tồn kho</th>
                 </tr>
               </thead>
@@ -1524,397 +1779,332 @@ function number(value) {
 </template>
 
 <style scoped>
-/* ===== TỔNG QUAN DOANH THU NHÂN VIÊN ===== */
+/* ===== GIAO DIEN THONG KE SMASHSTEP ===== */
 
-.employee-section {
-  margin-top: 20px;
-  margin-bottom: 20px;
+.statistics-page {
+  --primary: #df2849;
+  --primary-dark: #b91d3a;
+  --text: #1e293b;
+  --muted: #64748b;
+  --border: #e7ebf2;
+  --shadow: 0 5px 22px rgba(31, 41, 70, 0.05);
+
+  min-height: 100vh;
+  padding: 26px;
+  background: #f4f6fa;
+  color: var(--text);
+  font-family: "Segoe UI", Arial, sans-serif;
 }
 
-.employee-card {
-  background: #ffffff;
-  border: 1px solid #e7ebf2;
-  border-radius: 9px;
-  padding: 18px 20px;
-  min-width: 0;
+.statistics-page * {
+  box-sizing: border-box;
 }
 
-/* Tiêu đề và nút xuất Excel */
+/* ===== HEADER ===== */
 
-.employee-header {
+.dashboard-hero {
+  position: relative;
+  overflow: hidden;
   display: flex;
-  align-items: center;
   justify-content: space-between;
-  gap: 15px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid #edf0f5;
-  margin-bottom: 18px;
+  align-items: center;
+  gap: 20px;
+  padding: 32px;
+  margin-bottom: 22px;
+  border-radius: 18px;
+
+  background: linear-gradient(110deg, #102a56 0%, #1d4ed8 65%, #3b82f6 100%);
+  color: white;
+  box-shadow: 0 10px 30px rgba(22, 32, 56, 0.13);
 }
 
-.employee-header h3 {
-  font-size: 14px;
-  font-weight: 700;
-  color: #202b3d;
+.dashboard-hero::after {
+  content: "";
+  position: absolute;
+  width: 250px;
+  height: 250px;
+  right: -60px;
+  top: -120px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow:
+    0 0 0 45px rgba(255, 255, 255, 0.025),
+    0 0 0 90px rgba(255, 255, 255, 0.02);
+  pointer-events: none;
+}
+
+.dashboard-eyebrow {
+  color: #bfdbfe;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  margin-bottom: 8px;
+}
+
+.dashboard-hero h1 {
+  font-size: 29px;
+  font-weight: 800;
+  color: white;
+  margin: 0 0 8px;
+}
+
+.dashboard-hero p {
+  color: #cbd5e1;
+  font-size: 13px;
   margin: 0;
 }
 
-.employee-header h3 i {
-  color: #dc3545;
-  margin-right: 7px;
-}
-
-.employee-export-btn {
+.dashboard-hero-mark {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 9px 14px;
-  border: 1px solid #16a34a;
-  border-radius: 6px;
-  background: #16a34a;
-  color: #ffffff;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.employee-export-btn:hover {
-  background: #15803d;
-}
-
-/* Bộ lọc tìm kiếm và sắp xếp */
-
-.employee-filters {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 20px;
-  flex-wrap: wrap;
-}
-
-.employee-filters input {
-  flex: 1;
-  min-width: 200px;
-  height: 39px;
-  padding: 0 12px;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  background: #f8fafc;
-  color: #334155;
-  font-size: 13px;
-  outline: none;
-}
-
-.employee-filters select {
-  min-width: 190px;
-  height: 39px;
-  padding: 0 12px;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  background: #f8fafc;
-  color: #334155;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.employee-filters input:focus,
-.employee-filters select:focus {
-  border-color: #dc3545;
-}
-
-.employee-reset-btn {
-  height: 39px;
-  padding: 0 15px;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  background: #ffffff;
-  color: #334155;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.employee-reset-btn:hover {
-  border-color: #dc3545;
-  color: #dc3545;
-}
-
-/* Bảng nhân viên */
-
-.employee-table-wrapper {
-  width: 100%;
-  overflow-x: auto;
-}
-
-.employee-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
+  gap: 10px;
   white-space: nowrap;
-}
-
-.employee-table thead {
-  background: #f8fafc;
-}
-
-.employee-table th {
-  padding: 15px 14px;
-  text-align: left;
-  color: #64748b;
-  font-weight: 600;
-  border-bottom: 1px solid #e7ebf2;
-}
-
-.employee-table td {
-  padding: 16px 14px;
-  color: #334155;
-  border-bottom: 1px solid #edf0f5;
-}
-
-.employee-table tbody tr:hover {
-  background: #f8fafc;
-}
-
-.employee-name {
-  font-weight: 600;
-  color: #172033 !important;
-}
-
-.employee-revenue {
+  padding: 12px 17px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  color: #f1f5f9;
+  font-size: 12px;
   font-weight: 700;
-  color: #16a34a !important;
 }
 
-/* Phân trang */
+.dashboard-hero-mark i {
+  color: #ff859b;
+  font-size: 19px;
+}
 
-.employee-pagination {
+/* ===== CARD CHUNG ===== */
+
+.filter-card,
+.chart-card,
+.period-card,
+.order-status-card,
+.employee-card {
+  min-width: 0;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+
+/* ===== TIEU DE CAC KHU VUC ===== */
+
+.filter-header,
+.chart-header,
+.period-header,
+.employee-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding-top: 18px;
-  color: #64748b;
-  font-size: 12px;
+  gap: 14px;
+  padding-bottom: 17px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid #edf0f5;
 }
 
-.employee-page-buttons {
+.filter-header h3,
+.chart-header h3,
+.period-header h3,
+.employee-header h3 {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  margin: 0;
+  font-size: 15px;
+  color: #1e293b;
+  font-weight: 800;
 }
 
-.employee-page-buttons button {
-  padding: 8px 13px;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  background: #ffffff;
-  color: #334155;
-  font-size: 12px;
-  cursor: pointer;
+.filter-header h3 i,
+.chart-header h3 i,
+.period-header h3 i,
+.employee-header h3 i {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  width: 33px;
+  height: 33px;
+  border-radius: 10px;
+  background: #fff0f3;
+  color: #df2849;
+  font-size: 16px;
 }
 
-.employee-page-buttons button:hover:not(:disabled) {
-  border-color: #dc3545;
-  color: #dc3545;
-}
-
-.employee-page-buttons button:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-/* Responsive */
-
-@media (max-width: 700px) {
-  .employee-header {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .employee-filters {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .employee-filters input,
-  .employee-filters select,
-  .employee-reset-btn {
-    width: 100%;
-    min-width: 0;
-  }
-
-  .employee-pagination {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-}
-
-.statistics-page {
-  padding: 20px 22px;
-  min-height: 100vh;
-  background: #f5f7fb;
-  color: #172033;
-}
-
-/* BỘ LỌC */
+/* ===== BO LOC TONG QUAN ===== */
 
 .filter-card {
-  background: white;
-  border: 1px solid #e9edf4;
-  border-radius: 9px;
-  padding: 18px 20px;
+  padding: 23px 25px;
 }
 
 .filter-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  border-bottom: 1px solid #edf0f5;
-  padding-bottom: 15px;
-  margin-bottom: 16px;
-}
-
-.filter-header h3 {
-  font-size: 14px;
-  font-weight: 700;
-  margin: 0;
-}
-
-.filter-header h3 i {
-  color: #dc3545;
-  margin-right: 6px;
+  flex-wrap: wrap;
 }
 
 .quick-filters {
   display: flex;
-  gap: 5px;
   flex-wrap: wrap;
+  gap: 7px;
 }
 
 .quick-filters button {
-  border: 1px solid #e4e8ef;
-  border-radius: 5px;
-  background: white;
-  padding: 7px 10px;
+  border: 1px solid #e5eaf1;
+  border-radius: 9px;
+  background: #f8fafc;
+  color: #64748b;
+  padding: 9px 13px;
   font-size: 12px;
-  color: #334155;
+  font-weight: 650;
   cursor: pointer;
+  transition: 0.2s;
 }
 
 .quick-filters button:hover {
-  color: #dc3545;
-  border-color: #dc3545;
+  background: #fff0f3;
+  color: #df2849;
+  border-color: #f4b8c6;
 }
 
 .filter-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr)) auto;
-  gap: 12px;
+  gap: 13px;
   align-items: end;
 }
 
 .filter-field {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 8px;
   min-width: 0;
 }
 
 .filter-field label {
   font-size: 12px;
   color: #64748b;
+  font-weight: 700;
 }
 
 .filter-field input,
-.filter-field select {
+.filter-field select,
+.employee-filters input,
+.employee-filters select {
   width: 100%;
-  height: 40px;
+  min-width: 0;
+  height: 43px;
+  padding: 0 12px;
   border: 1px solid #e2e8f0;
-  background: #f8fafc;
-  border-radius: 5px;
-  padding: 0 10px;
-  font-size: 13px;
+  border-radius: 10px;
+  background: #fbfcfe;
+  outline: none;
   color: #334155;
-}
-
-.reset-button {
-  height: 40px;
-  padding: 0 15px;
-  border: 1px solid #e2e8f0;
-  background: white;
-  border-radius: 5px;
   font-size: 13px;
-  cursor: pointer;
-  white-space: nowrap;
+  transition: 0.2s;
 }
 
-/* THANH THÔNG TIN */
+.filter-field input:focus,
+.filter-field select:focus,
+.employee-filters input:focus,
+.employee-filters select:focus {
+  border-color: #e8758c;
+  background: white;
+  box-shadow: 0 0 0 3px rgba(223, 40, 73, 0.07);
+}
+
+.reset-button,
+.employee-reset-btn {
+  height: 43px;
+  padding: 0 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: white;
+  color: #475569;
+  font-weight: 700;
+  font-size: 12px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.reset-button:hover,
+.employee-reset-btn:hover {
+  color: #df2849;
+  background: #fff5f7;
+  border-color: #f4b8c6;
+}
+
+/* ===== THANH THONG TIN ===== */
 
 .information-bar {
-  background: white;
-  border: 1px solid #e9edf4;
-  border-radius: 7px;
-  padding: 11px 14px;
-  margin-top: 18px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  font-size: 12px;
+  flex-wrap: wrap;
+  margin-top: 17px;
+  padding: 14px 19px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 12px;
   color: #64748b;
+  font-size: 12px;
 }
 
 .information-left,
 .information-right {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 11px;
+  flex-wrap: wrap;
 }
 
 .information-left strong {
-  color: #172033;
+  color: #1e293b;
+  font-weight: 800;
 }
 
 .blue-dot {
-  width: 7px;
-  height: 7px;
-  background: #60a5fa;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 0 4px #dcfce7;
   flex-shrink: 0;
 }
 
 .refresh-button {
-  padding: 8px 12px;
-  border: 1px solid #f2c5cb;
-  border-radius: 5px;
-  background: white;
-  color: #c7283e;
+  padding: 9px 14px;
+  border: 1px solid #f4c3cd;
+  border-radius: 9px;
+  background: #fff6f7;
+  color: #d32948;
   font-size: 12px;
 }
 
 .refresh-button:disabled {
-  opacity: 0.65;
+  opacity: 0.6;
   cursor: not-allowed;
 }
 
 .date-error {
-  margin-top: 10px;
-  color: #dc2626;
+  margin: 12px 0;
+  padding: 11px 15px;
+  background: #fff1f2;
+  color: #be123c;
+  border-radius: 9px;
   font-size: 13px;
 }
 
-/* CÁC Ô THỐNG KÊ */
+/* ===== 7 THE DOANH THU ===== */
 
 .summary-section {
-  margin-top: 18px;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 16px;
+  margin-top: 20px;
 }
 
 .summary-grid {
   display: grid;
-  gap: 14px;
+  gap: 16px;
 }
 
 .top-grid {
@@ -1926,184 +2116,209 @@ function number(value) {
 }
 
 .stat-card {
-  min-height: 116px;
-  padding: 17px;
-  background: #fff;
-  border: 1px solid #e6eaf0;
-  border-radius: 9px;
+  position: relative;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
   justify-content: center;
-  gap: 5px;
+  align-items: flex-start;
+  min-width: 0;
+  min-height: 156px;
+  gap: 7px;
+  padding: 22px;
+  overflow: hidden;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  transition:
+    transform 0.2s,
+    box-shadow 0.2s;
+}
+
+.stat-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 30px rgba(31, 41, 70, 0.1);
+}
+
+.stat-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 21px;
+  right: 21px;
+  height: 4px;
+  background: #e2e8f0;
+  border-radius: 0 0 4px 4px;
+}
+
+.top-grid .stat-card:first-child {
+  background: linear-gradient(120deg, #fff, #fff6f8);
+  border-color: #f4d7df;
+}
+
+.top-grid .stat-card:nth-child(1)::before {
+  background: #df2849;
+}
+
+.top-grid .stat-card:nth-child(2)::before {
+  background: #10b981;
+}
+
+.top-grid .stat-card:nth-child(3)::before {
+  background: #8b5cf6;
+}
+
+.bottom-grid .stat-card:nth-child(1)::before {
+  background: #0ea5e9;
+}
+
+.bottom-grid .stat-card:nth-child(2)::before {
+  background: #a78bfa;
+}
+
+.bottom-grid .stat-card:nth-child(3)::before {
+  background: #f59e0b;
+}
+
+.bottom-grid .stat-card:nth-child(4)::before {
+  background: #fb7185;
 }
 
 .stat-icon {
-  width: 38px;
-  height: 38px;
+  width: 42px;
+  height: 42px;
   display: flex;
-  align-items: center;
   justify-content: center;
-  border-radius: 7px;
-  margin-bottom: 7px;
-  font-size: 18px;
+  align-items: center;
+  flex-shrink: 0;
+  border-radius: 12px;
+  font-size: 20px;
+  margin-bottom: 6px;
 }
 
 .mint {
-  background: #e8fcf4;
-  color: #16b981;
+  background: #ffe4ea;
+  color: #df2849;
 }
 
 .green {
-  background: #ebfcf8;
-  color: #10bfa6;
+  background: #dcfce7;
+  color: #16a34a;
 }
 
 .purple {
-  background: #eef0ff;
-  color: #6b61e8;
+  background: #f0eaff;
+  color: #7c3aed;
 }
 
 .blue {
-  background: #edf8ff;
-  color: #249edb;
+  background: #e0f2fe;
+  color: #0284c7;
 }
 
 .yellow {
-  background: #fff7df;
-  color: #eda319;
+  background: #fef3c7;
+  color: #d97706;
 }
 
 .red {
-  background: #fff0f2;
-  color: #d94f61;
+  background: #ffe4e6;
+  color: #e11d48;
 }
 
 .stat-card strong {
-  font-size: 22px;
-  font-weight: 750;
+  width: 100%;
+  font-size: clamp(20px, 1.8vw, 27px);
+  font-weight: 800;
+  line-height: 1.25;
   color: #172033;
-  line-height: 1.3;
+  letter-spacing: -0.5px;
+  overflow-wrap: anywhere;
 }
 
 .stat-card span {
-  color: #758092;
   font-size: 12px;
+  color: #64748b;
+  font-weight: 650;
 }
 
-/* RESPONSIVE */
-
-@media (max-width: 1250px) {
-  .filter-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .filter-header,
-  .information-bar {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .bottom-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 700px) {
-  .filter-grid,
-  .top-grid,
-  .bottom-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .statistics-page {
-    padding: 14px;
-  }
-}
-
-/* ===== HAI BIỂU ĐỒ THỐNG KÊ ===== */
+/* ===== BIEU DO ===== */
 
 .charts-grid {
   display: grid;
-  grid-template-columns: 2fr 1fr;
-  gap: 18px;
+  grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr);
+  gap: 19px;
   margin-top: 20px;
-  margin-bottom: 20px;
 }
 
 .chart-card {
-  min-width: 0;
-  min-height: 500px;
-  background: #fff;
-  border: 1px solid #e7ebf2;
-  border-radius: 9px;
-  padding: 18px 20px;
+  min-height: 490px;
+  padding: 23px 24px;
 }
 
 .chart-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
   flex-wrap: wrap;
-  padding-bottom: 15px;
-  border-bottom: 1px solid #edf0f5;
-}
-
-.chart-header h3 {
-  font-size: 14px;
-  font-weight: 700;
-  color: #202b3d;
-  margin: 0;
-}
-
-.chart-header h3 i {
-  color: #dc3545;
-  margin-right: 7px;
 }
 
 .chart-right {
   display: flex;
-  gap: 10px;
   align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
 }
 
 .chart-actions {
   display: inline-flex;
-  border: 1px solid #e5e9f0;
-  border-radius: 5px;
-  overflow: hidden;
+  padding: 4px;
+  gap: 4px;
+  border: 1px solid #e9edf4;
+  border-radius: 10px;
+  background: #f5f7fb;
 }
 
 .chart-actions button {
-  padding: 7px 12px;
-  background: #f8fafc;
+  padding: 8px 13px;
   border: none;
+  border-radius: 7px;
+  background: transparent;
   color: #64748b;
   font-size: 12px;
+  font-weight: 700;
   cursor: pointer;
+  transition: 0.2s;
 }
 
 .chart-actions button.active {
-  color: #172033;
-  background: #fff;
-  font-weight: 700;
-  box-shadow: 0 0 4px rgba(0, 0, 0, 0.12);
+  color: #df2849;
+  background: white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.09);
+}
+
+.chart-actions button:hover {
+  color: #df2849;
 }
 
 .chart-right select {
-  height: 33px;
-  max-width: 135px;
-  border: 1px solid #e5e9f0;
-  border-radius: 5px;
-  padding: 0 7px;
-  background: #fff;
+  height: 38px;
+  padding: 0 11px;
+  max-width: 165px;
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+  background: white;
   font-size: 12px;
+  color: #475569;
+}
+
+.chart-content {
+  min-height: 403px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .chart-canvas {
   width: 100%;
-  height: 365px;
+  height: 363px;
   position: relative;
 }
 
@@ -2112,27 +2327,26 @@ function number(value) {
   height: 100% !important;
 }
 
-.chart-content {
-  min-height: 410px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.chart-empty {
+  width: 100%;
+  padding: 30px 12px;
+  color: #94a3b8;
+  font-size: 13px;
+  text-align: center;
 }
-
-/* BIỂU ĐỒ THƯƠNG HIỆU */
 
 .brand-chart-content {
   display: flex;
   flex-direction: column;
   align-items: stretch;
   justify-content: flex-start;
-  gap: 16px;
-  padding-top: 20px;
+  gap: 17px;
+  padding-top: 8px;
 }
 
 .brand-chart-canvas {
   width: 100%;
-  height: 250px;
+  height: 242px;
   position: relative;
 }
 
@@ -2145,126 +2359,130 @@ function number(value) {
 
 .brand-list-item {
   display: flex;
-  align-items: center;
   justify-content: space-between;
+  align-items: center;
   gap: 12px;
-  padding: 11px 12px;
-  border-radius: 7px;
-  background: #f8fafc;
+  padding: 11px 13px;
+  border: 1px solid #edf0f5;
+  border-radius: 10px;
+  background: #f9fafc;
   font-size: 12px;
 }
 
 .brand-name {
   display: flex;
   align-items: center;
-  gap: 8px;
   min-width: 0;
-  color: #334155;
-  font-weight: 500;
+  gap: 9px;
+  color: #475569;
+  font-weight: 650;
 }
 
-.brand-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.brand-list-item strong {
-  color: #172033;
-  font-weight: 700;
+.brand-name > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.chart-empty {
-  font-size: 13px;
-  color: #94a3b8;
-  text-align: center;
+.brand-dot {
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  border-radius: 4px;
 }
 
-@media (max-width: 1100px) {
-  .charts-grid {
-    grid-template-columns: 1fr;
-  }
+.brand-list-item strong {
+  color: #1e293b;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
-/* TỔNG QUAN THEO CHU KỲ THỜI GIAN */
+/* ===== CHU KY VA TRANG THAI DON ===== */
 
 .period-section {
-  margin-top: 20px;
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
-  gap: 18px;
-  align-items: start;
+  grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+  align-items: stretch;
+  gap: 19px;
+  margin-top: 20px;
 }
 
-.period-card {
-  background: #ffffff;
-  border: 1px solid #e7ebf2;
-  border-radius: 9px;
-  padding: 18px 20px;
+.period-card,
+.order-status-card {
+  padding: 23px 24px;
 }
 
-.period-header {
-  padding-bottom: 16px;
-  border-bottom: 1px solid #edf0f5;
-  margin-bottom: 12px;
-}
-
-.period-header h3 {
-  font-size: 14px;
-  font-weight: 700;
-  margin: 0;
-  color: #202b3d;
-}
-
-.period-header i {
-  color: #dc3545;
-  margin-right: 7px;
-}
-
-.period-table-wrapper {
+.period-table-wrapper,
+.employee-table-wrapper {
   width: 100%;
   overflow-x: auto;
+  border: 1px solid #e9edf4;
+  border-radius: 11px;
 }
 
-.period-table {
+.period-table,
+.employee-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
   white-space: nowrap;
 }
 
-.period-table th {
-  background: #f8fafc;
+.period-table th,
+.employee-table th {
+  background: #f5f7fb;
   color: #64748b;
-  font-weight: 600;
-  padding: 14px 12px;
+  font-weight: 800;
+  font-size: 12px;
+  padding: 15px;
   text-align: left;
+  border-bottom: 1px solid #e9edf4;
 }
 
-.period-table td {
-  padding: 16px 12px;
+.period-table td,
+.employee-table td {
+  padding: 16px 15px;
   border-bottom: 1px solid #edf0f5;
-  color: #334155;
+  color: #475569;
+  background: white;
 }
 
-.period-name {
-  font-weight: 600;
+.period-table tbody tr:last-child td,
+.employee-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.period-table tbody tr:hover td,
+.employee-table tbody tr:hover td {
+  background: #fafbfe;
+}
+
+.period-name,
+.employee-name {
+  font-weight: 750 !important;
+  color: #1e293b !important;
 }
 
 .growth-positive {
-  color: #16a34a;
-  font-weight: 700;
+  display: inline-block;
+  padding: 5px 9px;
+  border-radius: 7px;
+  background: #dcfce7;
+  color: #15803d;
+  font-weight: 800;
 }
 
 .growth-negative {
-  color: #dc2626;
-  font-weight: 700;
+  display: inline-block;
+  padding: 5px 9px;
+  border-radius: 7px;
+  background: #ffe4e6;
+  color: #be123c;
+  font-weight: 800;
 }
 
 .period-message {
-  padding: 24px;
+  padding: 28px 15px;
   text-align: center;
   color: #94a3b8;
   font-size: 13px;
@@ -2274,38 +2492,29 @@ function number(value) {
   color: #dc2626;
 }
 
-/* CƠ CẤU TRẠNG THÁI ĐƠN HÀNG */
-
-.period-card,
-.order-status-card {
-  min-width: 0;
-}
-
-.order-status-card {
-  background: white;
-  border: 1px solid #e7ebf2;
-  border-radius: 9px;
-  padding: 18px 20px;
-}
+/* ===== CO CAU TRANG THAI DON HANG ===== */
 
 .order-status-total {
-  text-align: center;
-  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   color: #64748b;
-  margin: 15px 0;
+  margin: 0 0 15px;
+  font-size: 13px;
 }
 
 .order-status-total strong {
-  font-size: 18px;
-  color: #172033;
-  margin-left: 5px;
+  color: #1e293b;
+  font-size: 21px;
+  font-weight: 850;
 }
 
 .order-status-canvas {
   width: 100%;
-  height: 245px;
+  height: 230px;
   position: relative;
-  margin-bottom: 20px;
+  margin-bottom: 19px;
 }
 
 .order-status-list {
@@ -2319,17 +2528,20 @@ function number(value) {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 10px 12px;
-  background: #f8fafc;
-  border-radius: 6px;
+  min-height: 39px;
+  padding: 10px 13px;
+  border: 1px solid #edf0f5;
+  border-radius: 10px;
+  background: #f9fafc;
   font-size: 12px;
 }
 
 .order-status-name {
   display: flex;
   align-items: center;
-  gap: 8px;
-  color: #334155;
+  gap: 9px;
+  color: #475569;
+  font-weight: 650;
 }
 
 .order-status-dot {
@@ -2340,6 +2552,382 @@ function number(value) {
 }
 
 .order-status-item strong {
+  color: #1e293b;
+  font-weight: 800;
+}
+
+/* ===== BANG NHAN VIEN VA SAN PHAM ===== */
+
+.employee-section {
+  margin-top: 20px;
+  margin-bottom: 0;
+}
+
+.employee-card {
+  padding: 23px 24px;
+}
+
+.employee-header {
+  flex-wrap: wrap;
+}
+
+.employee-filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 11px;
+  margin-bottom: 19px;
+}
+
+.employee-filters input {
+  flex: 1 1 230px;
+}
+
+.employee-filters select {
+  width: auto;
+  flex: 0 1 200px;
+  min-width: 175px;
+  cursor: pointer;
+}
+
+.employee-export-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 10px 16px;
+  border: 1px solid #16a34a;
+  border-radius: 10px;
+  background: #16a34a;
+  color: white;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.employee-export-btn:hover {
+  background: #15803d;
+  border-color: #15803d;
+  box-shadow: 0 5px 14px rgba(22, 163, 74, 0.2);
+}
+
+.employee-revenue {
+  color: #16a34a !important;
+  font-weight: 800 !important;
+}
+
+/* ===== PHAN TRANG ===== */
+
+.employee-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-top: 19px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.employee-page-buttons {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-weight: 700;
+}
+
+.employee-page-buttons button {
+  min-height: 35px;
+  padding: 8px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+  background: white;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.employee-page-buttons button:hover:not(:disabled) {
+  border-color: #f4b8c6;
+  color: #df2849;
+  background: #fff5f7;
+}
+
+.employee-page-buttons button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ===== RESPONSIVE ===== */
+
+@media (max-width: 1440px) {
+  .filter-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .reset-button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 1190px) {
+  .charts-grid,
+  .period-section {
+    grid-template-columns: 1fr;
+  }
+
+  .chart-card {
+    min-height: 0;
+  }
+}
+
+@media (max-width: 980px) {
+  .top-grid,
+  .bottom-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .top-grid .stat-card:first-child {
+    grid-column: span 2;
+  }
+
+  .dashboard-hero-mark {
+    display: none;
+  }
+}
+
+@media (max-width: 680px) {
+  .statistics-page {
+    padding: 14px 12px 28px;
+  }
+
+  .dashboard-hero {
+    padding: 23px 20px;
+    border-radius: 14px;
+  }
+
+  .dashboard-hero h1 {
+    font-size: 23px;
+  }
+
+  .filter-card,
+  .chart-card,
+  .period-card,
+  .order-status-card,
+  .employee-card {
+    padding: 18px 15px;
+    border-radius: 12px;
+  }
+
+  .filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .filter-grid > .filter-field:nth-child(4),
+  .filter-grid > .filter-field:nth-child(5) {
+    grid-column: span 2;
+  }
+
+  .top-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .top-grid .stat-card:first-child {
+    grid-column: auto;
+  }
+
+  .bottom-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .stat-card {
+    min-height: 135px;
+    padding: 16px;
+  }
+
+  .stat-card strong {
+    font-size: 19px;
+  }
+
+  .employee-filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .employee-filters input,
+  .employee-filters select,
+  .employee-reset-btn {
+    flex: none;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .employee-pagination {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .chart-header,
+  .employee-header {
+    align-items: flex-start;
+  }
+
+  .chart-canvas {
+    height: 280px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stat-card,
+  .statistics-page button {
+    transition: none;
+  }
+
+  .stat-card:hover {
+    transform: none;
+  }
+}
+
+/* ===== GIAO DIEN CHU KY VA TRANG THAI - ANH MAU ===== */
+
+.period-section {
+  grid-template-columns: minmax(0, 1.75fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.period-card,
+.order-status-card {
+  padding: 20px;
+  border-radius: 16px;
+  background: #fff;
+  border: 1px solid #edf0f5;
+  box-shadow: 0 3px 16px rgba(15, 23, 42, 0.04);
+  min-height: 0;
+}
+
+.period-card .period-header,
+.order-status-card .period-header {
+  margin-bottom: 16px;
+  padding-bottom: 15px;
+}
+
+.period-card .period-header h3,
+.order-status-card .period-header h3 {
+  font-size: 14px;
+  font-weight: 800;
+}
+
+/* BANG CHU KY GIONG ANH 1 */
+
+.period-card .period-table-wrapper {
+  border: none;
+  border-radius: 0;
+  overflow-x: auto;
+}
+
+.period-card .period-table {
+  border-collapse: separate;
+  border-spacing: 0 9px;
+}
+
+.period-card .period-table th {
+  background: transparent;
+  border: none;
+  padding: 11px 13px;
+  font-size: 12px;
+  color: #697386;
+  white-space: nowrap;
+}
+
+.period-card .period-table td {
+  background: #f7f9fc;
+  border: none;
+  padding: 18px 13px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.period-card .period-table tbody tr:hover td {
+  background: #eff3f9;
+}
+
+.period-card .period-table tbody td:first-child {
+  border-radius: 12px 0 0 12px;
+  font-weight: 800;
+}
+
+.period-card .period-table tbody td:last-child {
+  border-radius: 0 12px 12px 0;
+}
+
+.period-card .growth-positive {
+  background: #eafbf1;
+  color: #16a34a;
+  padding: 7px 12px;
+  border-radius: 20px;
+  font-weight: 800;
+}
+
+.period-card .growth-negative {
+  background: #fff0f2;
+  color: #e11d48;
+  padding: 7px 12px;
+  border-radius: 20px;
+  font-weight: 800;
+}
+
+/* BIEU DO TRANG THAI */
+
+.order-status-card .order-status-total {
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.order-status-card .order-status-canvas {
+  width: 100%;
+  max-width: 260px;
+  height: 205px;
+  margin: 0 auto 20px;
+}
+
+/* DANH SACH TRANG THAI CHIA 2 COT */
+
+.order-status-card .order-status-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.order-status-card .order-status-item {
+  min-width: 0;
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid #edf1f6;
+  background: #f7f9fc;
+  border-radius: 9px;
+  gap: 7px;
+}
+
+.order-status-card .order-status-name {
+  min-width: 0;
+  font-size: 12px;
+  overflow: hidden;
+}
+
+.order-status-card .order-status-name {
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.order-status-card .order-status-item strong {
+  flex-shrink: 0;
+  font-size: 12px;
   color: #172033;
 }
 
@@ -2348,4 +2936,227 @@ function number(value) {
     grid-template-columns: 1fr;
   }
 }
+
+@media (max-width: 600px) {
+  .order-status-card .order-status-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ===== NÚT XUẤT EXCEL CHU KỲ ===== */
+
+.period-card .period-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.period-export-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 9px 14px;
+  border: 1px solid #fbd5df;
+  border-radius: 9px;
+  background: #fff6f8;
+  color: #e54870;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.period-export-btn:hover {
+  background: #ffe9ef;
+  border-color: #f4a9bc;
+}
+
+.period-export-btn i {
+  font-size: 14px;
+}
+
+/* TRẠNG THÁI TẢI DỮ LIỆU DOANH THU */
+
+.summary-message {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 95px;
+  padding: 20px;
+  border: 1px solid #e2e8f0;
+  border-radius: 13px;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.summary-message i {
+  font-size: 18px;
+}
+
+.summary-message-error {
+  background: #fff1f2;
+  border-color: #fecdd3;
+  color: #be123c;
+}
+
+.product-revenue-note {
+  margin: 0 0 16px;
+  padding: 12px 15px;
+  border: 1px solid #dbeafe;
+  border-radius: 10px;
+  background: #eff6ff;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.product-revenue-note i {
+  margin-right: 7px;
+  color: #2563eb;
+}
+
+/* ===== DONG BO MAU XANH DUONG ===== */
+
+/* Icon tiêu đề các khối */
+.statistics-page .filter-header h3 i,
+.statistics-page .chart-header h3 i,
+.statistics-page .period-header h3 i,
+.statistics-page .employee-header h3 i {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+/* Nút Xuất Excel chu kỳ */
+.statistics-page .period-export-btn {
+  background: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #bfdbfe;
+}
+
+.statistics-page .period-export-btn:hover {
+  background: #dbeafe;
+  border-color: #60a5fa;
+}
+
+/* Nút biểu đồ đang được chọn */
+.statistics-page .chart-actions button.active {
+  color: #2563eb;
+}
+
+/* Màu viền ô lọc khi chọn */
+.statistics-page .filter-field input:focus,
+.statistics-page .filter-field select:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+/* Hover bộ lọc nhanh */
+.statistics-page .quick-filters button:hover {
+  color: #2563eb;
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+/* ===== KPI THONG KE - TONG XANH DUONG ===== */
+
+/* Ô tổng doanh thu */
+.statistics-page .top-grid .stat-card:first-child {
+  background: linear-gradient(120deg, #ffffff, #eff6ff);
+  border-color: #bfdbfe;
+}
+
+/* Thanh màu phía trên 7 ô */
+.statistics-page .top-grid .stat-card:nth-child(1)::before {
+  background: #2563eb;
+}
+
+.statistics-page .top-grid .stat-card:nth-child(2)::before {
+  background: #3b82f6;
+}
+
+.statistics-page .top-grid .stat-card:nth-child(3)::before {
+  background: #60a5fa;
+}
+
+.statistics-page .bottom-grid .stat-card:nth-child(1)::before {
+  background: #1d4ed8;
+}
+
+.statistics-page .bottom-grid .stat-card:nth-child(2)::before {
+  background: #2563eb;
+}
+
+.statistics-page .bottom-grid .stat-card:nth-child(3)::before {
+  background: #0ea5e9;
+}
+
+.statistics-page .bottom-grid .stat-card:nth-child(4)::before {
+  background: #38bdf8;
+}
+
+/* Icon KPI */
+.statistics-page .stat-icon {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+/* Hiệu ứng khi rê chuột */
+.statistics-page .stat-card:hover {
+  border-color: #93c5fd;
+  box-shadow: 0 12px 28px rgba(37, 99, 235, 0.12);
+}
+
+/* ===== DONG BO BO LOC SANG XANH DUONG ===== */
+
+/* Nút lọc nhanh */
+.statistics-page .quick-filters button:hover {
+  color: #2563eb;
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+
+/* Nút Reset */
+.statistics-page .reset-button:hover,
+.statistics-page .employee-reset-btn:hover {
+  color: #2563eb;
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+
+/* Viền input và select khi chọn */
+.statistics-page .filter-field input:focus,
+.statistics-page .filter-field select:focus,
+.statistics-page .employee-filters input:focus,
+.statistics-page .employee-filters select:focus {
+  outline: none;
+  border-color: #2563eb;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+/* Nút chuyển đổi biểu đồ */
+.statistics-page .chart-actions button.active {
+  color: #2563eb;
+  background: #eff6ff;
+}
+
+/* Nút phân trang */
+.statistics-page .employee-page-buttons button:hover:not(:disabled) {
+  color: #2563eb;
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+/* Màu chủ đạo */
+.statistics-page {
+  --primary: #2563eb;
+  --primary-dark: #1d4ed8;
+}
+
 </style>
