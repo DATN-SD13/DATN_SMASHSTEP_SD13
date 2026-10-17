@@ -46,6 +46,19 @@ async function handleLogout() {
 function onClickOutside(e) {
   if (!e.target.closest('.user-menu-wrap')) userMenuOpen.value = false
 }
+
+const outsideHandlers = new WeakMap()
+const vClickOutside = {
+  mounted(el, binding) {
+    const handler = event => { if (!el.contains(event.target)) binding.value(event) }
+    outsideHandlers.set(el, handler)
+    document.addEventListener('pointerdown', handler)
+  },
+  unmounted(el) {
+    document.removeEventListener('pointerdown', outsideHandlers.get(el))
+    outsideHandlers.delete(el)
+  }
+}
 </script>
 
 <template>
@@ -71,14 +84,14 @@ function onClickOutside(e) {
 
         <!-- Đã đăng nhập: hiện avatar + dropdown -->
         <div v-if="auth.isAuthenticated" class="user-menu-wrap" v-click-outside="onClickOutside">
-          <button class="user-avatar-btn" @click="toggleUserMenu" :aria-expanded="userMenuOpen" aria-label="Menu tài khoản">
+          <button class="user-avatar-btn" @click="toggleUserMenu" @keydown.esc="userMenuOpen = false" :aria-expanded="userMenuOpen" aria-controls="customer-account-menu" aria-label="Menu tài khoản">
             <img v-if="auth.user?.avatar" :src="auth.user.avatar" class="avatar-img" alt="Avatar" />
             <span v-else class="avatar-placeholder">{{ (auth.user?.name || 'K').charAt(0).toUpperCase() }}</span>
             <span class="user-name">{{ auth.user?.name || 'Tài khoản' }}</span>
             <svg class="chevron" :class="{ open: userMenuOpen }" viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
           </button>
 
-          <div v-if="userMenuOpen" class="user-dropdown">
+          <div v-if="userMenuOpen" id="customer-account-menu" class="user-dropdown" @keydown.esc="userMenuOpen = false">
             <RouterLink to="/tai-khoan" class="dropdown-item">
               <svg viewBox="0 0 20 20" fill="currentColor" width="15"><path d="M10 10a4 4 0 100-8 4 4 0 000 8zm-7 8a7 7 0 0114 0H3z"/></svg>
               Tài khoản của tôi

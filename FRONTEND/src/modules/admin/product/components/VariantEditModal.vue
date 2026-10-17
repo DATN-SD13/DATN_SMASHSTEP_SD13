@@ -2,7 +2,7 @@
 import { useProductFeedback } from '../composables/useProductToast'
 import FormattedNumberInput from './FormattedNumberInput.vue'
 import { validatePriceValue, priceValidationNotice } from '../services/priceValidation'
-import { validateVariantFields, duplicateVariantFields, apiFieldErrors } from '../services/productValidation'
+import { validateVariantFields, apiFieldErrors } from '../services/productValidation'
 import { useProductToast } from '../composables/useProductToast'
 import Select2Control from './Select2Control.vue'
 import { reactive, ref, onMounted } from 'vue'
@@ -24,28 +24,19 @@ async function loadImages(changed = false) {
 }
 onMounted(() => loadImages())
 const { confirmation, confirming: saving, confirmError, askConfirmation, cancelConfirmation, confirmAction } = useConfirmation()
-function choices(type, field) {
-  return (props.options[type] || []).filter(a => a.trangThai === 1 || a.id === props.variant[field])
-}
 async function save() {
   if (saving.value || imageBusy.value || checking.value || confirmation.value) return
   error.value = ''
   Object.keys(fieldErrors).forEach(key => delete fieldErrors[key])
   const price = priceControl.value.validate(), quantity = quantityControl.value.validate()
-  Object.assign(fieldErrors, validateVariantFields(form))
+  const identity = { sanPhamId: props.variant.sanPhamId,
+    maChiTietSanPham: props.variant.maChiTietSanPham, sku: props.variant.sku,
+    mauSacId: props.variant.mauSacId, kichThuocId: props.variant.kichThuocId }
+  Object.assign(fieldErrors, validateVariantFields({ ...form, ...identity }))
   if (!price.valid) fieldErrors.giaBan = price.message
   if (!quantity.valid) fieldErrors.soLuong = quantity.message
-  for (const [type, field] of [['colors', 'mauSacId'], ['sizes', 'kichThuocId']])
-    if (!choices(type, field).some(item => item.id === Number(form[field]))) fieldErrors[field] = 'Vui lòng chọn thuộc tính hợp lệ.'
   if (Object.keys(fieldErrors).length) { const notice = priceValidationNotice(fieldErrors); toast.warning(notice.message, notice.title); return }
-  checking.value = true
-  try { Object.assign(fieldErrors, duplicateVariantFields(form, await variantService.all(), form.id)) }
-  catch (e) { error.value = errorMessage(e); return }
-  finally { checking.value = false }
-  if (Object.keys(fieldErrors).length) { toast.warning(Object.values(fieldErrors)[0]); return }
-  const id = form.id, data = { sanPhamId: form.sanPhamId,
-    maChiTietSanPham: form.maChiTietSanPham.trim(), sku: form.sku.trim(),
-    mauSacId: Number(form.mauSacId), kichThuocId: Number(form.kichThuocId),
+  const id = props.variant.id, data = { ...identity,
     soLuong: Number(form.soLuong), giaBan: validatePriceValue(form.giaBan).value,
     kichHoat: form.kichHoat, trangThai: Number(form.trangThai) }
   askConfirmation({ title: 'Xác nhận cập nhật biến thể', message: 'Bạn có chắc muốn lưu các thay đổi của biến thể này?', details: [
@@ -69,11 +60,12 @@ useProductFeedback(error)
     <form novalidate @submit.prevent="save">
       <h2 id="variant-dialog-title">Sửa biến thể {{ variant.maChiTietSanPham }}</h2>
       <p>{{ variant.tenSanPham }} — {{ variant.tenMauSac }} / {{ variant.giaTriKichThuoc }}</p>
+      <p>Mã chi tiết, SKU, màu sắc và kích thước được giữ nguyên sau khi tạo.</p>
       <fieldset :disabled="saving || imageBusy || checking"><div class="p-form-grid">
-        <label><span class="p-field-label">Mã chi tiết <b class="p-required">*</b></span><input v-model="form.maChiTietSanPham" :aria-invalid="!!fieldErrors.maChiTietSanPham" required placeholder="Nhập Mã chi tiết" maxlength="100" /><small v-if="fieldErrors.maChiTietSanPham" class="p-field-error">{{ fieldErrors.maChiTietSanPham }}</small></label>
-        <label><span class="p-field-label">SKU <b class="p-required">*</b></span><input v-model="form.sku" :aria-invalid="!!fieldErrors.sku" required placeholder="Nhập SKU" maxlength="100" /><small v-if="fieldErrors.sku" class="p-field-error">{{ fieldErrors.sku }}</small></label>
-        <label><span class="p-field-label">Màu sắc <b class="p-required">*</b></span><Select2Control v-model="form.mauSacId" :aria-invalid="!!fieldErrors.mauSacId" required :disabled="saving || imageBusy || checking"><option v-for="a in choices('colors', 'mauSacId')" :key="a.id" :value="a.id">{{ a.ten }}{{ a.trangThai === 1 ? '' : ' (ngừng kinh doanh)' }}</option></Select2Control><small v-if="fieldErrors.mauSacId" class="p-field-error">{{ fieldErrors.mauSacId }}</small></label>
-        <label><span class="p-field-label">Kích thước <b class="p-required">*</b></span><Select2Control v-model="form.kichThuocId" :aria-invalid="!!fieldErrors.kichThuocId" required :disabled="saving || imageBusy || checking"><option v-for="a in choices('sizes', 'kichThuocId')" :key="a.id" :value="a.id">{{ a.ten }}{{ a.trangThai === 1 ? '' : ' (ngừng kinh doanh)' }}</option></Select2Control><small v-if="fieldErrors.kichThuocId" class="p-field-error">{{ fieldErrors.kichThuocId }}</small></label>
+        <label><span class="p-field-label">Mã chi tiết</span><input :value="variant.maChiTietSanPham" readonly :aria-invalid="!!fieldErrors.maChiTietSanPham" /><small v-if="fieldErrors.maChiTietSanPham" class="p-field-error">{{ fieldErrors.maChiTietSanPham }}</small></label>
+        <label><span class="p-field-label">SKU</span><input :value="variant.sku" readonly :aria-invalid="!!fieldErrors.sku" /><small v-if="fieldErrors.sku" class="p-field-error">{{ fieldErrors.sku }}</small></label>
+        <label><span class="p-field-label">Màu sắc</span><input :value="variant.tenMauSac || '—'" readonly :aria-invalid="!!fieldErrors.mauSacId" /><small v-if="fieldErrors.mauSacId" class="p-field-error">{{ fieldErrors.mauSacId }}</small></label>
+        <label><span class="p-field-label">Kích thước</span><input :value="variant.giaTriKichThuoc || '—'" readonly :aria-invalid="!!fieldErrors.kichThuocId" /><small v-if="fieldErrors.kichThuocId" class="p-field-error">{{ fieldErrors.kichThuocId }}</small></label>
         <label><span class="p-field-label">Số lượng <b class="p-required">*</b></span><FormattedNumberInput ref="quantityControl" v-model="form.soLuong" required :min="0" :max="2147483647" placeholder="Ví dụ: 100" :disabled="saving || imageBusy || checking" :validation-error="fieldErrors.soLuong" @editing="delete fieldErrors.soLuong" /></label>
         <label><span class="p-field-label">Giá bán (VNĐ) <b class="p-required">*</b></span><FormattedNumberInput ref="priceControl" v-model="form.giaBan" required currency placeholder="Ví dụ: 1.250.000" :disabled="saving || imageBusy || checking" :validation-error="fieldErrors.giaBan" @editing="delete fieldErrors.giaBan" /></label>
         <label><span class="p-field-label">Kích hoạt <b class="p-required">*</b></span><Select2Control required v-model="form.kichHoat" :aria-invalid="!!fieldErrors.kichHoat" :disabled="saving || imageBusy || checking"><option :value="true">Có</option><option :value="false">Không</option></Select2Control><small v-if="fieldErrors.kichHoat" class="p-field-error">{{ fieldErrors.kichHoat }}</small></label>

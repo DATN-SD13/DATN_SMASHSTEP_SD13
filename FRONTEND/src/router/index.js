@@ -12,7 +12,6 @@ import EmployeeList from '../modules/admin/employee/views/EmployeeList.vue'
 import EmployeeDetail from '../modules/admin/employee/views/EmployeeDetail.vue'
 import AddEmployee from '../modules/admin/employee/views/AddEmployee.vue'
 import POSSales from '../modules/admin/sales/views/POSSales.vue'
-import StatisticsView from '../modules/admin/invoice/views/StatisticsView.vue'
 import ComingSoon from '../layouts/ComingSoon.vue'
 import EditDiscount from '../modules/admin/promotion/views/EditDiscount.vue'
 import DetailDiscount from '../modules/admin/promotion/views/DetailDiscount.vue'
@@ -40,7 +39,7 @@ const router = createRouter({
     { path: '/khach-hang/trang-chu',         component: CustomerHome,  meta: { requiresAuth: true, userType: 'KHACH_HANG' } },
 
     // ── Admin area (requiresAuth + NHAN_VIEN) ───────────
-    { path: '/', redirect: '/thong-ke' },
+    { path: '/', redirect: '/thong-ke-tong-hop' },
     { path: '/hoa-don',         component: InvoiceList,   meta: { title: 'Quản lý hóa đơn', requiresAuth: true, userType: 'NHAN_VIEN' } },
     { path: '/hoa-don/:code',   component: InvoiceDetail, meta: { title: 'Chi tiết hóa đơn', parent: { label: 'Hóa đơn', to: '/hoa-don' }, requiresAuth: true, userType: 'NHAN_VIEN' } },
 
@@ -56,7 +55,7 @@ const router = createRouter({
 
     { path: '/ban-hang',  component: POSSales,       meta: { title: 'Bán hàng tại quầy', requiresAuth: true, userType: 'NHAN_VIEN' } },
     { path: '/thong-ke-tong-hop', component: () => import('../modules/admin/statistics/view/StatisticsDashboard.vue'), meta: { title: 'Thống kê tổng hợp', requiresAuth: true, userType: 'NHAN_VIEN' } },
-    { path: '/thong-ke',  component: StatisticsView, meta: { title: 'Thống kê', requiresAuth: true, userType: 'NHAN_VIEN' } },
+    { path: '/thong-ke', redirect: '/thong-ke-tong-hop' },
 
     { path: '/san-pham',           component: () => import('../modules/admin/product/views/ProductList.vue'),    meta: { title: 'Sản phẩm', parent: prod, requiresAuth: true, userType: 'NHAN_VIEN' } },
     { path: '/san-pham/them',      component: () => import('../modules/admin/product/views/ProductCreate.vue'),  meta: { title: 'Thêm sản phẩm', parent: productParent, requiresAuth: true, userType: 'NHAN_VIEN' } },

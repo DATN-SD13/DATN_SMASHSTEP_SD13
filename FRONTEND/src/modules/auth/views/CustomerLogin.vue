@@ -1,4 +1,5 @@
 <script setup>
+import { loginError } from '../../../utils/accountValidation'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../../../stores/auth'
@@ -13,6 +14,9 @@ const loading  = ref(false)
 const error    = ref('')
 
 async function handleLogin() {
+  if (loading.value) return
+  const invalid = loginError(username.value, password.value)
+  if (invalid) { error.value = invalid; return }
   error.value   = ''
   loading.value = true
   try {
@@ -39,7 +43,7 @@ async function handleLogin() {
       <form @submit.prevent="handleLogin" novalidate>
         <div class="field">
           <label>Tên tài khoản hoặc Email</label>
-          <input
+          <input maxlength="254"
             v-model="username"
             type="text"
             placeholder="Nhập tên tài khoản hoặc email"
@@ -52,7 +56,7 @@ async function handleLogin() {
         <div class="field">
           <label>Mật khẩu</label>
           <div class="pass-wrap">
-            <input
+            <input maxlength="100"
               v-model="password"
               :type="showPass ? 'text' : 'password'"
               placeholder="Nhập mật khẩu"

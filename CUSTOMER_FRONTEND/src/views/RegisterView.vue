@@ -1,4 +1,5 @@
 <script setup>
+import { nameError, emailError, phoneError, passwordError } from '../utils/accountValidation'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
@@ -18,6 +19,8 @@ const loading  = ref(false)
 const error    = ref('')
 
 function validate() {
+  const invalid = nameError(name.value) || emailError(email.value) || phoneError(phone.value, false) || passwordError(password.value)
+  if (invalid) { error.value = invalid; return false }
   if (!name.value.trim())  { error.value = 'Vui lòng nhập họ tên.'; return false }
   if (!email.value.trim()) { error.value = 'Vui lòng nhập email.'; return false }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value.trim())) {
@@ -32,6 +35,7 @@ function validate() {
 }
 
 async function handleRegister() {
+  if (loading.value) return
   error.value = ''
   if (!validate()) return
 
@@ -83,7 +87,7 @@ async function handleRegister() {
         <!-- Họ tên -->
         <div class="field">
           <label>Họ và tên <span class="req">*</span></label>
-          <input
+          <input maxlength="255"
             v-model="name"
             type="text"
             placeholder="Nguyễn Văn A"
@@ -96,7 +100,7 @@ async function handleRegister() {
         <!-- Email -->
         <div class="field">
           <label>Email <span class="req">*</span></label>
-          <input
+          <input maxlength="254"
             v-model="email"
             type="email"
             placeholder="email@example.com"
@@ -109,7 +113,7 @@ async function handleRegister() {
         <!-- Số điện thoại -->
         <div class="field">
           <label>Số điện thoại <span class="optional">(tuỳ chọn)</span></label>
-          <input
+          <input maxlength="10"
             v-model="phone"
             type="tel"
             placeholder="0xxxxxxxxx"
@@ -122,10 +126,10 @@ async function handleRegister() {
         <div class="field">
           <label>Mật khẩu <span class="req">*</span></label>
           <div class="pass-wrap">
-            <input
+            <input maxlength="72"
               v-model="password"
               :type="showPass ? 'text' : 'password'"
-              placeholder="Ít nhất 6 ký tự"
+              placeholder="Ít nhất 6 ký tự, gồm chữ và số"
               autocomplete="new-password"
               :disabled="loading"
               required
@@ -142,7 +146,7 @@ async function handleRegister() {
         <div class="field">
           <label>Xác nhận mật khẩu <span class="req">*</span></label>
           <div class="pass-wrap">
-            <input
+            <input maxlength="72"
               v-model="confirm"
               :type="showCfm ? 'text' : 'password'"
               placeholder="Nhập lại mật khẩu"

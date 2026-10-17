@@ -298,7 +298,7 @@ async function save() {
                   <span class="req">*</span>
                 </label>
 
-                <input
+                <input maxlength="255"
                   class="ss-input"
                   v-model="f.name"
                   placeholder="Nhập họ tên"
@@ -311,7 +311,7 @@ async function save() {
                   <span class="req">*</span>
                 </label>
 
-                <input
+                <input maxlength="254"
                   class="ss-input"
                   type="email"
                   v-model="f.email"
@@ -324,7 +324,7 @@ async function save() {
                   Số điện thoại <span class="req">*</span>
                 </label>
 
-                <input
+                <input maxlength="10"
                   class="ss-input"
                   v-model="f.phone"
                   placeholder="VD: 0901234567"
@@ -409,7 +409,7 @@ async function save() {
                   <span class="req">*</span>
                 </label>
 
-                <input
+                <input maxlength="255"
                   class="ss-input"
                   v-model="f.rName"
                   placeholder="Họ tên người nhận"
@@ -424,7 +424,7 @@ async function save() {
                   <span class="req">*</span>
                 </label>
 
-                <input
+                <input maxlength="10"
                   class="ss-input"
                   v-model="f.rPhone"
                   placeholder="VD: 0901234567"

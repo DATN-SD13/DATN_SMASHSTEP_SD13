@@ -51,6 +51,12 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  function updateProfile(profile) {
+    if (!user.value || !isCustomer.value || user.value.id !== profile.id) return
+    user.value = { ...user.value, code: profile.code, name: profile.name, email: profile.email, avatar: profile.image }
+    localStorage.setItem(USER_KEY, JSON.stringify(user.value))
+  }
+
   function _clearState() {
     token.value = null
     user.value  = null
@@ -67,6 +73,6 @@ export const useAuthStore = defineStore('auth', () => {
   return {
     token, user,
     isAuthenticated, isCustomer,
-    login, logout, forceLogout
+    login, logout, forceLogout, updateProfile
   }
 })

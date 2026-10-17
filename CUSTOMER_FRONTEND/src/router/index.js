@@ -29,6 +29,13 @@ const router = createRouter({
       meta: { title: 'Đăng ký | SmashStep', public: true, guestOnly: true }
     },
 
+    {
+      path: '/tai-khoan',
+      name: 'account',
+      component: () => import('../views/AccountView.vue'),
+      meta: { title: 'Tài khoản của tôi | SmashStep', requiresAuth: true, customerOnly: true }
+    },
+
     // ── Public pages ─────────────────────────────────────
     {
       path: '/',
@@ -69,6 +76,10 @@ router.beforeEach((to, _from, next) => {
     // Route yêu cầu đăng nhập
     if (to.meta.requiresAuth && !auth.isAuthenticated) {
       return next({ path: '/dang-nhap', query: { redirect: to.fullPath } })
+    }
+
+    if (to.meta.customerOnly && !auth.isCustomer) {
+      return next('/')
     }
 
     next()

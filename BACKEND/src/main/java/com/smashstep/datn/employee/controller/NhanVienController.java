@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
+@org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('ADMIN','STAFF')")
 @RestController
 @RequestMapping("/api/nhan-vien")
 @RequiredArgsConstructor
@@ -93,6 +94,7 @@ public class NhanVienController {
     // =========================================================
     // THÊM
     // =========================================================
+    @org.springframework.security.access.prepost.PreAuthorize("hasRole('ADMIN')")
     @PostMapping
     public ApiResponse<NhanVienResponse> them(
             @Valid
@@ -109,6 +111,7 @@ public class NhanVienController {
     // =========================================================
     // SỬA
     // =========================================================
+    @org.springframework.security.access.prepost.PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/{ma}")
     public ApiResponse<NhanVienResponse> sua(
             @PathVariable String ma,
@@ -130,6 +133,7 @@ public class NhanVienController {
     // =========================================================
     // KHÓA / MỞ KHÓA
     // =========================================================
+    @org.springframework.security.access.prepost.PreAuthorize("hasRole('ADMIN')")
     @PatchMapping("/{ma}/trang-thai")
     public ApiResponse<NhanVienResponse> capNhatTrangThai(
             @PathVariable String ma,

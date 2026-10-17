@@ -136,7 +136,7 @@ async function save() {
                 <span class="req">*</span>
               </label>
 
-              <input
+              <input maxlength="255"
                 class="ss-input"
                 v-model="f.name"
               />
@@ -148,7 +148,7 @@ async function save() {
                 <span class="req">*</span>
               </label>
 
-              <input
+              <input maxlength="254"
                 class="ss-input"
                 type="email"
                 v-model="f.email"
@@ -160,7 +160,7 @@ async function save() {
                 Số điện thoại
               </label>
 
-              <input
+              <input maxlength="10"
                 class="ss-input"
                 v-model="f.phone"
               />

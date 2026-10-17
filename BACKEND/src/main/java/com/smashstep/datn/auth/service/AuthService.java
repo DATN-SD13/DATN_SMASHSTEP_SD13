@@ -45,17 +45,20 @@ public class AuthService {
         if (khachHangRepository.existsByEmailIgnoreCase(email)) {
             throw AppException.conflict("Email này đã được sử dụng.");
         }
+        String phone = request.getPhone() == null || request.getPhone().isBlank() ? null : request.getPhone().trim();
+        if (phone != null && khachHangRepository.existsBySoDienThoai(phone)) {
+            throw AppException.conflict("Số điện thoại này đã được sử dụng.");
+        }
 
         KhachHang kh = new KhachHang();
         kh.setMaKhachHang(sinhMaKhachHang());
         kh.setTenKhachHang(request.getName().trim());
         kh.setEmail(email);
-        kh.setSoDienThoai(
-            request.getPhone() != null && !request.getPhone().isBlank()
-                ? request.getPhone().trim() : null
-        );
+        kh.setSoDienThoai(phone);
         // Dùng phần trước @ của email làm tên tài khoản, đảm bảo không trùng
         String baseUsername = email.split("@")[0].replaceAll("[^a-zA-Z0-9_]", "");
+        if (baseUsername.isBlank()) baseUsername = "khachhang";
+        if (baseUsername.length() > 54) baseUsername = baseUsername.substring(0, 54);
         String username = baseUsername;
         int suffix = 1;
         while (khachHangRepository.existsByTenTaiKhoan(username)) {

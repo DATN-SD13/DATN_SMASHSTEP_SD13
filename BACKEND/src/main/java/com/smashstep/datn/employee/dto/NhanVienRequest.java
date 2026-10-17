@@ -1,5 +1,7 @@
 package com.smashstep.datn.employee.dto;
 
+import com.smashstep.datn.common.validation.*;
+
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -19,11 +21,13 @@ public class NhanVienRequest {
 
     @NotBlank(message = "Tên nhân viên không được để trống")
     @Size(max = 255, message = "Tên nhân viên không được vượt quá 255 ký tự")
+    @AccountText(AccountRules.Kind.NAME)
     private String name;
 
     @NotBlank(message = "Email không được để trống")
     @Email(message = "Email không đúng định dạng")
     @Size(max = 255, message = "Email không được vượt quá 255 ký tự")
+    @AccountText(AccountRules.Kind.EMAIL)
     private String email;
 
     @NotBlank(message = "Số điện thoại không được để trống")
@@ -31,9 +35,11 @@ public class NhanVienRequest {
             regexp = "^0\\d{9}$",
             message = "Số điện thoại phải gồm 10 số và bắt đầu bằng 0"
     )
+    @AccountText(AccountRules.Kind.PHONE)
     private String phone;
 
     @NotNull(message = "Vai trò không được để trống")
+    @jakarta.validation.constraints.Positive(message = "Vai trò không hợp lệ")
     private Long roleId;
 
     @NotNull(message = "Giới tính không được để trống")
@@ -43,15 +49,19 @@ public class NhanVienRequest {
 
     @NotNull(message = "Ngày sinh không được để trống")
     @PastOrPresent(message = "Ngày sinh không được lớn hơn ngày hiện tại")
+    @AccountBirthDate(minAge = 18)
     private LocalDate dob;
 
     @Size(max = 100, message = "Tỉnh/thành phố tối đa 100 ký tự")
+    @AccountText(AccountRules.Kind.ADDRESS)
     private String province;
 
     @Size(max = 100, message = "Phường/xã tối đa 100 ký tự")
+    @AccountText(AccountRules.Kind.ADDRESS)
     private String ward;
 
     @Size(max = 500, message = "Địa chỉ cụ thể tối đa 500 ký tự")
+    @AccountText(AccountRules.Kind.ADDRESS)
     private String street;
 
     @Size(max = 1000) private String image;

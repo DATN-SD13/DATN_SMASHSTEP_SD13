@@ -481,7 +481,7 @@ onMounted(() => {
               <span class="req">*</span>
             </label>
 
-            <input
+            <input maxlength="255"
               class="ss-input"
               v-model="f.name"
               placeholder="Nhập họ tên"
@@ -494,7 +494,7 @@ onMounted(() => {
               <span class="req">*</span>
             </label>
 
-            <input
+            <input maxlength="254"
               class="ss-input"
               type="email"
               v-model="f.email"

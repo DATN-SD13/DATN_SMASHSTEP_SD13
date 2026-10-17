@@ -1,4 +1,5 @@
 <script setup>
+import { loginError } from '../../../utils/accountValidation'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../../../stores/auth'
@@ -13,11 +14,14 @@ const loading  = ref(false)
 const error    = ref('')
 
 async function handleLogin() {
+  if (loading.value) return
+  const invalid = loginError(username.value, password.value)
+  if (invalid) { error.value = invalid; return }
   error.value   = ''
   loading.value = true
   try {
     await authStore.login(username.value.trim(), password.value, 'NHAN_VIEN')
-    router.push(router.currentRoute.value.query.redirect || '/thong-ke')
+    router.push(router.currentRoute.value.query.redirect || '/thong-ke-tong-hop')
   } catch (e) {
     error.value = e.response?.data?.message || 'Tên đăng nhập hoặc mật khẩu không đúng.'
   } finally {
@@ -39,7 +43,7 @@ async function handleLogin() {
       <form @submit.prevent="handleLogin" novalidate>
         <div class="field">
           <label>Tên đăng nhập</label>
-          <input
+          <input maxlength="254"
             v-model="username"
             type="text"
             placeholder="Nhập tên đăng nhập"
@@ -52,7 +56,7 @@ async function handleLogin() {
         <div class="field">
           <label>Mật khẩu</label>
           <div class="pass-wrap">
-            <input
+            <input maxlength="100"
               v-model="password"
               :type="showPass ? 'text' : 'password'"
               placeholder="Nhập mật khẩu"
