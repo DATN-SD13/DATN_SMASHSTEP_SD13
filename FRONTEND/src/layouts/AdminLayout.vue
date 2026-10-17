@@ -1,5 +1,5 @@
 <script setup>
-import { computed, reactive, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import api from '../utils/api'
@@ -135,7 +135,15 @@ const nav = [
 
 const isOn = (to) => route.path === to || route.path.startsWith(to + '/')
 const groupActive = (item) => item.children ? item.children.some(c => isOn(c.to)) : isOn(item.to)
-const open = reactive({ product: true, attributes: true, promo: true, schedule: true })
+const openGroup = ref(null)
+
+watch(() => route.path, () => {
+  openGroup.value = nav.find(item => item.children && groupActive(item))?.key ?? null
+}, { immediate: true })
+
+function toggleGroup(key) {
+  openGroup.value = openGroup.value === key ? null : key
+}
 
 // Chỉ hiện menu có adminOnly khi role là ADMIN
 const visibleNav = computed(() =>
@@ -158,12 +166,12 @@ const crumbs = computed(() => ({
         <template v-for="item in visibleNav" :key="item.label">
           <!-- Mục có menu con -->
           <div v-if="item.children" class="nav-group">
-            <button type="button" class="nav-item" :class="{ active: groupActive(item) }" :title="item.label" @click="open[item.key] = !open[item.key]">
+            <button type="button" class="nav-item" :class="{ active: groupActive(item) }" :title="item.label" :aria-expanded="openGroup === item.key && !collapsed" @click="toggleGroup(item.key)">
               <i class="bi nav-icon" :class="item.icon"></i>
               <span class="nav-text">{{ item.label }}</span>
-              <i class="bi bi-chevron-down chev" :class="{ up: open[item.key] }"></i>
+              <i class="bi bi-chevron-down chev" :class="{ up: openGroup === item.key }"></i>
             </button>
-            <div v-show="open[item.key] && !collapsed" class="sub">
+            <div v-show="openGroup === item.key && !collapsed" class="sub">
               <RouterLink v-for="c in item.children" :key="c.to" :to="c.to" class="sub-item" :class="{ on: isOn(c.to) }">
                 <span class="bullet"></span><span>{{ c.label }}</span>
               </RouterLink>
