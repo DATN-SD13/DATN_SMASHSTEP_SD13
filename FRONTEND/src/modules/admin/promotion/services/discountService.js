@@ -5,7 +5,7 @@ const normalize = data => ({
   minOrderValue: data.minOrderValue === '' ? null : data.minOrderValue,
   maxDiscount: data.maxDiscount === '' ? null : data.maxDiscount,
   quantity: data.unlimited ? null : data.quantity,
-  customerIds: data.form === 2 ? data.customerIds : []
+  customerIds: Number(data.form) === 2 ? data.customerIds : []
 })
 
 export function getDiscounts(params) {
@@ -17,11 +17,11 @@ export function getDiscountById(id) {
 }
 
 export function createDiscount(data) {
-  return api.post('/phieu-giam-gia', normalize(data))
+  return api.post('/phieu-giam-gia', normalize(data), { timeout: 120000 })
 }
 
 export function updateDiscount(id, data) {
-  return api.put(`/phieu-giam-gia/${id}`, normalize(data))
+  return api.put(`/phieu-giam-gia/${id}`, normalize(data), { timeout: 120000 })
 }
 
 export function deactivateDiscount(id) {

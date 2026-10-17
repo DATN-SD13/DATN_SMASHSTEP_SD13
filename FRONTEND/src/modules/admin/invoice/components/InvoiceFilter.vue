@@ -1,8 +1,16 @@
 <script setup>
 import { nextTick, onUnmounted, reactive, watch } from 'vue'
+import Select2Field from './Select2Field.vue'
 
 const emit = defineEmits(['search', 'reset'])
-const filters = reactive({ code: '', from: '', to: '', type: 'all' })
+function today() {
+  const now = new Date()
+  const offset = now.getTimezoneOffset()
+  return new Date(now.getTime() - offset * 60000).toISOString().slice(0, 10)
+}
+const currentDate = today()
+const filters = reactive({ code: '', from: currentDate, to: currentDate, type: 'all' })
+const typeOptions = [{ value: 'all', label: 'Tất cả' }, { value: 'online', label: 'Trực tuyến' }, { value: 'store', label: 'Tại quầy' }]
 
 let searchTimer = null
 let resetting = false
@@ -15,7 +23,7 @@ watch(filters, () => {
 function reset() {
   window.clearTimeout(searchTimer)
   resetting = true
-  Object.assign(filters, { code: '', from: '', to: '', type: 'all' })
+  Object.assign(filters, { code: '', from: currentDate, to: currentDate, type: 'all' })
   emit('reset')
   nextTick(() => { resetting = false })
 }
@@ -41,11 +49,7 @@ onUnmounted(() => window.clearTimeout(searchTimer))
       </label>
       <label class="field type-field col-12 col-md-6 col-lg-2">
         <span>Loại đơn</span>
-        <select class="form-select" v-model="filters.type">
-            <option value="all">Tất cả</option>
-            <option value="online">Trực tuyến</option>
-            <option value="store">Tại quầy</option>
-          </select>
+        <Select2Field v-model="filters.type" :options="typeOptions" placeholder="Chọn loại đơn" :allow-clear="false" />
       </label>
       <button class="reset-btn btn btn-outline-primary col-12 col-md-6 col-lg-3" type="button" @click="reset"><i class="bi bi-arrow-counterclockwise"></i> Đặt lại bộ lọc</button>
     </div>

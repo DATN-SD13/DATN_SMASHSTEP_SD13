@@ -1,4 +1,5 @@
 <script setup>
+import { useProductToast } from '../../product/composables/useProductToast'
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -27,34 +28,12 @@ const form = ref({
   status: 1,
   description: '',
   customerIds: []
-  
+
 })
 
-const toast = ref({
-  visible: false,
-  type: 'success',
-  title: '',
-  message: ''
-})
+const { show: showToast } = useProductToast()
 
-let toastTimer = null
-
-function showLocalToast(type, title, message) {
-  toast.value = {
-    visible: true,
-    type,
-    title,
-    message
-  }
-
-  if (toastTimer) {
-    window.clearTimeout(toastTimer)
-  }
-
-  toastTimer = window.setTimeout(() => {
-    toast.value.visible = false
-  }, 3000)
-}
+function showLocalToast(type, title, message) { showToast(type, message, title) }
 
 
 function generateCode() {
@@ -72,74 +51,116 @@ function generateCode() {
 
 generateCode()
 
-function validate() {
-  if (![1, 2].includes(Number(form.value.form)) || ![1, 2].includes(Number(form.value.discountType))) return 'Hình thức hoặc loại giảm không hợp lệ!'
-  for (const field of ['discountValue', 'minOrderValue', 'maxDiscount']) {
-    const value = form.value[field]
-    if (value == null || value === '' || !Number.isFinite(Number(value)) || Number(value) < 0) return 'Giá trị giảm và các giới hạn phải là số hợp lệ!'
-  }
-  if (!form.value.unlimited && (!Number.isInteger(Number(form.value.quantity)) || Number(form.value.quantity) <= 0)) return 'Số lượng phải là số nguyên lớn hơn 0!'
-  if (form.value.form === 2 && !form.value.customerIds?.length) return 'Vui lòng chọn khách hàng nhận phiếu!'
 
-  if (!form.value.name?.trim()) {
+function validate() {
+  const f = form.value
+
+  /*hinh thuc va loai */
+  if (![1, 2].includes(Number(f.form))) {
+    return 'Hình thức phiếu giảm giá không hợp lệ!'
+  }
+
+  if (![1, 2].includes(Number(f.discountType))) {
+    return 'Loại giảm giá không hợp lệ!'
+  }
+
+  // 2. Kiểm tra tên và mã phiếu
+  if (!f.name?.trim()) {
     return 'Vui lòng nhập tên phiếu!'
   }
 
-  if (!form.value.code?.trim()) {
+  if (!f.code?.trim()) {
     return 'Mã phiếu chưa được tạo!'
   }
 
-  if (
-    form.value.discountValue == null ||
-    form.value.discountValue <= 0
-  ) {
-    return 'Giá trị giảm không hợp lệ!'
-  }
+  /*ltra gia tri giam*/
+  const discountValue = Number(f.discountValue)
+  const minOrderValue = Number(f.minOrderValue)
+  const maxDiscount = Number(f.maxDiscount)
 
   if (
-    form.value.discountType === 1 &&
-    form.value.discountValue > 100
+    f.discountValue == null ||
+    f.discountValue === '' ||
+    !Number.isFinite(discountValue) ||
+    discountValue <= 0
   ) {
+    return 'Giá trị giảm phải lớn hơn 0!'
+  }
+
+  if (Number(f.discountType) === 1 && discountValue > 100) {
     return 'Phần trăm giảm không được vượt quá 100%!'
   }
 
+  /*ktra dkien giam*/
   if (
-    form.value.minOrderValue != null &&
-    form.value.minOrderValue < 0
+    f.minOrderValue == null ||
+    f.minOrderValue === '' ||
+    !Number.isFinite(Number(f.minOrderValue)) ||
+    Number(f.minOrderValue) < 0
   ) {
-    return 'Giá trị đơn tối thiểu không hợp lệ!'
+    return 'Giá trị đơn tối thiểu phải lớn hơn hoặc bằng 0!'
+  }
+
+/*ktra giam*/
+  if (
+    f.maxDiscount == null ||
+    f.maxDiscount === '' ||
+    !Number.isFinite(Number(f.maxDiscount)) ||
+    Number(f.maxDiscount) < 0
+  ) {
+    return 'Giảm tối đa phải lớn hơn hoặc bằng 0!'
   }
 
   if (
-    form.value.maxDiscount != null &&
-    form.value.maxDiscount < 0
+    Number(f.discountType) === 1 &&
+    Number(f.maxDiscount) <= 0
   ) {
-    return 'Giảm tối đa không hợp lệ!'
+    return 'Giảm theo phần trăm phải có mức giảm tối đa lớn hơn 0!'
   }
 
-  if (!form.value.unlimited) {
+  if (
+    Number(f.discountType) === 1 &&
+    Number(f.maxDiscount) > Number(f.minOrderValue)
+  ) {
+    return 'Giảm tối đa không được lớn hơn giá trị đơn tối thiểu!'
+  }
+
+  /* so luong*/
+  if (Number(f.form) === 2) {
+    if (!Array.isArray(f.customerIds) || f.customerIds.length === 0) {
+      return 'Vui lòng chọn khách hàng nhận phiếu!'
+    }
+  } else if (!f.unlimited) {
+    const quantity = Number(f.quantity)
 
     if (
-      !form.value.quantity ||
-      form.value.quantity < 1
+      f.quantity == null ||
+      f.quantity === '' ||
+      !Number.isInteger(quantity) ||
+      quantity <= 0
     ) {
-      return 'Số lượng phải lớn hơn 0!'
+      return 'Số lượng phải là số nguyên lớn hơn 0!'
     }
-
   }
 
-  if (
-    !form.value.startDate ||
-    !form.value.endDate
-  ) {
+  /*ngay gio*/
+  if (!f.startDate || !f.endDate) {
     return 'Vui lòng nhập đầy đủ ngày bắt đầu và ngày kết thúc!'
   }
 
-  if (
-    form.value.endDate <
-    form.value.startDate
-  ) {
-    return 'Ngày kết thúc phải sau ngày bắt đầu!'
+  const start = new Date(f.startDate)
+  const end = new Date(f.endDate)
+
+  if (Number.isNaN(start.getTime())) {
+    return 'Ngày giờ bắt đầu không hợp lệ!'
+  }
+
+  if (Number.isNaN(end.getTime())) {
+    return 'Ngày giờ kết thúc không hợp lệ!'
+  }
+
+  if (end <= start) {
+    return 'Ngày giờ kết thúc phải sau ngày giờ bắt đầu!'
   }
 
   return null
@@ -167,17 +188,17 @@ async function handleConfirm() {
   saving.value = true
 
   try {
-    await createDiscount({
+    const response = await createDiscount({
       ...form.value
     })
 
     showConfirm.value = false
 
-    showLocalToast(
-      'success',
-      'Tạo thành công',
-      'Tạo phiếu giảm giá thành công!'
-    )
+    if (response.data?.success !== true) throw new Error(response.data?.message || 'Lưu phiếu thất bại')
+    const email = response.data?.data?.emailResult
+    showLocalToast(email?.failed > 0 ? 'warning' : 'success',
+      email?.failed > 0 ? 'Đã lưu phiếu; email chưa gửi đủ' : 'Thành công',
+      'Tạo phiếu giảm giá thành công!' + (email && email.status !== 'NOT_REQUESTED' ? ' ' + email.message : ''))
 
     setTimeout(() => {
       router.push('/giam-gia')
@@ -188,16 +209,26 @@ async function handleConfirm() {
 
     showConfirm.value = false
 
+    let message = 'Tạo phiếu giảm giá thất bại!'
+    if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+      message = 'Hết thời gian chờ phản hồi từ máy chủ (Backend phản hồi quá lâu hoặc chưa được khởi động)!'
+    } else if (!error.response) {
+      message = 'Không thể kết nối đến máy chủ Backend (vui lòng kiểm tra server port 8080)!'
+    } else if (error.response?.data?.message) {
+      message = error.response.data.message
+    }
+
     showLocalToast(
       'error',
       'Tạo thất bại',
-      error.response?.data?.message ||
-      'Tạo phiếu giảm giá thất bại!'
+      message
     )
   } finally {
     saving.value = false
   }
 }
+
+
 </script>
 
 <template>
@@ -231,52 +262,6 @@ async function handleConfirm() {
 
     <!-- thong bao popup -->
 
-    <div
-      v-if="toast.visible"
-      class="ss-toast"
-      :class="`ss-toast-${toast.type}`"
-    >
-
-      <!-- Icon -->
-      <div class="ss-toast-icon">
-
-        <i
-          v-if="toast.type === 'success'"
-          class="bi bi-check-circle-fill"
-        ></i>
-
-        <i
-          v-else
-          class="bi bi-x-circle-fill"
-        ></i>
-
-      </div>
-
-      <!-- noi dung -->
-      <div class="ss-toast-content">
-
-        <strong>
-          {{ toast.title }}
-        </strong>
-
-        <span>
-          {{ toast.message }}
-        </span>
-
-      </div>
-
-      <!-- dong -->
-      <button
-        type="button"
-        class="ss-toast-close"
-        @click="toast.visible = false"
-      >
-        ×
-      </button>
-
-      
-    </div>
-    
     <ConfirmModal
             :visible="showConfirm"
             title="Xác nhận thêm"

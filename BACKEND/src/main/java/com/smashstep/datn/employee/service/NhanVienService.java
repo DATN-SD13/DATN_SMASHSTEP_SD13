@@ -10,7 +10,13 @@ import com.smashstep.datn.employee.entity.NhanVien;
 import com.smashstep.datn.employee.entity.VaiTro;
 import com.smashstep.datn.employee.repository.NhanVienRepository;
 import com.smashstep.datn.employee.repository.VaiTroRepository;
+import com.smashstep.datn.employee.mail.EmployeeMailService;
+import com.smashstep.datn.employee.util.PasswordGenerator;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -23,12 +29,15 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class NhanVienService {
 
     private final NhanVienRepository nhanVienRepository;
     private final VaiTroRepository vaiTroRepository;
+    private final EmployeeMailService employeeMailService;
+    private final PasswordEncoder passwordEncoder;
 
     // =========================================================
     // DANH SÁCH + TÌM KIẾM + LỌC + PHÂN TRANG
@@ -160,7 +169,12 @@ public class NhanVienService {
          */
         saved.setTenDangNhap(maNhanVien);
 
+        // All newly created employees receive their own BCrypt-protected account.
+        String temporaryPassword = PasswordGenerator.generate();
+        saved.setMatKhau(passwordEncoder.encode(temporaryPassword));
+        saved.setNgayCapNhat(LocalDateTime.now());
         saved = nhanVienRepository.save(saved);
+        sendEmployeeAccountAfterCommit(saved, temporaryPassword);
 
         return toResponse(saved);
     }
@@ -241,6 +255,17 @@ public class NhanVienService {
 
         NhanVien nhanVien = findByMa(ma);
 
+        // Không cho phép admin tự khóa chính mình
+        var authentication = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        String currentUsername = authentication == null ? null : authentication.getName();
+        boolean sameAccount = authentication != null
+                && authentication.getDetails() instanceof com.smashstep.datn.auth.security.JwtAuthFilter.AuthDetails actor
+                && "NHAN_VIEN".equals(actor.userType()) && java.util.Objects.equals(nhanVien.getId(),actor.userId());
+        if ((sameAccount || nhanVien.getMaNhanVien() != null && nhanVien.getMaNhanVien().equalsIgnoreCase(currentUsername))
+                && Integer.valueOf(0).equals(request.getStatus())) {
+            throw AppException.badRequest("Không thể tự khóa tài khoản của chính mình");
+        }
+
         nhanVien.setTrangThai(request.getStatus());
         nhanVien.setNgayCapNhat(LocalDateTime.now());
 
@@ -270,6 +295,37 @@ public class NhanVienService {
     // =========================================================
     // FIND EMPLOYEE
     // =========================================================
+    private boolean isManager(VaiTro role) {
+        String name = normalizeNullable(role.getTenVaiTro());
+        return name != null && (name.equalsIgnoreCase("Quản lý")
+                || name.equalsIgnoreCase("Quan ly") || name.equalsIgnoreCase("Manager"));
+    }
+
+    private void sendEmployeeAccountAfterCommit(NhanVien employee, String temporaryPassword) {
+        String email = employee.getEmail();
+        String name = employee.getTenNhanVien();
+        String username = employee.getTenDangNhap();
+        String roleName = employee.getIdVaiTro() == null ? "Nhân viên" : employee.getIdVaiTro().getTenVaiTro();
+        boolean manager = employee.getIdVaiTro() != null && isManager(employee.getIdVaiTro());
+        Runnable send = () -> {
+            try {
+                if (manager) employeeMailService.sendManagerAccountEmail(email, name, username, temporaryPassword);
+                else employeeMailService.sendEmployeeAccountEmail(email, name, roleName, username, temporaryPassword);
+            } catch (RuntimeException ex) {
+                log.warn("Đã tạo tài khoản {} nhưng gửi email thất bại ({})", username,
+                        ex.getClass().getSimpleName());
+            }
+        };
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() { send.run(); }
+            });
+        } else {
+            send.run();
+        }
+    }
+
     private NhanVien findByMa(String ma) {
 
         if (ma == null || ma.isBlank()) {
@@ -333,12 +389,14 @@ public class NhanVienService {
 
         validateGender(request.getGender());
 
-        if (request.getDob() != null
-                && request.getDob().isAfter(LocalDate.now())) {
-
-            throw AppException.badRequest(
-                    "Ngày sinh không được lớn hơn ngày hiện tại"
-            );
+        if (request.getDob() != null) {
+            LocalDate today = LocalDate.now();
+            if (request.getDob().isAfter(today)) {
+                throw AppException.badRequest("Ngày sinh không được lớn hơn ngày hiện tại");
+            }
+            if (request.getDob().isAfter(today.minusYears(18))) {
+                throw AppException.badRequest("Nhân viên phải đủ 18 tuổi trở lên");
+            }
         }
     }
 

@@ -1,4 +1,5 @@
 <script setup>
+import CccdScanner from './CccdScanner.vue'
 import AvatarCard from '../../../../components/AvatarCard.vue'
 import { persistAvatar } from '../../../../utils/avatar'
 import employeeService from '../services/employeeService'
@@ -12,10 +13,7 @@ import {
 
 import { useRouter } from 'vue-router'
 
-import {
-  provinceNames,
-  wardsOf
-} from '../../../../utils/address'
+import { useAddressApi } from '../../../../composables/useAddressApi'
 
 const props = defineProps({
   mode: {
@@ -37,6 +35,11 @@ const edit = computed(
 
 const roles = ref([])
 const saving = ref(false)
+const maxDob = computed(() => {
+  const date = new Date()
+  date.setFullYear(date.getFullYear() - 18)
+  return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-')
+})
 const changingStatus = ref(false)
 
 const active = ref(
@@ -75,10 +78,9 @@ const f = ref({
     props.employee?.image ?? ''
 })
 
-const wards = computed(
-  () => wardsOf(f.value.province)
-)
+const { provinces, wards, loadingProvinces, loadingWards, addressError, changeProvince, resetAddress } = useAddressApi(f)
 
+const showCccdScanner = ref(false)
 const err = ref('')
 const msg = ref('')
 
@@ -205,9 +207,14 @@ function validate() {
 
   today.setHours(0, 0, 0, 0)
 
+  if (Number.isNaN(dob.getTime())) return 'Ngày sinh không hợp lệ.'
+
   if (dob > today) {
     return 'Ngày sinh không được lớn hơn ngày hiện tại.'
   }
+  const minimumAgeDate = new Date(today)
+  minimumAgeDate.setFullYear(minimumAgeDate.getFullYear() - 18)
+  if (dob > minimumAgeDate) return 'Nhân viên phải đủ 18 tuổi trở lên.'
 
   return ''
 }
@@ -252,6 +259,9 @@ async function submit() {
     return
   }
 
+  confirmAction(edit.value ? 'Xác nhận lưu thay đổi nhân viên?' : 'Xác nhận thêm nhân viên?', async () => {
+  if (saving.value || changingStatus.value) return
+  if (validate()) { err.value = validate(); return }
   saving.value = true
 
   try {
@@ -278,7 +288,7 @@ async function submit() {
       )
 
       showSuccess(
-        'Thêm nhân viên thành công.'
+        'Nhân viên và tài khoản đăng nhập đã được tạo. Hệ thống gửi thông tin tài khoản qua email.'
       )
 
       router.push('/nhan-vien')
@@ -292,6 +302,7 @@ async function submit() {
   } finally {
     saving.value = false
   }
+  })
 }
 
 async function toggleStatus() {
@@ -327,9 +338,15 @@ async function toggleStatus() {
 }
 
 function scanCccd() {
-  showError(
-    'Chức năng quét mã CCCD chưa được tích hợp.'
-  )
+  showCccdScanner.value = true
+}
+
+function handleCccdScanned(data) {
+  showCccdScanner.value = false
+  if (data.name) f.value.name = data.name
+  if (data.dob) f.value.dob = data.dob
+  if ([0, 1, 2].includes(data.gender)) f.value.gender = String(data.gender)
+  msg.value = 'Quét CCCD thành công. Vui lòng kiểm tra lại thông tin.'
 }
 
 function changePassword() {
@@ -345,6 +362,7 @@ onMounted(() => {
 
 <template>
   <div class="ss-split">
+    <p v-if="addressError" class="ss-alert error" role="alert">{{ addressError }}</p>
 
     <div class="ss-stack">
 
@@ -556,6 +574,7 @@ onMounted(() => {
               class="ss-input"
               type="date"
               v-model="f.dob"
+              :max="maxDob"
             />
           </div>
 
@@ -583,22 +602,9 @@ onMounted(() => {
               <span class="req">*</span>
             </label>
 
-            <select
-              class="ss-select"
-              v-model="f.province"
-              @change="f.ward = ''"
-            >
-              <option value="">
-                Chọn tỉnh thành
-              </option>
-
-              <option
-                v-for="p in provinceNames"
-                :key="p"
-                :value="p"
-              >
-                {{ p }}
-              </option>
+            <select class="ss-select" v-model="f.province" :disabled="loadingProvinces" @change="changeProvince">
+              <option value="">Chọn tỉnh/thành</option>
+              <option v-for="p in provinces" :key="p.code" :value="p.name">{{ p.name }}</option>
             </select>
 
           </div>
@@ -610,22 +616,9 @@ onMounted(() => {
               <span class="req">*</span>
             </label>
 
-            <select
-              class="ss-select"
-              v-model="f.ward"
-              :disabled="!f.province"
-            >
-              <option value="">
-                Chọn xã phường
-              </option>
-
-              <option
-                v-for="w in wards"
-                :key="w"
-                :value="w"
-              >
-                {{ w }}
-              </option>
+            <select class="ss-select" v-model="f.ward" :disabled="loadingWards || !f.province">
+              <option value="">Chọn phường/xã</option>
+              <option v-for="w in wards" :key="w.code" :value="w.name">{{ w.name }}</option>
             </select>
 
           </div>
@@ -697,6 +690,7 @@ onMounted(() => {
     </div>
 
   </div>
+  <CccdScanner v-if="showCccdScanner" @close="showCccdScanner = false" @scanned="handleCccdScanned" />
 </template>
 
 <style scoped>

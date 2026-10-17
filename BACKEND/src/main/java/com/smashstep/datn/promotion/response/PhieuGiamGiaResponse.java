@@ -10,6 +10,8 @@ import java.util.List;
 @Setter
 public class PhieuGiamGiaResponse {
 
+    private VoucherEmailResult emailResult = new VoucherEmailResult();
+
     private Long id;
 
     private String code;
@@ -38,7 +40,10 @@ public class PhieuGiamGiaResponse {
     private String statusLabel;
 
     private String description;
-// vo han phieu
+    // vo han phieu
     private Boolean unlimited;
     private List<Long> customerIds;
+
+    private Integer timeStatus;
+    private String timeStatusLabel;
 }

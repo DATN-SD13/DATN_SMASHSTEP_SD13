@@ -44,9 +44,12 @@ class PromotionTichHopTest {
     }
 
     private Map<String, Object> voucherRequest() {
-        return new LinkedHashMap<>(Map.of("code", testCode, "name", testCode, "form", 1,
+        var request = new LinkedHashMap<String, Object>(Map.of("code", testCode, "name", testCode, "form", 1,
                 "discountType", 1, "discountValue", 15, "quantity", 10, "status", 1,
-                "startDate", "2097-01-01", "endDate", "2097-01-31"));
+                "startDate", "2097-01-01T08:00", "endDate", "2097-01-31T23:59"));
+        request.put("minOrderValue", 0);
+        request.put("maxDiscount", 100000);
+        return request;
     }
 
     private void clear() {
@@ -67,6 +70,7 @@ class PromotionTichHopTest {
         Map<String, Object> request = voucherRequest();
         request.put("form", 2);
         request.put("customerIds", List.of(customerId, customerId));
+        request.put("quantity", 1);
         if (!database.hasColumn("phieu_giam_gia", "hinh_thuc_phieu")) {
             mvc.perform(post("/api/phieu-giam-gia").contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(request)))
                     .andExpect(status().isBadRequest()).andExpect(jsonPath("$.success").value(false));

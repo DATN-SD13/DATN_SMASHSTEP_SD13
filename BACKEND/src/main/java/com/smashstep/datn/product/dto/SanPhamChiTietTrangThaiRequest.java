@@ -8,9 +8,14 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 @Data
-@NoArgsConstructor
+@NoArgsConstructor(onConstructor_ = @com.fasterxml.jackson.annotation.JsonCreator)
 @AllArgsConstructor
 public class SanPhamChiTietTrangThaiRequest {
-    @NotNull @Min(0) @Max(1)
+    @NotNull(message = "Vui lòng chọn trạng thái.")
+    @Min(value = 0, message = "Trạng thái phải là 0 hoặc 1.")
+    @Max(value = 1, message = "Trạng thái phải là 0 hoặc 1.")
     private Integer trangThai;
+
+    @com.fasterxml.jackson.annotation.JsonSetter("trangThai")
+    public void setTrangThai(Object value) { trangThai = SoLuongSanPham.docTrangThai(value); }
 }

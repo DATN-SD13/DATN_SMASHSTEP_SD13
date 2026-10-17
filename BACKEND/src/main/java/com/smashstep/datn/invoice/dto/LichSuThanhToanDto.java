@@ -38,7 +38,7 @@ public class LichSuThanhToanDto {
                 .thoiGian(item.getThoiGian() == null ? null : item.getThoiGian().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss")))
                 .maTrangThai(status)
                 .trangThai(statusLabel)
-                .moTa(item.getMoTa())
+                .moTa(item.getMoTa() == null ? null : item.getMoTa().replaceFirst("^POS2:[0-9a-f]{64} \\| ", ""))
                 .build();
     }
 }

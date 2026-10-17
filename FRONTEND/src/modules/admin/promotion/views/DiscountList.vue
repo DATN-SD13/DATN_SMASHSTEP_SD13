@@ -1,4 +1,5 @@
 <script setup>
+import { useProductToast } from '../../product/composables/useProductToast'
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import api from '../../../../utils/api'
 import { onMounted, onUnmounted, ref } from 'vue'
@@ -46,34 +47,11 @@ const saving = ref(false)
 const confirmAction = ref('')
 const selectedVoucher = ref(null)
 
-/* =========================
-  tbao popup*/
+/*tbao popup*/
 
-const toast = ref({
-  visible: false,
-  type: 'success',
-  title: '',
-  message: ''
-})
+const { show: showToast } = useProductToast()
 
-let toastTimer = null
-
-function showLocalToast(type, title, message) {
-  toast.value = {
-    visible: true,
-    type,
-    title,
-    message
-  }
-
-  if (toastTimer) {
-    window.clearTimeout(toastTimer)
-  }
-
-  toastTimer = window.setTimeout(() => {
-    toast.value.visible = false
-  }, 3000)
-}
+function showLocalToast(type, title, message) { showToast(type, message, title) }
 
 /*  bo loc */
 
@@ -100,15 +78,23 @@ function statusToValue(status) {
 
 /*  format  */
 
-function formatDate(value) {
+function formatDateTime(value) {
   if (!value) return '-'
 
-  const date = String(value).substring(0, 10)
-  const [y, m, d] = date.split('-')
+  const [datePart, timePart = ''] =
+    String(value).split('T')
 
-  return y && m && d
-    ? `${d}/${m}/${y}`
-    : date
+  const [y, m, d] =
+    datePart.split('-')
+
+  if (!y || !m || !d) {
+    return value
+  }
+
+  const time =
+    timePart.substring(0, 5)
+
+  return `${d}/${m}/${y} ${time}`
 }
 
 function formatDiscount(item) {
@@ -124,16 +110,14 @@ function formatDiscount(item) {
 function mapRow(item) {
   return {
     ...item,
-
     type: item.formLabel,
-
     value: formatDiscount(item),
 
-    start: formatDate(item.startDate),
+    start: formatDateTime(item.startDate),
+    end: formatDateTime(item.endDate),
 
-    end: formatDate(item.endDate),
-
-    statusLabel: item.statusLabel
+    timeStatus: item.timeStatus,
+    timeStatusLabel: item.timeStatusLabel
   }
 }
 
@@ -420,7 +404,7 @@ onMounted(async () => {
   catch { showLocalToast('error', 'Không tải được cấu hình phiếu', 'Vui lòng tải lại trang.'); }
   await loadData()
 })
-onUnmounted(() => { ++requestId; window.clearTimeout(toastTimer) })
+onUnmounted(() => { ++requestId })
 </script>
 
 <template>
@@ -583,47 +567,7 @@ onUnmounted(() => { ++requestId; window.clearTimeout(toastTimer) })
 
     <!-- tbao popup -->
 
-    <div
-      v-if="toast.visible"
-      class="ss-toast"
-      :class="`ss-toast-${toast.type}`"
-    >
-
-      <div class="ss-toast-icon">
-
-        <i
-          v-if="toast.type === 'success'"
-          class="bi bi-check-circle-fill"
-        ></i>
-
-        <i
-          v-else
-          class="bi bi-x-circle-fill"
-        ></i>
-
-      </div>
-
-      <div class="ss-toast-content">
-
-        <strong>
-          {{ toast.title }}
-        </strong>
-
-        <span>
-          {{ toast.message }}
-        </span>
-
-      </div>
-
-      <button
-        type="button"
-        class="ss-toast-close"
-        @click="toast.visible = false"
-      >
-        ×
-      </button>
-
-    </div>
+    
 
   </AdminLayout>
 

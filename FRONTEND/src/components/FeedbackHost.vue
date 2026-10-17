@@ -1,17 +1,23 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from 'vue'
+import ProductToast from '../modules/admin/product/components/ProductToast.vue'
+import { useProductToast } from '../modules/admin/product/composables/useProductToast'
+import '../modules/admin/product/product.css'
 
 const confirmation = ref(null)
 const busy = ref(false)
-const toast = ref(null)
-let timer
+const { show } = useProductToast()
+function cancel() {
+  if (busy.value) return
+  confirmation.value?.onCancel?.()
+  confirmation.value = null
+}
 function confirmEvent(event) {
   if (!busy.value && !confirmation.value && typeof event.detail?.onConfirm === 'function') confirmation.value = event.detail
+  else event.detail?.onCancel?.()
 }
 function toastEvent(event) {
-  clearTimeout(timer)
-  toast.value = event.detail
-  timer = setTimeout(() => { toast.value = null }, 5000)
+  show(event.detail.type, event.detail.message, event.detail.title)
 }
 async function accept() {
   if (busy.value || !confirmation.value) return
@@ -23,25 +29,22 @@ async function accept() {
   } finally { busy.value = false }
 }
 onMounted(() => { window.addEventListener('ss:confirm', confirmEvent); window.addEventListener('ss:toast', toastEvent) })
-onBeforeUnmount(() => { window.removeEventListener('ss:confirm', confirmEvent); window.removeEventListener('ss:toast', toastEvent); clearTimeout(timer) })
+onBeforeUnmount(() => { window.removeEventListener('ss:confirm', confirmEvent); window.removeEventListener('ss:toast', toastEvent) })
 </script>
 
 <template>
   <Teleport to="body">
-    <div v-if="confirmation" class="ss-modal-bg feedback-overlay" @click.self="!busy && (confirmation = null)">
+    <div v-if="confirmation" class="ss-modal-bg feedback-overlay" @click.self="cancel">
       <section class="ss-modal feedback-dialog" role="dialog" aria-modal="true" aria-labelledby="feedback-title">
         <h2 id="feedback-title">{{ confirmation.title || 'Xác nhận' }}</h2>
         <p>{{ confirmation.message }}</p>
         <div class="ss-actions">
-          <button class="ss-btn" :disabled="busy" @click="confirmation = null">{{ confirmation.cancelText || 'Hủy' }}</button>
+          <button class="ss-btn" :disabled="busy" @click="cancel">{{ confirmation.cancelText || 'Hủy' }}</button>
           <button class="ss-btn primary" :disabled="busy" @click="accept">{{ busy ? 'Đang xử lý...' : confirmation.confirmText || 'Đồng ý' }}</button>
         </div>
       </section>
     </div>
-    <div v-if="toast" class="feedback-toast" :class="toast.type" role="status" aria-live="polite">
-      <strong>{{ toast.title }}</strong><p>{{ toast.message }}</p>
-      <button class="ss-icon-btn" aria-label="Đóng thông báo" @click="toast = null">×</button>
-    </div>
+    <ProductToast />
   </Teleport>
 </template>
 

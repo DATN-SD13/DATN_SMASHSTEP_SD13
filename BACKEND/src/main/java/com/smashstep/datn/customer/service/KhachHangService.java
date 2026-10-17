@@ -18,6 +18,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -73,6 +74,12 @@ public class KhachHangService {
             KhachHangRequest request
     ) {
         validateCustomerRequest(request, null);
+        if (cleanNullable(request.getPhone()) == null || request.getDob() == null) {
+            throw AppException.badRequest("Số điện thoại và ngày sinh khách hàng không được để trống");
+        }
+        if (request.getDob().isAfter(LocalDate.now().minusYears(15))) {
+            throw AppException.badRequest("Khách hàng phải đủ 15 tuổi trở lên");
+        }
 
         if (request.getDefaultAddress() == null) {
             throw AppException.badRequest(

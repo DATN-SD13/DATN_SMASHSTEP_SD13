@@ -8,7 +8,9 @@ import com.smashstep.datn.product.entity.HinhAnhSanPham;
 import com.smashstep.datn.product.entity.SanPham;
 import com.smashstep.datn.product.repository.HinhAnhSanPhamRepository;
 import com.smashstep.datn.product.repository.SanPhamRepository;
-import lombok.RequiredArgsConstructor;
+import com.smashstep.datn.product.entity.SanPhamChiTiet;
+import com.smashstep.datn.product.repository.SanPhamChiTietRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,11 +23,24 @@ import java.nio.file.*;
 import java.util.*;
 
 @Service
-@RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class HinhAnhSanPhamService {
     private final SanPhamRepository sanPhamRepository;
     private final HinhAnhSanPhamRepository hinhAnhRepository;
+    private final SanPhamChiTietRepository bienTheRepository;
+
+    @Autowired
+    public HinhAnhSanPhamService(SanPhamRepository products, HinhAnhSanPhamRepository images,
+            SanPhamChiTietRepository variants) {
+        this.sanPhamRepository = products;
+        this.hinhAnhRepository = images;
+        this.bienTheRepository = variants;
+    }
+
+    public HinhAnhSanPhamService(SanPhamRepository products, HinhAnhSanPhamRepository images) {
+        this(products, images, null);
+    }
+
     @Value("${smashstep.product-images.directory:uploads/products}")
     private String thuMucAnh = "uploads/products";
     private static final long DUNG_LUONG_TOI_DA = 5L * 1024 * 1024;
@@ -36,7 +51,7 @@ public class HinhAnhSanPhamService {
         SanPham sanPham = sanPhamRepository.timVaKhoaTheoId(sanPhamId)
                 .orElseThrow(() -> AppException.notFound("Không tìm thấy sản phẩm"));
         String urlAnh = kiemTraUrlAnh(yeuCau.getUrlAnh());
-        return luuAnh(sanPham, urlAnh, yeuCau.getIsAnhChinh());
+        return luuAnh(sanPham, null, urlAnh, yeuCau.getIsAnhChinh());
     }
 
     @Transactional
@@ -46,6 +61,10 @@ public class HinhAnhSanPhamService {
         if (mauSacId != null) {
             throw AppException.badRequest("Database hiện tại không hỗ trợ ảnh theo màu; hãy bỏ mauSacId");
         }
+        return taiTep(sanPham, null, file, isAnhChinh);
+    }
+
+    private HinhAnhSanPhamResponse taiTep(SanPham sanPham, SanPhamChiTiet bienThe, MultipartFile file, Boolean isAnhChinh) {
         if (file == null || file.isEmpty()) throw AppException.badRequest("Tệp ảnh không được để trống.");
         if (file.getSize() > DUNG_LUONG_TOI_DA) throw AppException.badRequest("Ảnh không được vượt quá 5 MB.");
         String mime = Objects.toString(file.getContentType(), "").toLowerCase(Locale.ROOT);
@@ -73,7 +92,7 @@ public class HinhAnhSanPhamService {
                     }
                 });
             }
-            return luuAnh(sanPham, URL_ANH + tenTep, isAnhChinh);
+            return luuAnh(sanPham, bienThe, URL_ANH + tenTep, isAnhChinh);
         } catch (IOException loi) {
             if (tep != null) xoaTep(tep);
             throw new AppException(org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR, "Không thể lưu tệp ảnh.");
@@ -94,8 +113,8 @@ public class HinhAnhSanPhamService {
         };
     }
 
-    private HinhAnhSanPhamResponse luuAnh(SanPham sanPham, String urlAnh, Boolean isAnhChinh) {
-        List<HinhAnhSanPham> danhSach = hinhAnhRepository.findByIdSanPham_IdOrderByIdAsc(sanPham.getId());
+    private HinhAnhSanPhamResponse luuAnh(SanPham sanPham, SanPhamChiTiet bienThe, String urlAnh, Boolean isAnhChinh) {
+        List<HinhAnhSanPham> danhSach = anhTrongPhamVi(sanPham.getId(), bienThe == null ? null : bienThe.getId());
         boolean laAnhChinh = Boolean.TRUE.equals(isAnhChinh) || danhSach.isEmpty();
         if (laAnhChinh) {
             for (HinhAnhSanPham anh : danhSach) {
@@ -104,6 +123,7 @@ public class HinhAnhSanPhamService {
         }
         HinhAnhSanPham anh = new HinhAnhSanPham();
         anh.setIdSanPham(sanPham);
+        anh.setIdSanPhamChiTiet(bienThe);
         anh.setUrlAnh(urlAnh);
         anh.setIsAnhChinh(laAnhChinh);
         return chuyenSangResponse(hinhAnhRepository.save(anh));
@@ -113,7 +133,7 @@ public class HinhAnhSanPhamService {
         sanPhamRepository.findById(sanPhamId)
                 .orElseThrow(() -> AppException.notFound("Không tìm thấy sản phẩm"));
         List<HinhAnhSanPhamResponse> ketQua = new ArrayList<>();
-        for (HinhAnhSanPham anh : hinhAnhRepository.findByIdSanPham_IdOrderByIdAsc(sanPhamId)) {
+        for (HinhAnhSanPham anh : anhTrongPhamVi(sanPhamId, null)) {
             ketQua.add(chuyenSangResponse(anh));
         }
         return ketQua;
@@ -123,21 +143,25 @@ public class HinhAnhSanPhamService {
     public HinhAnhSanPhamResponse suaAnhTheoId(Long anhId, HinhAnhSanPhamRequest yeuCau) {
         Long sanPhamId = hinhAnhRepository.laySanPhamIdTheoAnhId(anhId)
                 .orElseThrow(() -> AppException.notFound("Không tìm thấy ảnh sản phẩm"));
-        return suaAnh(sanPhamId, anhId, yeuCau);
+        return suaTrongPhamVi(sanPhamId, layBienTheIdCuaAnh(anhId), anhId, yeuCau);
     }
 
     @Transactional
     public void xoaAnhTheoId(Long anhId) {
         Long sanPhamId = hinhAnhRepository.laySanPhamIdTheoAnhId(anhId)
                 .orElseThrow(() -> AppException.notFound("Không tìm thấy ảnh sản phẩm"));
-        xoaAnh(sanPhamId, anhId);
+        xoaTrongPhamVi(sanPhamId, layBienTheIdCuaAnh(anhId), anhId);
     }
 
     @Transactional
     public HinhAnhSanPhamResponse suaAnh(Long sanPhamId, Long anhId, HinhAnhSanPhamRequest yeuCau) {
+        return suaTrongPhamVi(sanPhamId, null, anhId, yeuCau);
+    }
+
+    private HinhAnhSanPhamResponse suaTrongPhamVi(Long sanPhamId, Long bienTheId, Long anhId, HinhAnhSanPhamRequest yeuCau) {
         sanPhamRepository.timVaKhoaTheoId(sanPhamId)
                 .orElseThrow(() -> AppException.notFound("Không tìm thấy sản phẩm"));
-        List<HinhAnhSanPham> danhSach = hinhAnhRepository.findByIdSanPham_IdOrderByIdAsc(sanPhamId);
+        List<HinhAnhSanPham> danhSach = anhTrongPhamVi(sanPhamId, bienTheId);
         HinhAnhSanPham anhCanSua = timAnh(danhSach, anhId);
         String urlCu = anhCanSua.getUrlAnh();
         anhCanSua.setUrlAnh(kiemTraUrlAnh(yeuCau.getUrlAnh()));
@@ -156,9 +180,13 @@ public class HinhAnhSanPhamService {
 
     @Transactional
     public void xoaAnh(Long sanPhamId, Long anhId) {
+        xoaTrongPhamVi(sanPhamId, null, anhId);
+    }
+
+    private void xoaTrongPhamVi(Long sanPhamId, Long bienTheId, Long anhId) {
         sanPhamRepository.timVaKhoaTheoId(sanPhamId)
                 .orElseThrow(() -> AppException.notFound("Không tìm thấy sản phẩm"));
-        List<HinhAnhSanPham> danhSach = hinhAnhRepository.findByIdSanPham_IdOrderByIdAsc(sanPhamId);
+        List<HinhAnhSanPham> danhSach = anhTrongPhamVi(sanPhamId, bienTheId);
         HinhAnhSanPham anhCanXoa = timAnh(danhSach, anhId);
         hinhAnhRepository.delete(anhCanXoa);
         donTepSauKhiLuu(anhCanXoa.getUrlAnh());
@@ -170,6 +198,48 @@ public class HinhAnhSanPhamService {
                 }
             }
         }
+    }
+
+    public List<HinhAnhSanPhamResponse> layAnhBienThe(Long bienTheId) {
+        SanPhamChiTiet bienThe = timBienThe(bienTheId);
+        return anhTrongPhamVi(bienThe.getIdSanPham().getId(), bienTheId).stream()
+                .map(HinhAnhSanPhamService::chuyenSangResponse).toList();
+    }
+
+    @Transactional
+    public HinhAnhSanPhamResponse taiAnhBienThe(Long bienTheId, MultipartFile file, Boolean isAnhChinh) {
+        SanPhamChiTiet bienThe = timBienThe(bienTheId);
+        SanPham sanPham = sanPhamRepository.timVaKhoaTheoId(bienThe.getIdSanPham().getId())
+                .orElseThrow(() -> AppException.notFound("Không tìm thấy sản phẩm"));
+        return taiTep(sanPham, bienThe, file, isAnhChinh);
+    }
+
+    @Transactional
+    public HinhAnhSanPhamResponse suaAnhBienThe(Long bienTheId, Long anhId, HinhAnhSanPhamRequest yeuCau) {
+        SanPhamChiTiet bienThe = timBienThe(bienTheId);
+        return suaTrongPhamVi(bienThe.getIdSanPham().getId(), bienTheId, anhId, yeuCau);
+    }
+
+    @Transactional
+    public void xoaAnhBienThe(Long bienTheId, Long anhId) {
+        SanPhamChiTiet bienThe = timBienThe(bienTheId);
+        xoaTrongPhamVi(bienThe.getIdSanPham().getId(), bienTheId, anhId);
+    }
+
+    private SanPhamChiTiet timBienThe(Long id) {
+        return bienTheRepository.findById(id).orElseThrow(() -> AppException.notFound("Không tìm thấy biến thể"));
+    }
+
+    private Long layBienTheIdCuaAnh(Long id) {
+        HinhAnhSanPham anh = hinhAnhRepository.findById(id)
+                .orElseThrow(() -> AppException.notFound("Không tìm thấy ảnh sản phẩm"));
+        return anh.getIdSanPhamChiTiet() == null ? null : anh.getIdSanPhamChiTiet().getId();
+    }
+
+    private List<HinhAnhSanPham> anhTrongPhamVi(Long sanPhamId, Long bienTheId) {
+        return hinhAnhRepository.findByIdSanPham_IdOrderByIdAsc(sanPhamId).stream()
+                .filter(anh -> Objects.equals(bienTheId,
+                        anh.getIdSanPhamChiTiet() == null ? null : anh.getIdSanPhamChiTiet().getId())).toList();
     }
 
     private HinhAnhSanPham timAnh(List<HinhAnhSanPham> danhSach, Long anhId) {
@@ -225,16 +295,31 @@ public class HinhAnhSanPhamService {
     }
 
     static HinhAnhSanPhamResponse chuyenSangResponse(HinhAnhSanPham anh) {
-        return new HinhAnhSanPhamResponse(anh.getId(), anh.getUrlAnh(), anh.getIsAnhChinh(), anh.getIdSanPham().getId());
+        return new HinhAnhSanPhamResponse(anh.getId(), anh.getUrlAnh(), anh.getIsAnhChinh(), anh.getIdSanPham().getId(),
+                anh.getIdSanPhamChiTiet() == null ? null : anh.getIdSanPhamChiTiet().getId());
     }
 
     static Map<Long, String> layAnhChinh(HinhAnhSanPhamRepository hinhAnhRepository, List<Long> danhSachId) {
         Map<Long, String> ketQua = new LinkedHashMap<>();
         if (!danhSachId.isEmpty()) {
             for (HinhAnhSanPham anh : hinhAnhRepository.findByIdSanPham_IdInAndIsAnhChinhTrueOrderByIdAsc(danhSachId)) {
-                ketQua.putIfAbsent(anh.getIdSanPham().getId(), anh.getUrlAnh());
+                if (anh.getIdSanPhamChiTiet() == null) ketQua.putIfAbsent(anh.getIdSanPham().getId(), anh.getUrlAnh());
             }
         }
         return ketQua;
     }
+    static Map<Long, String> layAnhChinhBienThe(HinhAnhSanPhamRepository repository, List<SanPhamChiTiet> variants) {
+        Map<Long, String> common = new LinkedHashMap<>(), exact = new LinkedHashMap<>(), result = new LinkedHashMap<>();
+        List<Long> productIds = variants.stream().map(v -> v.getIdSanPham().getId()).distinct().toList();
+        if (!productIds.isEmpty()) {
+            for (HinhAnhSanPham image : repository.findByIdSanPham_IdInAndIsAnhChinhTrueOrderByIdAsc(productIds)) {
+                if (image.getIdSanPhamChiTiet() == null) common.putIfAbsent(image.getIdSanPham().getId(), image.getUrlAnh());
+                else exact.putIfAbsent(image.getIdSanPhamChiTiet().getId(), image.getUrlAnh());
+            }
+        }
+        for (SanPhamChiTiet variant : variants) result.put(variant.getId(),
+                exact.getOrDefault(variant.getId(), common.get(variant.getIdSanPham().getId())));
+        return result;
+    }
+
 }

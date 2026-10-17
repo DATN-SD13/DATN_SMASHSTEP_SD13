@@ -1,4 +1,5 @@
 <script setup>
+import * as XLSX from 'xlsx'
 import { avatarUrl } from '../../../../utils/avatar'
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import SsPager from '../../../../components/SsPager.vue'
@@ -269,6 +270,107 @@ onBeforeUnmount(() => {
   clearTimeout(searchTimer)
   ++loadVersion
 })
+function exportExcel() {
+  if (loading.value) return
+  if (!rows.value?.length) {
+    showError(
+      'Không có dữ liệu khách hàng để xuất.',
+      'Không thể xuất Excel'
+    )
+    return
+  }
+
+  const data = rows.value.map(
+    (customer, index) => ({
+      STT:
+        (page.value - 1) * size.value +
+        index +
+        1,
+
+      'Mã khách hàng':
+        customer.code || '',
+
+      'Họ và tên':
+        customer.name || '',
+
+      'Email':
+        customer.email || '',
+
+      'Số điện thoại':
+        customer.phone || '',
+
+      'Giới tính':
+        customer.genderLabel ||
+        (
+          customer.gender === 1
+            ? 'Nam'
+            : customer.gender === 2
+              ? 'Nữ'
+              : customer.gender === 0
+                ? 'Khác'
+                : ''
+        ),
+
+      'Ngày sinh':
+        customer.dob || '',
+
+      'Trạng thái':
+        customer.active === true ||
+        customer.status === 1
+          ? 'Hoạt động'
+          : 'Ngừng hoạt động'
+    })
+  )
+
+  const worksheet =
+    XLSX.utils.json_to_sheet(data)
+
+  /*
+   * Độ rộng các cột
+   */
+  worksheet['!cols'] = [
+    { wch: 7 },   // STT
+    { wch: 18 },  // Mã
+    { wch: 28 },  // Họ tên
+    { wch: 32 },  // Email
+    { wch: 16 },  // SĐT
+    { wch: 12 },  // Giới tính
+    { wch: 15 },  // Ngày sinh
+    { wch: 20 }   // Trạng thái
+  ]
+
+  const workbook =
+    XLSX.utils.book_new()
+
+  XLSX.utils.book_append_sheet(
+    workbook,
+    worksheet,
+    'Khách hàng'
+  )
+
+  const now =
+    new Date()
+
+  const fileDate =
+    `${now.getFullYear()}-` +
+    `${String(
+      now.getMonth() + 1
+    ).padStart(2, '0')}-` +
+    `${String(
+      now.getDate()
+    ).padStart(2, '0')}`
+
+  XLSX.writeFile(
+    workbook,
+    `Danh_sach_khach_hang_${fileDate}.xlsx`
+  )
+
+  showSuccess(
+    'Xuất danh sách khách hàng thành công',
+    'Xuất Excel thành công'
+  )
+}
+
 </script>
 
 <template>
@@ -334,7 +436,7 @@ onBeforeUnmount(() => {
 
           <button
             class="ss-btn"
-            title="Chức năng xuất Excel sẽ làm riêng"
+            @click="exportExcel" :disabled="loading" title="Xuất dữ liệu trang hiện tại"
           >
             <i class="bi bi-file-earmark-excel"></i>
             Xuất Excel

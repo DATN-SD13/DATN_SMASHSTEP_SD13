@@ -36,10 +36,7 @@ public class ThongKeSanPhamController {
     ) {
 
         if (tuNgay.isAfter(denNgay)) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "Từ ngày không được lớn hơn đến ngày"
-            );
+            throw com.smashstep.datn.common.exception.AppException.badRequest("Từ ngày không được lớn hơn đến ngày");
         }
 
         List<?> rows = entityManager.createNativeQuery("""

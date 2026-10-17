@@ -1,61 +1,29 @@
-
 package com.smashstep.datn.promotion.service;
 
-import com.smashstep.datn.promotion.entity.ChiTietDotGiamGia;
-import com.smashstep.datn.promotion.repository.ChiTietDotGiamGiaRepository;
+import com.smashstep.datn.common.exception.AppException;
+import com.smashstep.datn.common.pricing.CurrentPriceService;
+import com.smashstep.datn.product.repository.SanPhamChiTietRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-
+import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDateTime;
-import java.util.List;
 
+/** Preserve the team pricing endpoint while sharing Product/POS server pricing. */
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class GiaSauGiamService {
+    private final SanPhamChiTietRepository variants;
+    private final CurrentPriceService currentPrices;
 
-    private final ChiTietDotGiamGiaRepository
-            chiTietDotGiamGiaRepository;
-
-    public BigDecimal tinhGiaSauGiam(
-            Long productDetailId,
-            BigDecimal giaGoc
-    ) {
-        if (giaGoc == null || giaGoc.signum() < 0) {
-            throw new IllegalArgumentException(
-                    "Giá gốc không hợp lệ"
-            );
-        }
-
-        List<ChiTietDotGiamGia> promotions =
-                chiTietDotGiamGiaRepository
-                        .findCurrentlyEffectiveByProductDetailId(
-                                productDetailId,
-                                LocalDateTime.now()
-                        );
-
-        // Không có đợt giảm giá còn hiệu lực
-        if (promotions.isEmpty()) {
-            return giaGoc;
-        }
-
-        // Lấy mức giảm cao nhất nếu có nhiều chương trình
-        BigDecimal phanTramGiam = promotions.stream()
-                .map(ChiTietDotGiamGia::getPhanTramGiamBienThe)
-                .filter(value -> value != null)
-                .max(BigDecimal::compareTo)
-                .orElse(BigDecimal.ZERO);
-
-        // Tính giá sau giảm
-        return giaGoc.multiply(
-                BigDecimal.ONE.subtract(
-                        phanTramGiam.divide(
-                                BigDecimal.valueOf(100),
-                                4,
-                                RoundingMode.HALF_UP
-                        )
-                )
-        ).setScale(0, RoundingMode.HALF_UP);
+    public BigDecimal tinhGiaSauGiam(Long productDetailId, BigDecimal giaGoc) {
+        if (giaGoc == null || giaGoc.signum() < 0)
+            throw new AppException(HttpStatus.BAD_REQUEST, "Giá gốc không hợp lệ");
+        var variant = variants.findById(productDetailId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Biến thể không tồn tại"));
+        // Request prices are informational; the persisted base price is authoritative.
+        return currentPrices.getPrice(variant, LocalDateTime.now()).getEffectivePrice();
     }
 }

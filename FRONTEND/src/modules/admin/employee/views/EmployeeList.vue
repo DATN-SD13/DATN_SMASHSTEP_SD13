@@ -1,4 +1,5 @@
 <script setup>
+import * as XLSX from 'xlsx'
 import { avatarUrl } from '../../../../utils/avatar'
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import SsPager from '../../../../components/SsPager.vue'
@@ -183,6 +184,81 @@ onBeforeUnmount(() => {
   clearTimeout(searchTimer)
   ++loadVersion
 })
+function exportExcel() {
+  if (loading.value) return
+  if (!rows.value?.length) {
+    showError(
+      'Không có dữ liệu nhân viên để xuất.',
+      'Không thể xuất Excel'
+    )
+    return
+  }
+
+  const data = rows.value.map(
+    (e, index) => ({
+      STT:
+        (page.value - 1) * size.value +
+        index +
+        1,
+
+      'Mã nhân viên': e.code || '',
+      'Họ và tên': e.name || '',
+      'Email': e.email || '',
+      'Số điện thoại': e.phone || '',
+      'Giới tính': e.genderLabel || '',
+      'Ngày sinh': e.dob || '',
+      'Địa chỉ': e.address || '',
+      'Vai trò': e.role || '',
+
+      'Trạng thái':
+        e.active
+          ? 'Hoạt động'
+          : 'Đã khóa'
+    })
+  )
+
+  const worksheet =
+    XLSX.utils.json_to_sheet(data)
+
+  worksheet['!cols'] = [
+    { wch: 7 },
+    { wch: 16 },
+    { wch: 25 },
+    { wch: 30 },
+    { wch: 16 },
+    { wch: 12 },
+    { wch: 15 },
+    { wch: 45 },
+    { wch: 20 },
+    { wch: 20 }
+  ]
+
+  const workbook =
+    XLSX.utils.book_new()
+
+  XLSX.utils.book_append_sheet(
+    workbook,
+    worksheet,
+    'Nhân viên'
+  )
+
+  const now = new Date()
+
+  const fileDate =
+    `${now.getFullYear()}-` +
+    `${String(
+      now.getMonth() + 1
+    ).padStart(2, '0')}-` +
+    `${String(
+      now.getDate()
+    ).padStart(2, '0')}`
+
+  XLSX.writeFile(
+    workbook,
+    `Danh_sach_nhan_vien_${fileDate}.xlsx`
+  )
+}
+
 </script>
 
 <template>
@@ -255,7 +331,7 @@ onBeforeUnmount(() => {
             Đặt lại bộ lọc
           </button>
 
-          <button class="ss-btn">
+          <button class="ss-btn" @click="exportExcel" :disabled="loading" title="Xuất dữ liệu trang hiện tại">
             <i class="bi bi-file-earmark-excel"></i>
             Xuất Excel
           </button>

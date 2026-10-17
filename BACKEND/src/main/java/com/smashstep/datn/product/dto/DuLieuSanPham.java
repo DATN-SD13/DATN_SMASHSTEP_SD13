@@ -21,21 +21,21 @@ public final class DuLieuSanPham {
     // Giữ cả body một biến thể và body {variants:[...]}.
     @Getter
     public static class DanhSachBienTheRequest {
-        @NotEmpty @Size(max = 200)
-        private final List<@NotNull @Valid SanPhamChiTietThemRequest> variants;
+        @NotEmpty(message = "Danh sách biến thể không được để trống.") @Size(max = 200, message = "Mỗi lần tạo tối đa 200 biến thể.")
+        private final List<@NotNull(message = "Danh sách biến thể không được để trống.") @Valid SanPhamChiTietThemRequest> variants;
         private final boolean hangLoat;
 
         @JsonCreator
         public DanhSachBienTheRequest(@JsonProperty("variants") List<SanPhamChiTietThemRequest> variants,
-                @JsonProperty("sanPhamId") @JsonAlias({"idSanPham", "productId"}) Long sanPhamId,
+                @JsonProperty("sanPhamId") @JsonAlias({"idSanPham", "productId"}) Object sanPhamId,
                 @JsonProperty("maChiTietSanPham") String maChiTietSanPham, @JsonProperty("sku") String sku,
-                @JsonProperty("mauSacId") @JsonAlias("idMauSac") Long mauSacId,
-                @JsonProperty("kichThuocId") @JsonAlias("idKichThuoc") Long kichThuocId,
-                @JsonProperty("soLuong") Integer soLuong, @JsonProperty("giaBan") BigDecimal giaBan,
-                @JsonProperty("kichHoat") Boolean kichHoat, @JsonProperty("trangThai") Integer trangThai) {
+                @JsonProperty("mauSacId") @JsonAlias("idMauSac") Object mauSacId,
+                @JsonProperty("kichThuocId") @JsonAlias("idKichThuoc") Object kichThuocId,
+                @JsonProperty("soLuong") Object soLuong, @JsonProperty("giaBan") BigDecimal giaBan,
+                @JsonProperty("kichHoat") Boolean kichHoat, @JsonProperty("trangThai") Object trangThai) {
             hangLoat = variants != null;
-            SanPhamChiTietThemRequest bienThe = new SanPhamChiTietThemRequest(sanPhamId, maChiTietSanPham, sku, mauSacId, kichThuocId,
-                    soLuong, giaBan, kichHoat, trangThai);
+            SanPhamChiTietThemRequest bienThe = new SanPhamChiTietThemRequest(SoLuongSanPham.docId(sanPhamId), maChiTietSanPham, sku, SoLuongSanPham.docId(mauSacId), SoLuongSanPham.docId(kichThuocId),
+                    SoLuongSanPham.doc(soLuong), giaBan, kichHoat, SoLuongSanPham.docTrangThai(trangThai));
             bienThe.setMaChiTietSanPham(maChiTietSanPham);
             bienThe.setSku(sku);
             this.variants = hangLoat ? variants : List.of(bienThe);
@@ -43,31 +43,37 @@ public final class DuLieuSanPham {
     }
 
     @Data
-    @NoArgsConstructor
+    @NoArgsConstructor(onConstructor_ = @JsonCreator)
     @AllArgsConstructor
     public static class TrangThaiRequest {
-        @NotNull @Min(0) @Max(1)
+        @NotNull(message = "Trạng thái không được để trống.") @Min(value = 0, message = "Trạng thái phải là 0 hoặc 1.") @Max(value = 1, message = "Trạng thái phải là 0 hoặc 1.")
         private Integer trangThai;
+
+        @com.fasterxml.jackson.annotation.JsonSetter("trangThai")
+        public void setTrangThai(Object value) { trangThai = SoLuongSanPham.docTrangThai(value); }
     }
 
     @Data
-    @NoArgsConstructor
+    @NoArgsConstructor(onConstructor_ = @JsonCreator)
     @AllArgsConstructor
     public static class ThuocTinhRequest {
         // Giữ field để tương thích client cũ; service tự sinh mã và giữ mã khi sửa.
         @JsonAlias({"maDanhMuc", "maThuongHieu", "maChatLieu", "maKieuDang", "maCoGiay", "maXuatXu", "maMauSac"})
         private String ma;
         @NotBlank(message = "Tên/giá trị không được trống")
-        @Size(max = 255)
+        @Size(max = 255, message = "Tên/giá trị thuộc tính tối đa 255 ký tự.")
         @JsonAlias({"tenDanhMuc", "tenThuongHieu", "tenChatLieu", "tenKieuDang", "tenCoGiay", "tenXuatXu", "tenMauSac", "giaTri"})
         private String ten;
-        @Size(max = 1000)
+        @Size(max = 1000, message = "Mô tả/ghi chú tối đa 1000 ký tự.")
         @JsonAlias("moTa")
         private String ghiChu;
-        @Size(max = 20)
+        @Size(max = 20, message = "Mã HEX tối đa 20 ký tự.")
         private String maMauHex;
-        @NotNull @Min(0) @Max(1)
+        @NotNull(message = "Trạng thái không được để trống.") @Min(value = 0, message = "Trạng thái phải là 0 hoặc 1.") @Max(value = 1, message = "Trạng thái phải là 0 hoặc 1.")
         private Integer trangThai;
+
+        @com.fasterxml.jackson.annotation.JsonSetter("trangThai")
+        public void setTrangThai(Object value) { trangThai = SoLuongSanPham.docTrangThai(value); }
     }
 
     @Data
@@ -80,6 +86,9 @@ public final class DuLieuSanPham {
         private String ghiChu;
         private String maMauHex;
         private Integer trangThai;
+
+        @com.fasterxml.jackson.annotation.JsonSetter("trangThai")
+        public void setTrangThai(Object value) { trangThai = SoLuongSanPham.docTrangThai(value); }
     }
 
 }

@@ -51,4 +51,20 @@ public class DotGiamGiaRequest {
     @NotEmpty(message = "Vui lòng chọn ít nhất một biến thể sản phẩm")
     @Size(max = 1000)
     private List<@NotNull @Positive Long> productDetailIds;
+    // Preserve the previous date-only API while accepting the team's datetime inputs.
+    @com.fasterxml.jackson.annotation.JsonSetter("startDate")
+    public void readStartDate(Object value) { startDate = dateTime(value, false); }
+    @com.fasterxml.jackson.annotation.JsonSetter("endDate")
+    public void readEndDate(Object value) { endDate = dateTime(value, true); }
+    private static LocalDateTime dateTime(Object value, boolean end) {
+        if (value == null) return null;
+        if (value instanceof LocalDateTime time) return time;
+        if (!(value instanceof String text)) throw new IllegalArgumentException("Thời gian không hợp lệ");
+        if (text.length() == 10) {
+            var date = java.time.LocalDate.parse(text);
+            return end ? date.atTime(23, 59, 59) : date.atStartOfDay();
+        }
+        return LocalDateTime.parse(text);
+    }
+
 }

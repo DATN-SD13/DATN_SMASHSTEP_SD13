@@ -31,6 +31,9 @@ import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -40,6 +43,13 @@ public class PhieuGiamGiaService {
     private final PhieuGiamGiaKhachHangRepository assignments;
     private final KhachHangRepository customers;
     private final DatabaseCapabilities database;
+    private final EmailService emailService;
+    private final com.smashstep.datn.product.service.KhoaGhiSanPham writeLock;
+
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(PhieuGiamGiaService.class);
+
+    @org.springframework.beans.factory.annotation.Value("${smashstep.website-url:}")
+    private String websiteUrl;
 
     public boolean supportsForm() {
         return database.hasColumn("phieu_giam_gia", "hinh_thuc_phieu");
@@ -162,16 +172,14 @@ public class PhieuGiamGiaService {
         response.setStartDate(
                 p.getNgayBatDau() != null
                         ? p.getNgayBatDau()
-                        .toLocalDate()
-                        .toString()
+                        .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm"))
                         : null
         );
 
         response.setEndDate(
                 p.getNgayKetThuc() != null
                         ? p.getNgayKetThuc()
-                        .toLocalDate()
-                        .toString()
+                        .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm"))
                         : null
         );
 
@@ -195,6 +203,14 @@ public class PhieuGiamGiaService {
                 getStatusLabel(
                         p.getTrangThai()
                 )
+        );
+// trang thai pgg theo tgian thuc
+        Integer timeStatus = getTimeStatus(p);
+
+        response.setTimeStatus(timeStatus);
+
+        response.setTimeStatusLabel(
+                getTimeStatusLabel(timeStatus)
         );
 
         response.setDescription(
@@ -253,12 +269,13 @@ public class PhieuGiamGiaService {
 
         return convertToResponse(p);
     }
-// tao moi
+    // tao moi
     @Transactional
     public PhieuGiamGiaResponse create(
             PhieuGiamGiaRequest request
 
     ) {
+        writeLock.khoa("voucher-codes");
         if (request == null) throw AppException.badRequest("Dữ liệu phiếu không hợp lệ");
         if (request.getCode() == null ||
                 request.getCode().trim().isEmpty()) {
@@ -287,13 +304,13 @@ public class PhieuGiamGiaService {
 
         p.setNgayBatDau(
                 LocalDateTime.parse(
-                        request.getStartDate() + "T00:00:00"
+                        request.getStartDate()
                 )
         );
 
         p.setNgayKetThuc(
                 LocalDateTime.parse(
-                        request.getEndDate() + "T23:59:59"
+                        request.getEndDate()
                 )
         );
 
@@ -322,10 +339,14 @@ public class PhieuGiamGiaService {
                 phieuGiamGiaRepository.save(p);
         syncAssignments(saved, request);
 
-        return convertToResponse(saved);
+        var response = convertToResponse(saved);
+        if (Integer.valueOf(2).equals(saved.getHinhThucPhieu())) {
+            scheduleEmails(saved, request.getCustomerIds(), List.of(), List.of(), false, response.getEmailResult());
+        }
+        return response;
 
     }
-// update
+    // update
     @Transactional
     public PhieuGiamGiaResponse update(
             Long id,
@@ -347,6 +368,44 @@ public class PhieuGiamGiaService {
         }
 
         requireFormSupport();
+
+        Integer oldTimeStatus = getTimeStatus(p);
+        Integer oldForm = p.getHinhThucPhieu();
+        List<Long> oldCustomerIds = activeCustomerIds(p);
+
+        String oldTen = p.getTenPhieuGiamGia();
+        Integer oldLoaiGiam = p.getLoaiGiamGia();
+        BigDecimal oldGiaTriGiam = p.getGiaTriGiam();
+        BigDecimal oldGiaTriToiThieu = p.getGiaTriToiThieu();
+        BigDecimal oldGiamToiDa = p.getGiamToiDa();
+        LocalDateTime oldNgayBatDau = p.getNgayBatDau();
+        LocalDateTime oldNgayKetThuc = p.getNgayKetThuc();
+
+        LocalDateTime newStart = LocalDateTime.parse(request.getStartDate());
+        LocalDateTime newEnd = LocalDateTime.parse(request.getEndDate());
+
+        boolean isInfoChanged = !java.util.Objects.equals(oldTen, request.getName().trim())
+                || !java.util.Objects.equals(oldLoaiGiam, request.getDiscountType())
+                || isBigDecimalDifferent(oldGiaTriGiam, request.getDiscountValue())
+                || isBigDecimalDifferent(oldGiaTriToiThieu, request.getMinOrderValue())
+                || isBigDecimalDifferent(oldGiamToiDa, request.getMaxDiscount())
+                || !java.util.Objects.equals(oldNgayBatDau, newStart)
+                || !java.util.Objects.equals(oldNgayKetThuc, newEnd);
+
+        List<Long> newCustomerIds = (request.getForm() != null && request.getForm() == 2 && request.getCustomerIds() != null)
+                ? request.getCustomerIds().stream().filter(java.util.Objects::nonNull).distinct().toList()
+                : List.of();
+
+        List<Long> addedIds = newCustomerIds.stream()
+                .filter(cId -> !oldCustomerIds.contains(cId))
+                .toList();
+        List<Long> removedIds = oldCustomerIds.stream()
+                .filter(cId -> !newCustomerIds.contains(cId))
+                .toList();
+        List<Long> retainedIds = newCustomerIds.stream()
+                .filter(oldCustomerIds::contains)
+                .toList();
+
         p.setTenPhieuGiamGia(request.getName().trim());
 
         p.setHinhThucPhieu(request.getForm());
@@ -356,17 +415,8 @@ public class PhieuGiamGiaService {
         p.setGiaTriToiThieu(request.getMinOrderValue());
         p.setGiamToiDa(request.getMaxDiscount());
 
-        p.setNgayBatDau(
-                LocalDateTime.parse(
-                        request.getStartDate() + "T00:00:00"
-                )
-        );
-
-        p.setNgayKetThuc(
-                LocalDateTime.parse(
-                        request.getEndDate() + "T23:59:59"
-                )
-        );
+        p.setNgayBatDau(newStart);
+        p.setNgayKetThuc(newEnd);
 
         if (Boolean.TRUE.equals(request.getUnlimited())) {
             p.setSoLuong(null);
@@ -388,9 +438,13 @@ public class PhieuGiamGiaService {
                 phieuGiamGiaRepository.save(p);
         syncAssignments(saved, request);
 
-        return convertToResponse(saved);
+        var response = convertToResponse(saved);
+        if (oldTimeStatus != null && oldTimeStatus != 3 && (Integer.valueOf(2).equals(oldForm) || Integer.valueOf(2).equals(saved.getHinhThucPhieu()))) {
+            scheduleEmails(saved, addedIds, removedIds, retainedIds, isInfoChanged, response.getEmailResult());
+        }
+        return response;
     }
-// xoa mem
+    // xoa mem
     @Transactional
     public void deactivate(Long id) {
 
@@ -428,7 +482,7 @@ public class PhieuGiamGiaService {
         phieu.setNgayCapNhat(LocalDateTime.now());
         phieuGiamGiaRepository.save(phieu);
     }
-// validate
+    // validate
     private void validateRequest(
             PhieuGiamGiaRequest request
     ) {
@@ -478,6 +532,21 @@ public class PhieuGiamGiaService {
             }
         }
 
+        if (request.getForm() == 2) {
+            long customerCount = request.getCustomerIds()
+                    .stream()
+                    .filter(java.util.Objects::nonNull)
+                    .distinct()
+                    .count();
+
+            if (request.getQuantity() == null ||
+                    request.getQuantity().longValue() != customerCount) {
+                throw AppException.badRequest(
+                        "Số lượng phiếu phải bằng số khách hàng được chọn"
+                );
+            }
+        }
+
         if (request.getDiscountType() == null ||
                 (request.getDiscountType() != 1 &&
                         request.getDiscountType() != 2)) {
@@ -496,21 +565,17 @@ public class PhieuGiamGiaService {
             );
         }
 
-        if (request.getMinOrderValue() != null &&
-                request.getMinOrderValue()
-                        .compareTo(BigDecimal.ZERO) < 0) {
-
+        if (request.getMinOrderValue() == null ||
+                request.getMinOrderValue().compareTo(BigDecimal.ZERO) < 0) {
             throw AppException.badRequest(
-                    "Giá trị đơn tối thiểu không hợp lệ"
+                    "Giá trị đơn tối thiểu phải lớn hơn hoặc bằng 0"
             );
         }
 
-        if (request.getMaxDiscount() != null &&
-                request.getMaxDiscount()
-                        .compareTo(BigDecimal.ZERO) < 0) {
-
+        if (request.getDiscountType() == 1 &&
+                (request.getMaxDiscount() == null || request.getMaxDiscount().compareTo(BigDecimal.ZERO) <= 0)) {
             throw AppException.badRequest(
-                    "Giảm tối đa không hợp lệ"
+                    "Giảm theo phần trăm phải có mức giảm tối đa lớn hơn 0"
             );
         }
 
@@ -531,18 +596,21 @@ public class PhieuGiamGiaService {
             );
         }
 
-        LocalDate start;
-        LocalDate end;
-        try {
-            start = LocalDate.parse(request.getStartDate());
-            end = LocalDate.parse(request.getEndDate());
-        } catch (DateTimeParseException ex) {
-            throw AppException.badRequest("Ngày bắt đầu và kết thúc phải có định dạng yyyy-MM-dd hợp lệ");
-        }
-        if (end.isBefore(start)) {
+        LocalDateTime start;
+        LocalDateTime end;
 
+        try {
+            start = LocalDateTime.parse(request.getStartDate());
+            end = LocalDateTime.parse(request.getEndDate());
+        } catch (DateTimeParseException ex) {
             throw AppException.badRequest(
-                    "Ngày kết thúc phải lớn hơn hoặc bằng ngày bắt đầu"
+                    "Ngày giờ bắt đầu và kết thúc không đúng định dạng"
+            );
+        }
+
+        if (!end.isAfter(start)) {
+            throw AppException.badRequest(
+                    "Ngày giờ kết thúc phải sau ngày giờ bắt đầu"
             );
         }
 
@@ -583,6 +651,130 @@ public class PhieuGiamGiaService {
             assignments.save(link);
         }
     }
+    // trang thai cua pgg theo tgian thuc
+    private Integer getTimeStatus(PhieuGiamGia p) {
 
+        LocalDateTime now = LocalDateTime.now();
+
+        if (p.getNgayBatDau() == null || p.getNgayKetThuc() == null) {
+            return null;
+        }
+
+        if (now.isBefore(p.getNgayBatDau())) {
+            return 1; // Sắp diễn ra
+        }
+
+        if (now.isBefore(p.getNgayKetThuc())) {
+            return 2; // Đang diễn ra
+        }
+
+        return 3; // Đã kết thúc
+    }
+
+    private String getTimeStatusLabel(Integer value) {
+
+        if (value == null) {
+            return "Không xác định";
+        }
+
+        return switch (value) {
+            case 1 -> "Sắp diễn ra";
+            case 2 -> "Đang diễn ra";
+            case 3 -> "Đã kết thúc";
+            default -> "Không xác định";
+        };
+    }
+
+    private void scheduleEmails(PhieuGiamGia voucher, List<Long> added, List<Long> removed,
+                                List<Long> retained, boolean changed,
+                                com.smashstep.datn.promotion.response.VoucherEmailResult result) {
+        Map<Long, String> recipients = new LinkedHashMap<>();
+        added.forEach(id -> recipients.put(id, "new"));
+        removed.forEach(id -> recipients.put(id, "cancel"));
+        if (changed) retained.forEach(id -> recipients.put(id, "update"));
+        if (recipients.isEmpty()) return;
+        // Capture all data while the persistence context and transaction are active.
+        record Recipient(Long id, String name, String email, String kind) {}
+        var snapshots = recipients.entrySet().stream().map(entry -> {
+            var customer = customers.findById(entry.getKey()).orElse(null);
+            return new Recipient(entry.getKey(), customer == null ? "" : customer.getTenKhachHang(),
+                    customer == null ? null : customer.getEmail(), entry.getValue());
+        }).toList();
+        String name = voucher.getTenPhieuGiamGia(), code = voucher.getMaPhieuGiamGia();
+        String discount = formatDiscountString(voucher);
+        String max = voucher.getGiamToiDa() == null ? "0" : voucher.getGiamToiDa().toPlainString();
+        String min = String.valueOf(voucher.getGiaTriToiThieu());
+        String start = String.valueOf(voucher.getNgayBatDau()), end = String.valueOf(voucher.getNgayKetThuc());
+        Runnable task = () -> {
+            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(30);
+            String configurationError = emailService.configurationError();
+            java.util.Set<String> reasons = new java.util.LinkedHashSet<>();
+            for (Recipient recipient : snapshots) {
+                try {
+                    if (configurationError != null) throw new IllegalStateException(configurationError);
+                    if (System.nanoTime() > deadline) throw new IllegalStateException("Hết thời gian gửi email cho danh sách khách hàng");
+                    if (recipient.email() == null || recipient.email().isBlank()) throw new IllegalStateException("Khách hàng chưa có email");
+                    switch (recipient.kind()) {
+                        case "cancel" -> emailService.sendVoucherCancelledEmail(recipient.email(), recipient.name(), name, code);
+                        case "update" -> emailService.sendVoucherUpdatedEmail(recipient.email(), recipient.name(), name, code,
+                                discount, max, min, start, end, websiteUrl);
+                        default -> emailService.sendVoucherEmail(recipient.email(), recipient.name(), name, code,
+                                discount, max, min, start, end, websiteUrl);
+                    }
+                    result.setSent(result.getSent() + 1);
+                } catch (Exception ex) {
+                    result.setFailed(result.getFailed() + 1);
+                    // Do not log SMTP exception bodies or customer addresses/credentials.
+                    String reason = mailFailureReason(ex);
+                    reasons.add(reason);
+                    log.warn("Voucher {}: email failed for customer ID {}: {}", code, recipient.id(), reason);
+                }
+            }
+            result.setStatus(result.getFailed() == 0 ? "SENT" : result.getSent() == 0 ? "FAILED" : "PARTIAL");
+            result.setMessage(configurationError != null ? configurationError
+                    : "SMTP đã nhận " + result.getSent() + " email; " + result.getFailed() + " email chưa gửi được." + (reasons.isEmpty() ? "" : " " + String.join("; ", reasons)));
+
+        };
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override public void afterCommit() { task.run(); }
+            });
+        } else {
+            // Supports direct service unit tests. Production writes use @Transactional.
+            task.run();
+        }
+    }
+
+    private String mailFailureReason(Exception error) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            if (cause instanceof org.springframework.mail.MailAuthenticationException) return "Gmail từ chối đăng nhập; kiểm tra Google App Password";
+            if (cause instanceof java.net.SocketTimeoutException) return "SMTP hết thời gian chờ";
+            if (cause instanceof java.net.ConnectException || cause instanceof java.net.UnknownHostException) return "Không kết nối được SMTP; kiểm tra host và mạng";
+            if (cause instanceof jakarta.mail.internet.AddressException || cause instanceof IllegalArgumentException) return "Email khách hàng sai định dạng";
+        }
+        // Messages here are application constants, never transport/server messages.
+        if ("Khách hàng chưa có email".equals(error.getMessage())) return "Khách hàng chưa có email";
+        if ("Hết thời gian gửi email cho danh sách khách hàng".equals(error.getMessage())) return "Danh sách gửi vượt thời gian chờ; một số email chưa được gửi";
+        return "SMTP từ chối hoặc không gửi được email; kiểm tra cấu hình Gmail";
+    }
+
+    private String formatDiscountString(PhieuGiamGia voucher) {
+        if (voucher.getGiaTriGiam() == null) {
+            return "0";
+        }
+        return voucher.getLoaiGiamGia() == 1
+                ? voucher.getGiaTriGiam().stripTrailingZeros().toPlainString() + "%"
+                : voucher.getGiaTriGiam().stripTrailingZeros().toPlainString() + " VNĐ";
+    }
+
+    private boolean isBigDecimalDifferent(BigDecimal a, BigDecimal b) {
+        if (a == null && b == null) {
+            return false;
+        }
+        if (a == null || b == null) {
+            return true;
+        }
+        return a.compareTo(b) != 0;
+    }
 
 }

@@ -38,7 +38,7 @@ function formatDate(value) {
     date.split('-')
 
   return y && m && d
-    ? `${d}/${m}/${y}`
+    ? `${d}/${m}/${y}${String(value).length >= 16 ? " " + String(value).substring(11, 16) : ""}`
     : date
 }
 

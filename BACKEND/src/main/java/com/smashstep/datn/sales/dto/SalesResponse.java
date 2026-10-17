@@ -1,230 +1,297 @@
 package com.smashstep.datn.sales.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
+import lombok.EqualsAndHashCode;
+import lombok.Getter;
+import lombok.ToString;
+
 import java.math.BigDecimal;
-import java.util.Objects;
+import java.time.LocalDateTime;
+import java.util.List;
 
 public final class SalesResponse {
     private SalesResponse() {}
 
+    @Getter
+    @ToString
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @EqualsAndHashCode(exclude = "idSanPham")
     public static final class CatalogItem {
+        private Long idSanPham;
         private final Long id;
-        private final String code;
-        private final String productCode;
-        private final String name;
-        private final String color;
-        private final String size;
-        private final BigDecimal price;
-        private final BigDecimal originalPrice;
-        private final Integer stock;
+        private final String maSanPhamChiTiet;
+        private final String maSanPham;
+        private final String tenSanPham;
+        private final String mauSac;
+        private final String kichThuoc;
+        private final BigDecimal giaBan;
+        private final BigDecimal giaGoc;
+        private Integer tonKho;
+        private final Boolean dangGiamGia;
+        private final BigDecimal phanTramGiam;
+        private final String maDotGiamGia;
+        private final String tenDotGiamGia;
 
-        public CatalogItem(Long id, String code, String productCode, String name, String color, String size, BigDecimal price, BigDecimal originalPrice, Integer stock) {
+        public CatalogItem(
+                Long id,
+                String maSanPhamChiTiet,
+                String maSanPham,
+                String tenSanPham,
+                String mauSac,
+                String kichThuoc,
+                BigDecimal giaBan,
+                BigDecimal giaGoc,
+                Integer tonKho) {
+            this(
+                    id,
+                    maSanPhamChiTiet,
+                    maSanPham,
+                    tenSanPham,
+                    mauSac,
+                    kichThuoc,
+                    giaBan,
+                    giaGoc,
+                    tonKho,
+                    null,
+                    null,
+                    null,
+                    null);
+        }
+
+        public CatalogItem(
+                Long id,
+                String maSanPhamChiTiet,
+                String maSanPham,
+                String tenSanPham,
+                String mauSac,
+                String kichThuoc,
+                BigDecimal giaBan,
+                BigDecimal giaGoc,
+                Integer tonKho,
+                Boolean dangGiamGia,
+                BigDecimal phanTramGiam,
+                String maDotGiamGia,
+                String tenDotGiamGia) {
             this.id = id;
-            this.code = code;
-            this.productCode = productCode;
-            this.name = name;
-            this.color = color;
-            this.size = size;
-            this.price = price;
-            this.originalPrice = originalPrice;
-            this.stock = stock;
+            this.maSanPhamChiTiet = maSanPhamChiTiet;
+            this.maSanPham = maSanPham;
+            this.tenSanPham = tenSanPham;
+            this.mauSac = mauSac;
+            this.kichThuoc = kichThuoc;
+            this.giaBan = giaBan;
+            this.giaGoc = giaGoc;
+            this.tonKho = tonKho;
+            this.dangGiamGia = dangGiamGia;
+            this.phanTramGiam = phanTramGiam;
+            this.maDotGiamGia = maDotGiamGia;
+            this.tenDotGiamGia = tenDotGiamGia;
         }
 
-        public Long id() { return id; }
-        public Long getId() { return id; }
-        public String code() { return code; }
-        public String getCode() { return code; }
-        public String productCode() { return productCode; }
-        public String getProductCode() { return productCode; }
-        public String name() { return name; }
-        public String getName() { return name; }
-        public String color() { return color; }
-        public String getColor() { return color; }
-        public String size() { return size; }
-        public String getSize() { return size; }
-        public BigDecimal price() { return price; }
-        public BigDecimal getPrice() { return price; }
-        public BigDecimal originalPrice() { return originalPrice; }
-        public BigDecimal getOriginalPrice() { return originalPrice; }
-        public Integer stock() { return stock; }
-        public Integer getStock() { return stock; }
-
-        @Override
-        public boolean equals(Object other) {
-            if (this == other) return true;
-            if (!(other instanceof CatalogItem)) return false;
-            CatalogItem that = (CatalogItem) other;
-            return Objects.equals(id, that.id)
-                    && Objects.equals(code, that.code)
-                    && Objects.equals(productCode, that.productCode)
-                    && Objects.equals(name, that.name)
-                    && Objects.equals(color, that.color)
-                    && Objects.equals(size, that.size)
-                    && Objects.equals(price, that.price)
-                    && Objects.equals(originalPrice, that.originalPrice)
-                    && Objects.equals(stock, that.stock);
+        public CatalogItem tonKhaDung(int soLuong) {
+            this.tonKho = soLuong;
+            return this;
         }
 
-        @Override
-        public int hashCode() {
-            return Objects.hash(id, code, productCode, name, color, size, price, originalPrice, stock);
-        }
-
-        @Override
-        public String toString() {
-            return "CatalogItem[id=" + id
-                    + ", code=" + code
-                    + ", productCode=" + productCode
-                    + ", name=" + name
-                    + ", color=" + color
-                    + ", size=" + size
-                    + ", price=" + price
-                    + ", originalPrice=" + originalPrice
-                    + ", stock=" + stock
-                    + "]";
+        public CatalogItem ganIdSanPham(Long idSanPham) {
+            this.idSanPham = idSanPham;
+            return this;
         }
     }
 
-    public static final class PaymentMethod {
-        private final Long id;
-        private final String code;
-        private final String name;
+    public record PaymentMethod(
+            Long id, String maPhuongThucThanhToan, String tenPhuongThucThanhToan) {}
 
-        public PaymentMethod(Long id, String code, String name) {
-            this.id = id;
-            this.code = code;
-            this.name = name;
+    public record VoucherOption(
+            String maPhieuGiamGia,
+            String tenPhieuGiamGia,
+            BigDecimal tienGiam,
+            LocalDateTime ngayHetHan,
+            Integer loaiGiamGia,
+            BigDecimal giaTriGiam,
+            Integer hinhThucPhieu,
+            String lyDoKhongApDung) {
+        public VoucherOption(
+                String ma,
+                String ten,
+                BigDecimal giam,
+                LocalDateTime hetHan,
+                Integer loai,
+                BigDecimal giaTri) {
+            this(ma, ten, giam, hetHan, loai, giaTri, null, null);
         }
 
-        public Long id() { return id; }
-        public Long getId() { return id; }
-        public String code() { return code; }
-        public String getCode() { return code; }
-        public String name() { return name; }
-        public String getName() { return name; }
-
-        @Override
-        public boolean equals(Object other) {
-            if (this == other) return true;
-            if (!(other instanceof PaymentMethod)) return false;
-            PaymentMethod that = (PaymentMethod) other;
-            return Objects.equals(id, that.id)
-                    && Objects.equals(code, that.code)
-                    && Objects.equals(name, that.name);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(id, code, name);
-        }
-
-        @Override
-        public String toString() {
-            return "PaymentMethod[id=" + id
-                    + ", code=" + code
-                    + ", name=" + name
-                    + "]";
+        public VoucherOption(
+                String maPhieuGiamGia,
+                String tenPhieuGiamGia,
+                BigDecimal tienGiam,
+                LocalDateTime ngayHetHan) {
+            this(maPhieuGiamGia, tenPhieuGiamGia, tienGiam, ngayHetHan, null, null, null, null);
         }
     }
 
+    public record ReceiptPayment(
+            Long idPhuongThucThanhToan,
+            String maPhuongThucThanhToan,
+            String tenPhuongThucThanhToan,
+            BigDecimal soTien,
+            String maGiaoDich) {}
+
+    @Getter
+    @EqualsAndHashCode(of = {"tongTienHang", "tienGiam", "thanhTien"})
+    @ToString
     public static final class Quote {
-        private final BigDecimal subtotal;
-        private final BigDecimal discount;
-        private final BigDecimal total;
+        private final BigDecimal tongTienHang;
+        private final BigDecimal tienGiam;
+        private final BigDecimal thanhTien;
+        private final BigDecimal phiVanChuyen;
+        private final List<VoucherOption> danhSachPhieuGiamGia;
+        private final String loiPhieuDaChon;
+        private List<VoucherOption> phieuChuaDuDieuKien = List.of();
 
-        public Quote(BigDecimal subtotal, BigDecimal discount, BigDecimal total) {
-            this.subtotal = subtotal;
-            this.discount = discount;
-            this.total = total;
+        public Quote phieuChuaDuDieuKien(List<VoucherOption> phieu) {
+            this.phieuChuaDuDieuKien = List.copyOf(phieu);
+            return this;
         }
 
-        public BigDecimal subtotal() { return subtotal; }
-        public BigDecimal getSubtotal() { return subtotal; }
-        public BigDecimal discount() { return discount; }
-        public BigDecimal getDiscount() { return discount; }
-        public BigDecimal total() { return total; }
-        public BigDecimal getTotal() { return total; }
-
-        @Override
-        public boolean equals(Object other) {
-            if (this == other) return true;
-            if (!(other instanceof Quote)) return false;
-            Quote that = (Quote) other;
-            return Objects.equals(subtotal, that.subtotal)
-                    && Objects.equals(discount, that.discount)
-                    && Objects.equals(total, that.total);
+        // Điểm gọi Java cũ còn được tham chiếu ngoài module POS; không tạo trường JSON tiếng Anh.
+        @Deprecated
+        public BigDecimal subtotal() {
+            return tongTienHang;
         }
 
-        @Override
-        public int hashCode() {
-            return Objects.hash(subtotal, discount, total);
+        @Deprecated
+        public BigDecimal discount() {
+            return tienGiam;
         }
 
-        @Override
-        public String toString() {
-            return "Quote[subtotal=" + subtotal
-                    + ", discount=" + discount
-                    + ", total=" + total
-                    + "]";
+        @Deprecated
+        public BigDecimal total() {
+            return thanhTien;
+        }
+
+        public Quote(BigDecimal tongTienHang, BigDecimal tienGiam, BigDecimal thanhTien) {
+            this(tongTienHang, tienGiam, thanhTien, BigDecimal.ZERO, List.of(), null);
+        }
+
+        public Quote(
+                BigDecimal tongTienHang,
+                BigDecimal tienGiam,
+                BigDecimal thanhTien,
+                BigDecimal phiVanChuyen,
+                List<VoucherOption> danhSachPhieuGiamGia,
+                String loiPhieuDaChon) {
+            this.tongTienHang = tongTienHang;
+            this.tienGiam = tienGiam;
+            this.thanhTien = thanhTien;
+            this.phiVanChuyen = phiVanChuyen;
+            this.danhSachPhieuGiamGia = List.copyOf(danhSachPhieuGiamGia);
+            this.loiPhieuDaChon = loiPhieuDaChon;
         }
     }
 
+    @Getter
+    @ToString
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @EqualsAndHashCode(exclude = {"danhSachThanhToan", "phiVanChuyen", "trangThai"})
     public static final class Receipt {
-        private final Long invoiceId;
-        private final String invoiceCode;
-        private final BigDecimal subtotal;
-        private final BigDecimal discount;
-        private final BigDecimal total;
-        private final BigDecimal change;
+        private List<ReceiptPayment> danhSachThanhToan = List.of();
+        private BigDecimal phiVanChuyen = BigDecimal.ZERO;
+        private Integer trangThai;
+        private final Long idHoaDon;
+        private final String maHoaDon;
+        private final BigDecimal tongTienHang;
+        private final BigDecimal tienGiam;
+        private final BigDecimal thanhTien;
+        private final BigDecimal tienThua;
+        private final Long idNhanVien;
+        private final String maNhanVien;
+        private final String tenNhanVien;
+        private final Long idKhachHang;
+        private final String maKhachHang;
+        private final String tenKhachHang;
+        private final String soDienThoaiKhachHang;
+        private final String maPhuongThucThanhToan;
+        private final String tenPhuongThucThanhToan;
+        private final String maPhieuGiamGia;
+        private final LocalDateTime ngayTao;
+        private final BigDecimal tienKhachDua;
 
-        public Receipt(Long invoiceId, String invoiceCode, BigDecimal subtotal, BigDecimal discount, BigDecimal total, BigDecimal change) {
-            this.invoiceId = invoiceId;
-            this.invoiceCode = invoiceCode;
-            this.subtotal = subtotal;
-            this.discount = discount;
-            this.total = total;
-            this.change = change;
+        public Receipt(
+                Long idHoaDon,
+                String maHoaDon,
+                BigDecimal tongTienHang,
+                BigDecimal tienGiam,
+                BigDecimal thanhTien,
+                BigDecimal tienThua) {
+            this(
+                    idHoaDon,
+                    maHoaDon,
+                    tongTienHang,
+                    tienGiam,
+                    thanhTien,
+                    tienThua,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null);
         }
 
-        public Long invoiceId() { return invoiceId; }
-        public Long getInvoiceId() { return invoiceId; }
-        public String invoiceCode() { return invoiceCode; }
-        public String getInvoiceCode() { return invoiceCode; }
-        public BigDecimal subtotal() { return subtotal; }
-        public BigDecimal getSubtotal() { return subtotal; }
-        public BigDecimal discount() { return discount; }
-        public BigDecimal getDiscount() { return discount; }
-        public BigDecimal total() { return total; }
-        public BigDecimal getTotal() { return total; }
-        public BigDecimal change() { return change; }
-        public BigDecimal getChange() { return change; }
-
-        @Override
-        public boolean equals(Object other) {
-            if (this == other) return true;
-            if (!(other instanceof Receipt)) return false;
-            Receipt that = (Receipt) other;
-            return Objects.equals(invoiceId, that.invoiceId)
-                    && Objects.equals(invoiceCode, that.invoiceCode)
-                    && Objects.equals(subtotal, that.subtotal)
-                    && Objects.equals(discount, that.discount)
-                    && Objects.equals(total, that.total)
-                    && Objects.equals(change, that.change);
+        public Receipt(
+                Long idHoaDon,
+                String maHoaDon,
+                BigDecimal tongTienHang,
+                BigDecimal tienGiam,
+                BigDecimal thanhTien,
+                BigDecimal tienThua,
+                Long idNhanVien,
+                String maNhanVien,
+                String tenNhanVien,
+                Long idKhachHang,
+                String maKhachHang,
+                String tenKhachHang,
+                String soDienThoaiKhachHang,
+                String maPhuongThucThanhToan,
+                String tenPhuongThucThanhToan,
+                String maPhieuGiamGia,
+                LocalDateTime ngayTao,
+                BigDecimal tienKhachDua) {
+            this.idHoaDon = idHoaDon;
+            this.maHoaDon = maHoaDon;
+            this.tongTienHang = tongTienHang;
+            this.tienGiam = tienGiam;
+            this.thanhTien = thanhTien;
+            this.tienThua = tienThua;
+            this.idNhanVien = idNhanVien;
+            this.maNhanVien = maNhanVien;
+            this.tenNhanVien = tenNhanVien;
+            this.idKhachHang = idKhachHang;
+            this.maKhachHang = maKhachHang;
+            this.tenKhachHang = tenKhachHang;
+            this.soDienThoaiKhachHang = soDienThoaiKhachHang;
+            this.maPhuongThucThanhToan = maPhuongThucThanhToan;
+            this.tenPhuongThucThanhToan = tenPhuongThucThanhToan;
+            this.maPhieuGiamGia = maPhieuGiamGia;
+            this.ngayTao = ngayTao;
+            this.tienKhachDua = tienKhachDua;
         }
 
-        @Override
-        public int hashCode() {
-            return Objects.hash(invoiceId, invoiceCode, subtotal, discount, total, change);
-        }
-
-        @Override
-        public String toString() {
-            return "Receipt[invoiceId=" + invoiceId
-                    + ", invoiceCode=" + invoiceCode
-                    + ", subtotal=" + subtotal
-                    + ", discount=" + discount
-                    + ", total=" + total
-                    + ", change=" + change
-                    + "]";
+        public Receipt ghiNhanThanhToan(
+                List<ReceiptPayment> danhSachThanhToan,
+                BigDecimal phiVanChuyen,
+                Integer trangThai) {
+            this.danhSachThanhToan = List.copyOf(danhSachThanhToan);
+            this.phiVanChuyen = phiVanChuyen;
+            this.trangThai = trangThai;
+            return this;
         }
     }
 }
