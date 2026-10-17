@@ -46,6 +46,7 @@ const hydrate = (d, previous = {}) => {
     shippingQuote: d.delivery?.address === previous.delivery?.address ? previous.shippingQuote : null,
     shippingDestination: d.delivery?.address === previous.delivery?.address ? previous.shippingDestination : null,
     voucherCode: d.voucherCode ?? previous.voucherCode ?? '', paid: previous.paid ?? '',
+    autoCash: previous.autoCash ?? (previous.paid == null || previous.paid === ''),
     paymentMode: ['CASH', 'BANK'].includes(previous.paymentMode) ? previous.paymentMode : 'CASH',
     autoVoucher: previous.autoVoucher ?? !d.voucherCode,
     delivery: d.delivery ?? previous.delivery ?? { enabled: false, addressId: null, recipientName: '', recipientPhone: '', address: '', shippingFee: 0 },
@@ -88,6 +89,7 @@ function inputCash(event) {
   const significantBefore = typed.slice(0, cursor).replace(/[.\s]/g, '').length
   const raw = typed.replace(/[.\s]/g, '').replace(',', '.')
   if (raw && !/^\d{1,16}(?:\.\d{0,2})?$/.test(raw)) { input.value = cashDisplay.value; return }
+  order.value.autoCash = false
   order.value.paid = raw.replace(/^0+(?=\d)/, '')
   const formatted = cashDisplay.value
   input.value = formatted
@@ -117,6 +119,14 @@ const cashError = computed(() => {
   if (!order.value || order.value.paymentMode === 'BANK' || order.value.paid === '') return ''
   if (!/^(?:0|[1-9]\d{0,15})(?:\.\d{1,2})?$/.test(String(order.value.paid))) return 'Số tiền không âm, tối đa 16 chữ số và 2 số lẻ.'
   return paidNum.value < cashDue.value ? 'Số tiền khách đưa chưa đủ.' : ''
+})
+// Suggest exact cash from a valid server quote; never overwrite a cashier's manual edit.
+watch([order, quoteReady, () => order.value?.quote?.total, () => order.value?.paymentMode, () => order.value?.autoCash], () => {
+  const current = order.value
+  if (!current || current.paymentMode !== 'CASH' || !current.items.length || !current.autoCash || !quoteReady.value) return
+  if (bankAccepted.value || checkoutDialog.value || pendingPayment.value || recoveryBlocked.value) return
+  const amount = Number(current.quote.total)
+  if (Number.isFinite(amount) && amount >= 0) current.paid = String(roundMoney(amount))
 })
 const canPay = computed(() => !operationLocked.value && !shippingLoading.value && shippingReady.value && quoteReady.value && count.value > 0 && deliveryReady.value && !cartWarnings.value.length
   && (order.value.paymentMode === 'BANK' ? !!method('CHUYEN_KHOAN') && payable.value > 0
@@ -686,7 +696,7 @@ async function saveOrder(target = order.value, successMessage = '') {
   if (!target) return true
   if (busy.value || syncingStock.value || deliveryLoading.value) return false
   if (!target.items.length) {
-    target.voucherCode = ''; target.quote = null; target.quotedSignature = ''; target.quoteError = ''; target.paid = ''
+    target.voucherCode = ''; target.quote = null; target.quotedSignature = ''; target.quoteError = ''; target.paid = ''; target.autoCash = true
     target.delivery.shippingFee = 0; target.shippingQuote = null
   }
   if (!target.items.length && !completeDelivery(target.delivery)) target.delivery.enabled = false
@@ -1113,7 +1123,7 @@ onBeforeUnmount(() => { unregisterLogoutGuard(); if (typeof window !== 'undefine
           <small v-if="order.paymentMode !== 'CASH' && !quoteReady" class="ss-hint">Thêm sản phẩm và hoàn tất thông tin giao hàng để tính số tiền chuyển khoản.</small>
           <button v-if="order.paymentMode !== 'CASH' && !bankAccepted" class="ss-btn" :disabled="!canPay" @click="openQr">{{ bankConfig ? 'Hiển thị QR chuyển khoản' : 'Xác nhận chuyển khoản thủ công' }}</button>
           <div v-if="order.paymentMode !== 'BANK'" class="ss-field"><span class="ss-label strong">Tiền mặt khách đưa</span>
-            <input class="ss-input" type="text" inputmode="decimal" :value="cashDisplay" @input="inputCash" :disabled="locked" aria-label="Tiền mặt khách đưa" autocomplete="off" placeholder="Nhập số tiền khách đưa" /></div>
+            <input class="ss-input" type="text" inputmode="decimal" :value="cashDisplay" @input="inputCash" :disabled="locked" aria-label="Tiền mặt khách đưa" autocomplete="off" placeholder="Tự điền bằng số tiền khách cần trả" /><small class="ss-hint">Điền sẵn đúng số tiền cần trả. Có thể sửa nếu khách đưa số tiền khác.</small></div>
           <div v-else class="kv"><span>Cần chuyển khoản:</span><b>{{ money(payable) }}</b></div>
           <small v-if="cashError" class="cash-error" role="alert">{{ cashError }}</small>
           <p v-if="order.paymentMode === 'BANK' && bankConfirmed" class="bank-confirmed" role="status"><i class="bi bi-check-circle"></i> Đã xác nhận nhận tiền. Phiếu và số tiền đã được chốt; bấm Thanh toán để hoàn tất, không chuyển khoản thêm.</p>
