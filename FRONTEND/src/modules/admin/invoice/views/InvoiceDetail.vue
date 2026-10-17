@@ -1,4 +1,5 @@
 <script setup>
+import GhnLogo from '../../../../components/GhnLogo.vue'
 import { useProductToast } from '../../product/composables/useProductToast'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -699,11 +700,10 @@ onUnmounted(() => {
               <strong class="discount voucher-summary-value"><template v-if="voucherLabel">{{ voucherLabel }} </template>(− {{ money(invoice.discount) }})</strong>
             </div>
             <div v-if="isDeliveryOrder" class="amount-row">
-              <span>Phí vận chuyển</span>
+              <span class="shipping-provider-label"><GhnLogo v-if="isGHN" /> Phí vận chuyển</span>
               <strong class="shipping-fee-value">
                 + {{ money(invoice.shippingFee) }}
-                <span v-if="isGHN" class="ghn-badge" title="Giao Hàng Nhanh"><i class="bi bi-box-seam-fill"></i> GHN</span>
-                <span v-else-if="invoice.shippingCarrier" class="carrier-badge">{{ invoice.shippingCarrier }}</span>
+                <span v-if="!isGHN && invoice.shippingCarrier" class="carrier-badge">{{ invoice.shippingCarrier }}</span>
               </strong>
             </div>
             <div class="grand-total"><span>TỔNG TIỀN</span><strong>{{ money(invoice.total) }}</strong></div>
@@ -749,6 +749,7 @@ onUnmounted(() => {
                 <i class="bi bi-printer"></i> In hóa đơn
               </button>
               <button
+                v-if="Number(invoice.statusCode) !== 5"
                 class="payment-action-button edit-order-button btn btn-primary"
                 type="button"
                 :disabled="updatingStatus || confirmSubmitting"
@@ -928,7 +929,7 @@ onUnmounted(() => {
               <small v-if="hasVoucher">({{ invoice.voucherCode }}<template v-if="voucherLabel"> · {{ voucherLabel }}</template>)</small>
             </strong>
           </div>
-          <div><span>Phí vận chuyển</span><strong>{{ money(invoice.shippingFee) }}<small v-if="isGHN"> · GHN</small></strong></div>
+          <div v-if="isDeliveryOrder"><span class="shipping-provider-label"><GhnLogo v-if="isGHN" /> Phí vận chuyển</span><strong>{{ money(invoice.shippingFee) }}</strong></div>
           <div class="print-grand-total"><span>TỔNG THANH TOÁN</span><strong>{{ money(invoice.total) }}</strong></div>
         </div>
 
@@ -938,9 +939,9 @@ onUnmounted(() => {
           <div v-for="payment in paymentHistory" :key="payment.id"><span>{{ payment.method }}:</span> {{ money(payment.amount) }} <small>{{ payment.transactionCode }}</small></div>
         </div>
 
-        <div v-if="hasShippingInfo" class="print-shipping">
+        <div v-if="isDeliveryOrder && hasShippingInfo" class="print-shipping">
           <h3>THÔNG TIN GIAO HÀNG</h3>
-          <div v-if="invoice.shippingCarrier"><span>Đơn vị vận chuyển:</span> {{ invoice.shippingCarrier }}</div>
+          <div v-if="invoice.shippingCarrier" class="print-carrier"><span>Đơn vị vận chuyển:</span><GhnLogo v-if="isGHN" /><template v-else>{{ invoice.shippingCarrier }}</template></div>
           <div><span>Phí vận chuyển:</span> {{ money(invoice.shippingFee) }}</div>
           <div v-if="invoice.shippingRecipient"><span>Người nhận:</span> {{ invoice.shippingRecipient }}</div>
           <div v-if="invoice.shippingRecipientPhone"><span>Số điện thoại:</span> {{ invoice.shippingRecipientPhone }}</div>
@@ -1498,4 +1499,13 @@ onUnmounted(() => {
   .product-reset-button{width:100%}
 }
 
+</style>
+
+<style scoped>
+.shipping-provider-label { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+</style>
+
+<style scoped>
+.print-carrier { display: flex; align-items: center; gap: 6px; }
+.print-invoice :deep(.ghn-logo) { width: 46px; height: 14px; }
 </style>

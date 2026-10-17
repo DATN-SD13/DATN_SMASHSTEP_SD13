@@ -130,6 +130,10 @@ public final class SalesResponse {
         }
     }
 
+    public record BuyMoreSuggestion(
+            String maPhieuGiamGia, Integer loaiGiamGia, BigDecimal giaTriGiam,
+            BigDecimal canMuaThem, BigDecimal tienGiamDuKien) {}
+
     public record ReceiptPayment(
             Long idPhuongThucThanhToan,
             String maPhuongThucThanhToan,
@@ -148,6 +152,12 @@ public final class SalesResponse {
         private final List<VoucherOption> danhSachPhieuGiamGia;
         private final String loiPhieuDaChon;
         private List<VoucherOption> phieuChuaDuDieuKien = List.of();
+        private List<BuyMoreSuggestion> goiYMuaThem = List.of();
+
+        public Quote goiYMuaThem(List<BuyMoreSuggestion> goiY) {
+            this.goiYMuaThem = List.copyOf(goiY);
+            return this;
+        }
 
         public Quote phieuChuaDuDieuKien(List<VoucherOption> phieu) {
             this.phieuChuaDuDieuKien = List.copyOf(phieu);

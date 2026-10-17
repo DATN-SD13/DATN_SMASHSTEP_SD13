@@ -26,6 +26,7 @@ import java.util.*;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class PendingSaleService {
+    @org.springframework.beans.factory.annotation.Autowired private GhnPhiVanChuyenService phiGhn;
     private final EntityManager entityManager;
     private final InvoiceCodeService dichVuMaHoaDon;
     private final CurrentPriceService dichVuGiaHienTai;
@@ -145,6 +146,11 @@ public class PendingSaleService {
             throw AppException.badRequest("Khách hàng không hoạt động");
         var giaoHang =
                 DeliveryRules.chuanHoa(entityManager, yeuCau.idKhachHang(), yeuCau.giaoHang());
+        if (giaoHang.apDung() && !yeuCau.danhSachSanPham().isEmpty()) phiGhn.xacThuc(giaoHang, yeuCau.danhSachSanPham().stream()
+                .mapToInt(i -> i.soLuong().intValueExact()).sum());
+        if (giaoHang.apDung() && yeuCau.danhSachSanPham().isEmpty())
+            giaoHang = new SalesDelivery(true, null, giaoHang.tenNguoiNhan(),
+                    giaoHang.soDienThoaiNguoiNhan(), giaoHang.diaChi(), BigDecimal.ZERO);
         var chiTietCu = chiTietHoaDon(h);
         Map<Long, Integer> soLuongCu = new HashMap<>();
         for (var dongCu : chiTietCu) {

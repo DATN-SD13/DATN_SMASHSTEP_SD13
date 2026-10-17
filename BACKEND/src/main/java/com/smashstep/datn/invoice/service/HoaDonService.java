@@ -324,40 +324,9 @@ public class HoaDonService {
 
     private Specification<HoaDon> taoBoLoc(
             String ma, LocalDate tuNgay, LocalDate denNgay, Integer trangThai, Integer loaiHoaDon) {
-        Long authenticatedEmployee = null;
-        try {
-            authenticatedEmployee = com.smashstep.datn.sales.service.PosActor.employeeId();
-        } catch (AppException ignored) {
-            /* Legacy list access is unchanged; hide managed POS drafts. */
-        }
-        final Long draftOwner = authenticatedEmployee;
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
-            Predicate legacy =
-                    cb.or(
-                            cb.isNull(root.get("loaiHoaDon")),
-                            cb.notEqual(root.get("loaiHoaDon"), 0),
-                            cb.isNull(root.get("ghiChu")),
-                            cb.and(
-                                    cb.notEqual(
-                                            cb.locate(
-                                                    root.get("ghiChu"),
-                                                    com.smashstep.datn.invoice.rules.PosDraftRules
-                                                            .PREFIX),
-                                            1),
-                                    cb.notEqual(
-                                            cb.locate(
-                                                    root.get("ghiChu"),
-                                                    com.smashstep.datn.invoice.rules.PosDraftRules
-                                                            .DELIVERY_PREFIX),
-                                            1)));
-            predicates.add(
-                    draftOwner == null
-                            ? legacy
-                            : cb.or(
-                            legacy,
-                            cb.isNotNull(root.get("ngayThanhToan")),
-                            cb.equal(root.get("idNhanVien").get("id"), draftOwner)));
+            predicates.add(com.smashstep.datn.invoice.rules.HoaDonHienThiRules.daPhatHanh(root, cb));
             if (ma != null && !ma.isBlank()) {
                 predicates.add(
                         cb.like(

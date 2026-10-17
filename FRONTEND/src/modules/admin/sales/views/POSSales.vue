@@ -1,4 +1,5 @@
 <script setup>
+import GhnLogo from '../../../../components/GhnLogo.vue'
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { money } from '../../../../utils/paging'
@@ -11,7 +12,6 @@ import { useAuthStore } from '../../../../stores/auth'
 import { productAttributeService } from '../../product/services/productAttributeService'
 import ProductThumbnail from '../../product/components/ProductThumbnail.vue'
 import { productService } from '../../product/services/productService'
-import { useAddressApi } from '../../../../composables/useAddressApi'
 import { bankConfig, qrLink } from '../services/bankQr'
 import { imageUrl } from '../../product/services/imageUtils'
 
@@ -28,7 +28,7 @@ const orders = ref([]), activeId = ref(null)
 const order = computed(() => orders.value.find(o => o.id === activeId.value) || null)
 const deliveryLoading = ref(false), syncingStock = ref(false)
 let stockSyncTimer, stockPollTimer, stockSyncPromise = null, stockSyncPending = false
-const locked = computed(() => deliveryLoading.value || Boolean(deliveryEditor.value) || busy.value || !ready.value || Boolean(checkoutDialog.value) || Boolean(pendingPayment.value) || recoveryBlocked.value)
+const locked = computed(() => shippingLoading.value || deliveryLoading.value || Boolean(deliveryEditor.value) || busy.value || !ready.value || Boolean(checkoutDialog.value) || Boolean(pendingPayment.value) || recoveryBlocked.value)
 const picking = ref(false), q = ref(''), colorFilter = ref(''), sizeFilter = ref('')
 const categoryFilter = ref(''), brandFilter = ref(''), attributes = ref({})
 const shown = computed(() => catalog.value)
@@ -41,9 +41,11 @@ const signature = o => JSON.stringify(payload(o))
 const hydrate = (d, previous = {}) => {
   const o = { ...d, name: d.invoiceCode,
     requestId: previous.requestId || crypto.randomUUID(),
+    shippingQuote: d.delivery?.address === previous.delivery?.address ? previous.shippingQuote : null,
+    shippingDestination: d.delivery?.address === previous.delivery?.address ? previous.shippingDestination : null,
     voucherCode: d.voucherCode ?? previous.voucherCode ?? '', paid: previous.paid ?? '',
     paymentMode: ['CASH', 'BANK'].includes(previous.paymentMode) ? previous.paymentMode : 'CASH',
-    autoVoucher: previous.autoVoucher ?? true,
+    autoVoucher: previous.autoVoucher ?? !d.voucherCode,
     delivery: d.delivery ?? previous.delivery ?? { enabled: false, addressId: null, recipientName: '', recipientPhone: '', address: '', shippingFee: 0 },
     paymentMethodId: previous.paymentMethodId ?? methods.value[0]?.id ?? null,
     quote: null, quotedSignature: '', quoteError: '', items: d.items.map(i => ({ ...i,
@@ -114,17 +116,20 @@ const cashError = computed(() => {
   if (!/^(?:0|[1-9]\d{0,15})(?:\.\d{1,2})?$/.test(String(order.value.paid))) return 'Số tiền không âm, tối đa 16 chữ số và 2 số lẻ.'
   return paidNum.value < cashDue.value ? 'Số tiền khách đưa chưa đủ.' : ''
 })
-const canPay = computed(() => !locked.value && quoteReady.value && count.value > 0 && deliveryReady.value && !cartWarnings.value.length
+const canPay = computed(() => !locked.value && !shippingLoading.value && shippingReady.value && quoteReady.value && count.value > 0 && deliveryReady.value && !cartWarnings.value.length
   && (order.value.paymentMode === 'BANK' ? !!method('CHUYEN_KHOAN') && payable.value > 0
     : !!method('TIEN_MAT') && order.value.paid !== '' && Number.isFinite(Number(order.value.paid)) && paidNum.value >= cashDue.value && /^(?:0|[1-9]\d{0,15})(?:\.\d{1,2})?$/.test(String(order.value.paid))))
 const selectedVoucher = computed(() => validVouchers.value.find(v => v.code.toLowerCase() === order.value?.voucherCode?.toLowerCase()))
 const voucherLabel = v => v?.value == null ? '' : Number(v.type) === 1 ? `${Number(v.value)}%` : money(v.value)
 const bestSelected = computed(() => selectedVoucher.value && Number(selectedVoucher.value.discount) === Number(validVouchers.value[0]?.discount))
 const validVouchers = computed(() => order.value?.quote?.vouchers || [])
+const buyMoreSuggestions = computed(() => (order.value?.quote?.buyMoreSuggestions || []).filter(v =>
+  Number(v.amountNeeded) > 0 && Number(v.amountNeeded) <= 500000))
 
 async function calculateQuote(suggest = true) {
   const target = order.value, version = ++quoteVersion
   if (!target?.items.length || !quoteInput.value.paymentMethodId || busy.value || pendingPayment.value || checkoutDialog.value || recoveryBlocked.value) return
+  if (target.delivery.enabled && !shippingReady.value) return
   const fingerprint = quoteSignature.value
   target.quoteError = ''
   try {
@@ -132,26 +137,15 @@ async function calculateQuote(suggest = true) {
     if (!alive || version !== quoteVersion || order.value?.id !== target.id || fingerprint !== quoteSignature.value) return
     if (bankAccepted.value && Number(bankAccepted.value.total) !== Number(result.total)) bankAccepted.value = null
     target.quote = result; target.quotedSignature = fingerprint
-    if (result.selectedVoucherError) {
-      target.voucherCode = ''; target.quoteError = `Đã bỏ phiếu: ${result.selectedVoucherError}`
-      error.value = target.quoteError
-      if (!busy.value) await saveOrder(target)
-      // saveOrder clears the general error after a successful save; retain the reason for removing the voucher.
-      error.value = `Đã bỏ phiếu: ${result.selectedVoucherError}`
-      showError(error.value)
-      return
-    }
     const best = result.vouchers?.[0]
-    if (!suggest || !best) return
-    if (!target.voucherCode && target.autoVoucher) { await applyVoucher(best.code, target, true); return }
-    const promptKey = `${fingerprint}|${best.code}|${best.discount}`
-    if (Number(best.discount) > Number(result.discount) && best.code.toLowerCase() !== target.voucherCode.toLowerCase()
-        && target.lastSuggestion !== promptKey) {
-      target.lastSuggestion = promptKey
-      confirmAction(`Phiếu ${best.code} giảm ${money(best.discount)}, tốt hơn phiếu đang dùng (${money(result.discount)}). Bạn muốn đổi phiếu?`, async () => {
-        if (order.value?.id !== target.id || fingerprint !== quoteSignature.value || locked.value) return
-        await applyVoucher(best.code)
-      }, { title: 'Có phiếu giảm giá tốt hơn', confirmText: 'Đổi phiếu', cancelText: 'Giữ phiếu cũ' })
+    const nextCode = best?.code || ''
+    // Reconcile automatically after cart/customer changes without a confirmation popup.
+    if ((target.autoVoucher && target.voucherCode.toLowerCase() !== nextCode.toLowerCase())
+        || result.selectedVoucherError) {
+      if (result.selectedVoucherError) target.autoVoucher = true
+      target.voucherCode = nextCode
+      target.quoteError = ''
+      if (await saveOrder(target)) await calculateQuote(false)
     }
   } catch (e) {
     if (alive && version === quoteVersion && order.value?.id === target.id && fingerprint === quoteSignature.value) {
@@ -164,7 +158,7 @@ async function applyVoucher(code, target = order.value, automatic = false) {
   const id = target?.id
   if (stockSyncPromise) { await stockSyncPromise; target = orders.value.find(o => o.id === id) }
   if (!target || locked.value) return
-  if (!automatic) target.autoVoucher = Boolean(code)
+  if (!automatic) target.autoVoucher = false
   target.voucherCode = code
   await saveOrder(target, automatic ? '' : code ? `Áp dụng phiếu giảm giá ${code} thành công.` : 'Bỏ phiếu giảm giá thành công.')
 }
@@ -181,31 +175,101 @@ watch([quoteSignature, busy], () => {
   if (!busy.value) quoteTimer = setTimeout(calculateQuote, 250)
 })
 
-const deliveryEditor = ref(null), deliveryError = ref(''), structuredAddress = ref(false)
+const deliveryEditor = ref(null), deliveryError = ref(''), structuredAddress = ref(true)
 const completeDelivery = d => !d?.enabled || Boolean(d.recipientName?.trim() && /^0\d{9}$/.test(d.recipientPhone)
   && d.address?.trim() && d.address.length <= 500 && d.shippingFee !== ''
   && Number.isFinite(Number(d.shippingFee)) && Number(d.shippingFee) >= 0)
 const deliveryReady = computed(() => completeDelivery(order.value?.delivery))
-const addressForm = ref({ province: '', ward: '', district: '', street: '' })
-const { provinces, wards, loadingProvinces, loadingWards, addressError, changeProvince, resetAddress } = useAddressApi(addressForm)
+const addressForm = ref({ province: '', ward: '', street: '' })
+const provinces = ref([]), wards = ref([]), areasLoading = ref(false)
+const shippingLoading = ref(false), shippingError = ref('')
+let shippingVersion = 0, areaVersion = 0
+const shippingKey = o => JSON.stringify([o?.customerId, o?.delivery?.address,
+  o?.items.reduce((sum, i) => sum + i.qty, 0)])
+const shippingReady = computed(() => !order.value?.delivery.enabled || Boolean(order.value.shippingQuote
+  && order.value.shippingQuote.key === shippingKey(order.value)
+  && Date.parse(order.value.shippingQuote.expiresAt) > Date.now()
+  && Number(order.value.delivery.shippingFee) === Number(order.value.shippingQuote.fee)))
+const addressName = value => String(value || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/\s+/g, ' ')
+const addressMatches = (row, address) => address.split(',').some(part => [row.ten, ...(row.tenKhac || [])].some(name => addressName(name) === addressName(part)))
+async function loadShippingAreas() {
+  const version = ++areaVersion, address = deliveryEditor.value?.address || ''
+  areasLoading.value = true
+  try {
+    const rows = await salesService.tinhThanhGhn()
+    if (!alive || version !== areaVersion || !deliveryEditor.value) return
+    provinces.value = rows
+    const matches = rows.filter(row => addressMatches(row, address))
+    if (matches.length !== 1) return
+    const province = matches[0].id
+    addressForm.value.province = province
+    const wardRows = await salesService.phuongXaGhn(province)
+    if (!alive || version !== areaVersion || !deliveryEditor.value || province !== addressForm.value.province) return
+    wards.value = wardRows
+    const wardMatches = wardRows.filter(row => addressMatches(row, address))
+    if (wardMatches.length === 1) {
+      addressForm.value.ward = wardMatches[0].id
+      addressForm.value.street = address.split(',').filter(part => !addressMatches(matches[0], part) && !addressMatches(wardMatches[0], part)).map(part => part.trim()).join(', ')
+    }
+  } catch (e) { if (alive && version === areaVersion) deliveryError.value = message(e) }
+  finally { if (version === areaVersion) areasLoading.value = false }
+}
+async function changeProvince() {
+  const version = ++areaVersion, province = addressForm.value.province
+  addressForm.value.ward = ''; wards.value = []; deliveryError.value = ''
+  areasLoading.value = true
+  try {
+    if (!province) return
+    const rows = await salesService.phuongXaGhn(province)
+    if (alive && version === areaVersion && deliveryEditor.value && province === addressForm.value.province) wards.value = rows
+  } catch (e) { if (alive && version === areaVersion) deliveryError.value = message(e) }
+  finally { if (version === areaVersion) areasLoading.value = false }
+}
+async function fetchShipping(target, destination = target.shippingDestination || {}) {
+  const result = await salesService.tinhPhiGhn(target, destination)
+  target.delivery.shippingFee = Number(result.phiVanChuyen)
+  target.shippingQuote = { key: shippingKey(target), fee: Number(result.phiVanChuyen), expiresAt: result.hetHan }
+  target.shippingDestination = result.khuVuc ? {
+    province: result.khuVuc.idTinhThanh, ward: result.khuVuc.maPhuongXa,
+    provinceName: result.khuVuc.tenTinhThanh, wardName: result.khuVuc.tenPhuongXa
+  } : { ...destination }
+  shippingError.value = ''
+
+}
+async function refreshShipping() {
+  if (stockSyncPromise) await stockSyncPromise
+  if (locked.value || !order.value?.delivery.enabled || !completeDelivery(order.value.delivery) || !order.value.items.length || shippingLoading.value) return
+  const target = order.value, version = ++shippingVersion, key = shippingKey(target), previousError = error.value
+  shippingLoading.value = true; shippingError.value = ''
+  try {
+    const copy = { ...target, delivery: { ...target.delivery } }
+    await fetchShipping(copy)
+    if (!alive || version !== shippingVersion || order.value?.id !== target.id || key !== shippingKey(order.value)) return
+    Object.assign(order.value, { delivery: copy.delivery, shippingQuote: copy.shippingQuote, shippingDestination: copy.shippingDestination })
+    if (error.value === previousError && previousError.includes('GHN')) error.value = ''
+    await saveOrder(order.value)
+  } catch (e) { if (alive && version === shippingVersion) { target.shippingQuote = null; shippingError.value = message(e) } }
+  finally { if (version === shippingVersion) shippingLoading.value = false }
+}
 let deliveryOrderId
 function openDelivery() {
   if (stockSyncPromise) { stockSyncPromise.then(() => { if (alive) openDelivery() }); return }
   if (locked.value || !order.value) return
   deliveryOrderId = order.value.id
   deliveryEditor.value = JSON.parse(JSON.stringify(order.value.delivery))
-  deliveryError.value = ''; structuredAddress.value = !deliveryEditor.value.address
-  addressForm.value = { province: '', ward: '', district: '', street: '' }; resetAddress()
+  deliveryError.value = ''; structuredAddress.value = true
+  addressForm.value = { province: '', ward: '', street: '' }; wards.value = []; loadShippingAreas()
 }
-function closeDelivery() { if (!busy.value) deliveryEditor.value = null }
+function closeDelivery() { if (!busy.value && !shippingLoading.value) { deliveryEditor.value = null; ++areaVersion; areasLoading.value = false } }
 function selectDeliveryAddress(a) {
   Object.assign(deliveryEditor.value, { recipientName: a.receiverName, recipientPhone: a.receiverPhone, address: a.fullAddress })
+  addressForm.value = { province: '', ward: '', street: '' }; wards.value = []; loadShippingAreas()
 }
 async function toggleDelivery(enabled) {
   if (stockSyncPromise) await stockSyncPromise
   if (locked.value || !order.value) return
   const target = order.value
-  if (!enabled) { target.delivery.enabled = false; await saveOrder(target, 'Đã chuyển sang nhận hàng tại quầy.'); return }
+  if (!enabled) { target.delivery.enabled = false; target.shippingQuote = null; shippingError.value = ''; await saveOrder(target, 'Đã chuyển sang nhận hàng tại quầy.'); return }
   const customer = selectedCustomer.value
   let defaultAddress
   deliveryLoading.value = true; error.value = ''
@@ -225,24 +289,26 @@ async function toggleDelivery(enabled) {
     // Incomplete delivery stays in this tab until the operator edits it or disables delivery.
     if (!completeDelivery(delivery)) { target.delivery = delivery; return }
     deliveryLoading.value = false
-    await saveOrder({ ...target, delivery }, 'Bật giao hàng thành công. Đã điền thông tin người nhận và địa chỉ giao hàng.')
+    target.delivery = delivery
+    target.shippingDestination = null; target.shippingQuote = null
+    await saveOrder(target, 'Bật giao hàng thành công. Đã điền thông tin người nhận và địa chỉ giao hàng.')
   } catch (e) { if (alive && order.value?.id === target.id) { error.value = message(e); showError(error.value, 'Không thể tải thông tin giao hàng') } }
   finally { deliveryLoading.value = false }
 }
 async function saveDelivery() {
   if (stockSyncPromise) await stockSyncPromise
-  if (busy.value || !deliveryEditor.value || order.value?.id !== deliveryOrderId) return
+  if (busy.value || shippingLoading.value || areasLoading.value || !deliveryEditor.value || order.value?.id !== deliveryOrderId) return
   const candidate = JSON.parse(JSON.stringify(deliveryEditor.value))
   if (!candidate.addressId && structuredAddress.value) {
     const a = addressForm.value
-    if (!a.province || !a.ward || !a.street.trim()) { deliveryError.value = 'Nhập đầy đủ tỉnh/thành, phường/xã và địa chỉ cụ thể.'; return }
-    candidate.address = [a.street.trim(), a.ward, a.province].join(', ')
+    if (!provinces.value.some(v => v.id === a.province) || !wards.value.some(v => v.id === a.ward) || !a.street.trim()) { deliveryError.value = 'Nhập đầy đủ tỉnh/thành, phường/xã và địa chỉ cụ thể.'; return }
+    candidate.address = [a.street.trim(), wards.value.find(v => v.id === a.ward)?.ten, provinces.value.find(v => v.id === a.province)?.ten].filter(Boolean).join(', ')
   }
   if (!candidate.recipientName.trim() || !/^0\d{9}$/.test(candidate.recipientPhone) || !candidate.address.trim()
       || candidate.address.length > 500 || candidate.shippingFee === '' || !Number.isFinite(Number(candidate.shippingFee)) || Number(candidate.shippingFee) < 0) {
     deliveryError.value = 'Kiểm tra người nhận, số điện thoại 10 số, địa chỉ và phí vận chuyển không âm.'; return
   }
-  const target = { ...order.value, delivery: candidate }
+  const target = { ...order.value, delivery: candidate, shippingQuote: null, shippingDestination: candidate.addressId ? {} : { ...addressForm.value } }
   if (await saveOrder(target, 'Cập nhật thông tin giao hàng thành công.')) deliveryEditor.value = null
   else deliveryError.value = error.value
 }
@@ -279,6 +345,7 @@ async function changeCustomer() {
   if (stockSyncPromise) await stockSyncPromise
   if (locked.value || !order.value) return
   order.value.voucherCode = ''; order.value.autoVoucher = true
+  order.value.shippingDestination = null; order.value.shippingQuote = null
   order.value.delivery = { enabled: false, addressId: null, recipientName: '', recipientPhone: '', address: '', shippingFee: 0 }
   const customer = selectedCustomer.value
   return await saveOrder(order.value, customer ? `Chọn khách hàng ${customer.name || customer.code} thành công.` : 'Đã bỏ khách hàng, chuyển sang khách lẻ.')
@@ -306,6 +373,9 @@ const bankAccepted = ref(null)
 const paymentContext = () => JSON.stringify({ quote: quoteSignature.value, cart: order.value ? signature(order.value) : null,
   mode: order.value?.paymentMode, cash: order.value?.paid })
 watch(paymentContext, () => { bankAccepted.value = null })
+watch(() => [activeId.value, order.value?.delivery.enabled, order.value?.delivery.address, count.value].join('|'), () => {
+  if (order.value?.delivery.enabled && deliveryReady.value && order.value.items.length && !shippingReady.value && !locked.value && !shippingLoading.value && !shippingError.value) refreshShipping()
+})
 const bankConfirmed = computed(() => bankAccepted.value?.context === paymentContext()
   && quoteReady.value && Number(bankAccepted.value?.total) === payable.value)
 async function readyCheckout() {
@@ -391,7 +461,7 @@ async function performPayment(saved) {
   try {
     const receipt = await salesService.thanhToan(saved.payload)
     bankAccepted.value = null
-    completedReceipt.value = receipt
+    completedReceipt.value = { ...receipt, deliveryEnabled: saved.payload.delivery?.enabled === true }
     checkoutDialog.value = null
     clearCheckout()
     orders.value = orders.value.filter(o => o.id !== saved.payload.invoiceId)
@@ -423,15 +493,15 @@ function rememberCustomers(drafts) {
 function requestStockSync() {
   stockSyncPending = true
   clearTimeout(stockSyncTimer)
-  if (!alive || busy.value || syncingStock.value || deliveryLoading.value || deliveryEditor.value || pendingPayment.value || recoveryBlocked.value
+  if (!alive || busy.value || syncingStock.value || shippingLoading.value || deliveryLoading.value || deliveryEditor.value || pendingPayment.value || recoveryBlocked.value
       || (typeof document !== 'undefined' && document.visibilityState === 'hidden')) return
   stockSyncTimer = setTimeout(() => { stockSyncTimer = null; syncCartStock() }, 150)
 }
-watch([busy, deliveryLoading, deliveryEditor, pendingPayment, recoveryBlocked], () => { if (stockSyncPending) requestStockSync() })
+watch([busy, shippingLoading, deliveryLoading, deliveryEditor, pendingPayment, recoveryBlocked], () => { if (stockSyncPending) requestStockSync() })
 
 async function syncCartStock() {
   if (stockSyncPromise) { stockSyncPending = true; return stockSyncPromise }
-  if (!alive || !ready.value || busy.value || syncingStock.value || deliveryLoading.value || deliveryEditor.value
+  if (!alive || !ready.value || busy.value || syncingStock.value || shippingLoading.value || deliveryLoading.value || deliveryEditor.value
       || pendingPayment.value || recoveryBlocked.value
       || (typeof document !== 'undefined' && document.visibilityState === 'hidden')) { stockSyncPending = true; return }
   stockSyncPending = false
@@ -503,12 +573,28 @@ async function saveOrder(target = order.value, successMessage = '') {
   if (busy.value || syncingStock.value || deliveryLoading.value) return false
   if (!target.items.length) {
     target.voucherCode = ''; target.quote = null; target.quotedSignature = ''; target.quoteError = ''; target.paid = ''
+    target.delivery.shippingFee = 0; target.shippingQuote = null
   }
   if (!target.items.length && !completeDelivery(target.delivery)) target.delivery.enabled = false
   if (!completeDelivery(target.delivery)) {
     error.value = 'Thông tin giao hàng chưa đầy đủ. Bấm Chỉnh sửa để bổ sung hoặc bỏ tích Giao hàng.'
     showError(error.value, 'Chưa thể lưu hóa đơn')
     return false
+  }
+  if (target.delivery.enabled && target.items.length && (!target.shippingQuote
+      || target.shippingQuote.key !== shippingKey(target)
+      || Date.parse(target.shippingQuote.expiresAt) <= Date.now())) {
+    shippingLoading.value = true; shippingError.value = ''
+    try { await fetchShipping(target) }
+    catch (e) { shippingError.value = message(e); target.shippingQuote = null; error.value = shippingError.value; return false }
+    finally { shippingLoading.value = false }
+  }
+  if (target.saved) {
+    const previous = JSON.parse(target.saved), next = payload(target)
+    if (previous.customerId !== next.customerId || JSON.stringify(previous.items) !== JSON.stringify(next.items)) {
+      target.autoVoucher = true
+      target.voucherCode = ''
+    }
   }
   if (signature(target) === target.saved) return true
   busy.value = true; error.value = ''
@@ -590,32 +676,58 @@ function removeOrder(id) {
   }, { title: 'Hủy hóa đơn chờ', confirmText: 'Hủy hóa đơn' })
 }
 function cancelOrder() { if (order.value) removeOrder(order.value.id) }
+function canAddItem(v) {
+  const current = order.value?.items.find(i => i.id === v.id)
+  return Number(v.stock) > 0 && (!current || current.qty < Math.min(Number(current.stock), 10000))
+}
+function cartSnapshot() {
+  return { id: order.value.id, revision: order.value.revision, items: JSON.parse(JSON.stringify(order.value.items)), voucherCode: order.value.voucherCode, autoVoucher: order.value.autoVoucher }
+}
+function restoreUncommittedCart(snapshot) {
+  const current = order.value
+  if (!current || current.id !== snapshot.id || current.revision !== snapshot.revision) return
+  const fresh = new Map(current.items.map(i => [i.id, i]))
+  current.items = snapshot.items.map(i => ({ ...i, stock: fresh.get(i.id)?.stock ?? i.stock,
+    available: fresh.get(i.id)?.available ?? i.available, currentPrice: fresh.get(i.id)?.currentPrice ?? i.currentPrice }))
+  current.voucherCode = snapshot.voucherCode
+  current.autoVoucher = snapshot.autoVoucher
+  current.quote = null; current.quotedSignature = ''
+}
 async function addItem(v) {
   if (stockSyncPromise) await stockSyncPromise
-  if (locked.value || !order.value) return
+  if (locked.value || shippingLoading.value || !order.value) return
   const cur = order.value.items.find(i => i.id === v.id)
-  if (v.stock < 1) { error.value = 'Số lượng đã đạt tồn kho hiện tại'; showError(error.value, 'Không thể thêm sản phẩm'); return }
+  if (!canAddItem(v)) { error.value = 'Số lượng đã đạt tồn kho hoặc giới hạn hiện tại'; showError(error.value, 'Không thể thêm sản phẩm'); return }
+  if (cur && cur.qty >= cur.stock) return
+  const before = cartSnapshot()
   if (cur) cur.qty++
   else order.value.items.push({ ...v, qty: 1, currentPrice: v.price, available: true })
-  await saveOrder(order.value, `Thêm sản phẩm ${v.name || v.code || ''} vào giỏ hàng thành công.`)
+  if (!(await saveOrder(order.value, `Thêm sản phẩm ${v.name || v.code || ''} vào giỏ hàng thành công.`))) restoreUncommittedCart(before)
 }
-async function setQty(i, n) {
+async function setQty(i, n, input) {
   if (stockSyncPromise) await stockSyncPromise
   i = order.value?.items.find(item => item.id === i.id)
   if (!i) return
-  if (locked.value) return
+  if (locked.value || shippingLoading.value) return
   const qty = Number(n)
-  if (!Number.isInteger(qty) || qty < 1 || qty > 10000) { error.value = 'Số lượng phải là số nguyên từ 1 đến 10000'; showError(error.value, 'Số lượng không hợp lệ'); return }
+  if (!Number.isInteger(qty) || qty < 1 || qty > Math.min(10000, Number(i.stock))) {
+    if (input) input.value = i.qty
+    showError(`Số lượng phải từ 1 đến ${Math.min(10000, Number(i.stock))}.`, 'Vượt giới hạn tồn kho'); return
+  }
   if (qty === i.qty) return
-  i.qty = qty; await saveOrder(order.value, `Cập nhật số lượng sản phẩm ${i.name || i.code || ''} thành ${qty} thành công.`)
+  const before = cartSnapshot()
+  i.qty = qty
+  if (!(await saveOrder(order.value, `Cập nhật số lượng sản phẩm ${i.name || i.code || ''} thành ${qty} thành công.`))) restoreUncommittedCart(before)
+  if (input) input.value = order.value?.items.find(item => item.id === i.id)?.qty ?? qty
 }
 async function removeItem(code) {
   if (stockSyncPromise) await stockSyncPromise
-  if (locked.value || !order.value) return
+  if (locked.value || shippingLoading.value || !order.value) return
   const item = order.value.items.find(i => i.code === code)
   if (!item) return
+  const before = cartSnapshot()
   order.value.items = order.value.items.filter(i => i.code !== code)
-  await saveOrder(order.value, `Xóa sản phẩm ${item.name || item.code} khỏi giỏ hàng thành công.`)
+  if (!(await saveOrder(order.value, `Xóa sản phẩm ${item.name || item.code} khỏi giỏ hàng thành công.`))) restoreUncommittedCart(before)
 }
 async function refreshCart() {
   if (locked.value || !order.value?.items.length) return
@@ -680,11 +792,30 @@ async function loadCustomers() {
   } finally { if (alive && version === customerVersion) customerLoading.value = false }
 }
 async function selectCustomer(customer) {
+  if (stockSyncPromise) await stockSyncPromise
   if (locked.value || !order.value) return
   order.value.customerId = customer?.id ?? null
   choosingCustomer.value = false
+  customerSearch.value = customer?.name || customer?.code || ''
   await changeCustomer()
 }
+async function clearCustomer() {
+  if (stockSyncPromise) await stockSyncPromise
+  if (locked.value || !order.value) return
+  order.value.customerId = null
+  choosingCustomer.value = false; customerSearch.value = ''
+  await changeCustomer()
+}
+async function onCustomerInput(event) {
+  choosingCustomer.value = true
+  if (stockSyncPromise) await stockSyncPromise
+  if (!customerSearch.value.trim() && order.value?.customerId != null) await clearCustomer()
+}
+watch(activeId, () => {
+  shippingError.value = ''
+  choosingCustomer.value = false
+  customerSearch.value = selectedCustomer.value?.name || ''
+})
 watch([q, colorFilter, sizeFilter, categoryFilter, brandFilter], () => {
   catalogPage.value = 0; ++catalogVersion; clearTimeout(searchTimer); searchTimer = setTimeout(loadCatalog, 250)
 })
@@ -692,7 +823,7 @@ watch(catalogPage, loadCatalog)
 watch(customerSearch, () => {
   ++customerVersion; clearTimeout(customerTimer)
   customerResults.value = []; customerSearchError.value = ''; customerLoading.value = true
-  choosingCustomer.value = true
+  if (!customerSearch.value.trim()) { customerLoading.value = false; return }
   customerTimer = setTimeout(loadCustomers, 250)
 })
 onBeforeRouteLeave(async () => !busy.value && await saveOrder())
@@ -759,7 +890,7 @@ onBeforeUnmount(() => { if (typeof window !== 'undefined') { window.clearInterva
                   <td class="cart-product-name"><span class="ss-strong">{{ i.name }}</span></td>
                   <td>{{ i.color }}</td>
                   <td class="c">{{ i.size }}</td>
-                  <td class="c"><div class="qty"><button :disabled="locked" @click="setQty(i, i.qty - 1)">−</button><input :disabled="locked" :value="i.qty" @change="setQty(i, $event.target.value)" /><button :disabled="locked" @click="setQty(i, i.qty + 1)">+</button></div></td>
+                  <td class="c"><div class="qty"><button :disabled="locked || i.qty <= 1" aria-label="Giảm số lượng" @click="setQty(i, i.qty - 1)">−</button><input :disabled="locked" :value="i.qty" inputmode="numeric" @change="setQty(i, $event.target.value, $event.target)" /><button :disabled="locked || i.qty >= i.stock || i.qty >= 10000" aria-label="Tăng số lượng" @click="setQty(i, i.qty + 1)">+</button></div></td>
                   <td class="r nowrap" :title="i.campaignName || ''"><del v-if="i.discounted" class="pos-price-old">{{ money(i.originalPrice) }}</del><strong :class="{'sale-price': i.discounted}">{{ money(i.price) }}</strong></td>
                   <td class="c"><button class="ss-icon-btn danger" :disabled="locked" title="Xóa" @click="removeItem(i.code)"><i class="bi bi-trash3"></i></button></td>
                 </tr>
@@ -774,11 +905,11 @@ onBeforeUnmount(() => { if (typeof window !== 'undefined') { window.clearInterva
       <aside class="right ss-stack">
         <section class="ss-card tight">
           <h3 class="side-title">Khách hàng</h3>
-          <div class="cust">
-            <input class="ss-input" v-model="customerSearch" placeholder="Tìm theo tên, mã hoặc SĐT" :disabled="locked" @focus="choosingCustomer = true" @keydown.esc="choosingCustomer = false" aria-label="Tìm khách hàng theo tên, mã hoặc số điện thoại" />
+          <div v-if="!selectedCustomer" class="cust">
+            <input class="ss-input" v-model="customerSearch" placeholder="Tìm theo tên, mã hoặc SĐT" :disabled="locked" @input="onCustomerInput" @focus="choosingCustomer = true" @keydown.esc="choosingCustomer = false" aria-label="Tìm khách hàng theo tên, mã hoặc số điện thoại" />
             <button class="ss-icon-btn sq" :disabled="locked" title="Thêm khách hàng" @click="router.push('/khach-hang/them')"><i class="bi bi-person-plus"></i></button>
           </div>
-          <div v-if="choosingCustomer && customerSearch.trim()" class="customer-results" aria-label="Kết quả tìm khách hàng">
+          <div v-if="!selectedCustomer && choosingCustomer && customerSearch.trim()" class="customer-results" aria-label="Kết quả tìm khách hàng">
             <div class="customer-results-head"><strong>Kết quả tìm kiếm</strong><button type="button" class="ss-icon-btn" @click="choosingCustomer = false" aria-label="Đóng kết quả tìm kiếm"><i class="bi bi-x"></i></button></div>
             <p v-if="customerLoading" role="status">Đang tìm khách hàng…</p>
             <p v-else-if="customerSearchError" role="alert">{{ customerSearchError }}</p>
@@ -791,13 +922,12 @@ onBeforeUnmount(() => { if (typeof window !== 'undefined') { window.clearInterva
               <p v-else-if="customerResults.length === 20">Hiển thị 20 kết quả. Nhập thêm tên hoặc mã để tìm chính xác hơn.</p>
             </template>
           </div>
-          <select v-if="order" class="ss-select" v-model="order.customerId" @change="changeCustomer" :disabled="locked" aria-label="Khách hàng">
-            <option :value="null">Khách lẻ</option>
-            <option v-for="c in customers" :key="c.id" :value="c.id">{{ c.code || '—' }} · {{ c.name || '—' }} · {{ c.phone || '—' }}</option>
-          </select>
-          <div v-if="order" class="ss-hint" style="margin-top:8px">
-            <template v-if="order.customerId == null">Khách vãng lai → <b>{{ order.delivery.enabled ? 'Giao hàng' : 'Nhận tại quầy' }}</b></template>
-            <template v-else>Đã chọn khách hàng → <b>{{ order.delivery.enabled ? 'Giao hàng' : 'Nhận tại quầy' }}</b></template>
+          <div v-if="selectedCustomer" class="selected-customer">
+            <div><strong>{{ selectedCustomer.name }}</strong><small>{{ selectedCustomer.code }} · {{ selectedCustomer.phone }}</small></div>
+            <button type="button" class="ss-icon-btn" :disabled="locked" @click="clearCustomer" aria-label="Bỏ khách hàng">×</button>
+          </div>
+          <div v-if="order && !selectedCustomer" class="ss-hint" style="margin-top:8px">
+            Khách vãng lai → <b>{{ order.delivery.enabled ? 'Giao hàng' : 'Nhận tại quầy' }}</b>
           </div>
 
         </section>
@@ -819,8 +949,16 @@ onBeforeUnmount(() => { if (typeof window !== 'undefined') { window.clearInterva
             <small v-if="validVouchers[0]" class="ss-hint">Phiếu tốt nhất: {{ validVouchers[0].code }} · giảm {{ money(validVouchers[0].discount) }}</small>
           </div>
           <div class="kv"><span>Tổng tiền hàng ({{ count }} sản phẩm):</span><b>{{ money(total) }}</b></div>
-          <div class="kv" v-if="order.delivery.enabled"><span>Phí vận chuyển:</span><b>{{ money(order.delivery.shippingFee) }}</b></div>
+          <div class="kv" v-if="order.delivery.enabled"><span class="shipping-provider-label"><GhnLogo /> Phí vận chuyển:</span><div class="shipping-fee"><b>{{ shippingReady ? money(order.delivery.shippingFee) : 'Chưa tính phí' }}</b><button type="button" class="ss-icon-btn" :disabled="locked || !count || !deliveryReady" @click="refreshShipping" title="Cập nhật phí GHN"><i class="bi bi-arrow-clockwise"></i></button></div></div><p v-if="shippingLoading" class="ss-hint" role="status">Đang lấy phí GHN…</p><p v-if="order.delivery.enabled && shippingError" role="alert">{{ shippingError }}</p>
           <div class="kv reduction-row"><span>Tiền giảm từ phiếu:</span><b>−{{ money(quoteReady ? order.quote.discount : 0) }}</b></div>
+          <section v-if="quoteReady && buyMoreSuggestions.length" class="buy-more-card">
+            <h3>Gợi ý mua thêm <small>{{ buyMoreSuggestions.length }} đề xuất</small></h3>
+            <div v-for="v in buyMoreSuggestions" :key="v.code" class="buy-more-item">
+              <div><span class="voucher-badge">{{ voucherLabel(v) }}</span> <b>{{ v.code }}</b></div>
+              <div><span>Cần mua thêm:</span><strong>{{ money(v.amountNeeded) }}</strong></div>
+              <div><span>Sẽ được giảm:</span><strong class="saving">{{ money(v.projectedDiscount) }}</strong></div>
+            </div>
+          </section>
           <div class="kv payable-row"><span>Khách cần trả:</span><b>{{ money(payable) }}</b></div>
           <p v-if="order.quoteError" role="alert">{{ order.quoteError }}</p>
 
@@ -855,7 +993,28 @@ onBeforeUnmount(() => { if (typeof window !== 'undefined') { window.clearInterva
       </aside>
     </main>
 
-    <div v-if="deliveryEditor" class="ss-modal-bg" @click.self="closeDelivery"><section class="ss-modal delivery-modal" role="dialog" aria-modal="true" aria-labelledby="delivery-title"><div class="ss-head"><h2 id="delivery-title">Chỉnh sửa thông tin giao hàng</h2><span class="ss-spacer"></span><button class="ss-icon-btn" :disabled="busy" @click="closeDelivery" aria-label="Đóng">×</button></div><p v-if="deliveryError" role="alert">{{ deliveryError }}</p><section class="delivery-section"><h3>Thông tin liên hệ</h3><div class="delivery-grid"><label>Tên người nhận *<input class="ss-input" v-model="deliveryEditor.recipientName" maxlength="255" :disabled="busy" @input="deliveryEditor.addressId = null" /></label><label>Số điện thoại *<input class="ss-input" v-model="deliveryEditor.recipientPhone" maxlength="10" :disabled="busy" @input="deliveryEditor.addressId = null" /></label></div></section><section class="delivery-section"><h3>Địa chỉ giao hàng</h3><p v-if="addressLoading">Đang tải địa chỉ...</p><label v-for="a in addresses" :key="a.id" class="address-choice"><input type="radio" :value="a.id" v-model="deliveryEditor.addressId" :disabled="busy" @change="selectDeliveryAddress(a)" /><span><b>{{ a.receiverName }}</b> · {{ a.receiverPhone }} <small v-if="a.isDefault" class="voucher-badge">Mặc định</small><br />{{ a.fullAddress }}</span></label><label class="address-choice"><input type="radio" :value="null" v-model="deliveryEditor.addressId" :disabled="busy" /> Sử dụng địa chỉ khác</label><template v-if="!deliveryEditor.addressId"><label class="address-choice"><input type="checkbox" v-model="structuredAddress" :disabled="busy" /> Chọn tỉnh/thành và phường/xã</label><div v-if="structuredAddress" class="delivery-grid"><label>Tỉnh/Thành phố *<select class="ss-select" v-model="addressForm.province" :disabled="busy || loadingProvinces" @change="changeProvince"><option value="">Chọn tỉnh/thành</option><option v-for="a in provinces" :key="a.code" :value="a.name">{{ a.name }}</option></select></label><label>Phường/Xã *<select class="ss-select" v-model="addressForm.ward" :disabled="busy || loadingWards || !addressForm.province"><option value="">Chọn phường/xã</option><option v-for="a in wards" :key="a.code" :value="a.name">{{ a.name }}</option></select></label><label class="address-line">Địa chỉ cụ thể *<input class="ss-input" v-model="addressForm.street" :disabled="busy" maxlength="350" /></label><p v-if="addressError" role="alert">{{ addressError }}</p></div><label v-else>Địa chỉ đầy đủ *<textarea class="ss-textarea" v-model="deliveryEditor.address" :disabled="busy" maxlength="500" /></label></template></section><label>Phí vận chuyển (nhập thủ công)<input class="ss-input" v-model="deliveryEditor.shippingFee" type="number" min="0" step="1" :disabled="busy" /></label><div class="ss-actions"><button class="ss-btn" :disabled="busy" @click="closeDelivery">Hủy</button><button class="ss-btn primary" :disabled="busy" @click="saveDelivery">{{ busy ? 'Đang lưu...' : 'Lưu thay đổi' }}</button></div></section></div>
+    <div v-if="deliveryEditor" class="ss-modal-bg" @click.self="closeDelivery">
+      <section class="ss-modal delivery-modal" role="dialog" aria-modal="true" aria-labelledby="delivery-title">
+        <div class="ss-head"><h2 id="delivery-title">Chỉnh sửa thông tin giao hàng</h2><span class="ss-spacer"></span><button class="ss-icon-btn" :disabled="busy || shippingLoading" @click="closeDelivery" aria-label="Đóng">×</button></div>
+        <p v-if="deliveryError || shippingError" role="alert">{{ deliveryError || shippingError }}</p>
+        <section class="delivery-section"><h3>Thông tin liên hệ</h3><div class="delivery-grid">
+          <label>Tên người nhận *<input class="ss-input" v-model="deliveryEditor.recipientName" maxlength="255" :disabled="busy || shippingLoading" @input="deliveryEditor.addressId = null" /></label>
+          <label>Số điện thoại *<input class="ss-input" v-model="deliveryEditor.recipientPhone" maxlength="10" :disabled="busy || shippingLoading" @input="deliveryEditor.addressId = null" /></label>
+        </div></section>
+        <section class="delivery-section"><h3>Địa chỉ giao hàng</h3>
+          <label v-for="a in addresses" :key="a.id" class="address-choice"><input type="radio" :value="a.id" v-model="deliveryEditor.addressId" :disabled="busy || shippingLoading" @change="selectDeliveryAddress(a)" /><span><b>{{ a.receiverName }}</b> · {{ a.receiverPhone }}<small v-if="a.isDefault" class="voucher-badge">Mặc định</small><br />{{ a.fullAddress }}</span></label>
+          <label class="address-choice"><input type="radio" :value="null" v-model="deliveryEditor.addressId" :disabled="busy || shippingLoading" /> Sử dụng địa chỉ khác</label>
+          <div v-if="!deliveryEditor.addressId" class="delivery-grid">
+            <label>Tỉnh/Thành phố *<select class="ss-select" v-model="addressForm.province" :disabled="busy || shippingLoading || areasLoading" @change="changeProvince"><option value="">Chọn tỉnh/thành</option><option v-for="a in provinces" :key="a.id" :value="a.id">{{ a.ten }}</option></select></label>
+            <label>Phường/Xã *<select class="ss-select" v-model="addressForm.ward" :disabled="busy || shippingLoading || !addressForm.province || areasLoading"><option value="">Chọn phường/xã</option><option v-for="a in wards" :key="a.id" :value="a.id">{{ a.ten }}</option></select></label>
+            <label class="address-line">Địa chỉ cụ thể *<input class="ss-input" v-model="addressForm.street" :disabled="busy || shippingLoading || areasLoading" maxlength="350" /></label>
+          </div>
+        </section>
+        <p v-if="areasLoading" class="ss-hint" role="status">Đang tải danh mục địa chỉ…</p>
+        <p class="ss-hint">Phí vận chuyển được lấy từ GHN khi lưu, không nhập thủ công.</p>
+        <div class="ss-actions"><button class="ss-btn" :disabled="busy || shippingLoading" @click="closeDelivery">Hủy</button><button class="ss-btn primary" :disabled="busy || shippingLoading || areasLoading || !count" @click="saveDelivery">{{ busy || shippingLoading ? 'Đang lấy phí và lưu…' : 'Lưu thay đổi' }}</button></div>
+      </section>
+    </div>
 
     <!-- Modal chọn sản phẩm -->
     <div v-if="picking" class="ss-modal-bg" @click.self="picking = false">
@@ -870,12 +1029,12 @@ onBeforeUnmount(() => { if (typeof window !== 'undefined') { window.clearInterva
         </div>
         <div class="ss-table-wrap">
           <table class="ss-table" style="min-width:600px">
-            <thead><tr><th>STT</th><th>Ảnh sản phẩm</th><th>Mã sản phẩm</th><th>Tên sản phẩm</th><th>Màu</th><th class="c">Size</th><th class="r">Tồn khả dụng</th><th class="r">Giá</th><th class="c"></th></tr></thead>
+            <thead><tr><th>STT</th><th>Ảnh sản phẩm</th><th>Mã sản phẩm</th><th>Tên sản phẩm</th><th>Màu</th><th class="c">Size</th><th class="r">Tồn kho</th><th class="r">Giá</th><th class="c"></th></tr></thead>
             <tbody>
               <tr v-for="(v, idx) in shown" :key="v.code">
                 <td>{{ catalogPage * 10 + idx + 1 }}</td><td><ProductThumbnail :url="imageSources[v.id]" :item="badgeItem(v)" :alt="v.name" /></td><td :title="v.code"><span class="ss-code">{{ v.productCode }}</span><small class="sku">{{ v.code }}</small></td><td class="ss-strong">{{ v.name }}</td><td>{{ v.color }}</td><td class="c">{{ v.size }}</td>
                 <td class="r">{{ v.stock }}</td><td class="r nowrap" :title="[v.campaignCode, v.campaignName].filter(Boolean).join(' · ')"><del v-if="v.discounted" class="pos-price-old">{{ money(v.originalPrice) }}</del><strong :class="{'sale-price': v.discounted}">{{ money(v.price) }}</strong></td>
-                <td class="c"><button class="ss-btn sm" :disabled="locked || !order || v.stock < 1" @click="addItem(v)"><i class="bi bi-plus-lg"></i> Thêm</button></td>
+                <td class="c"><button class="ss-btn sm" :disabled="locked || !order || !canAddItem(v)" @click="addItem(v)"><i class="bi bi-plus-lg"></i> Thêm</button></td>
               </tr>
               <tr v-if="loading"><td colspan="9" class="ss-empty">Đang tải sản phẩm...</td></tr>
               <tr v-else-if="!shown.length"><td colspan="9" class="ss-empty"><i class="bi bi-inbox"></i>Không tìm thấy sản phẩm.</td></tr>
@@ -909,10 +1068,10 @@ onBeforeUnmount(() => { if (typeof window !== 'undefined') { window.clearInterva
     <div v-if="completedReceipt" class="ss-modal-bg">
       <section class="ss-modal pos-receipt" role="dialog" aria-modal="true" aria-label="Thanh toán thành công">
         <h2>Đã thanh toán {{ completedReceipt.invoiceCode }}</h2>
-        <p>{{ completedReceipt.status === 5 ? 'Hoàn thành · Nhận tại quầy' : 'Đã thanh toán · Giao hàng chờ xác nhận' }}</p>
+        <p>{{ completedReceipt.deliveryEnabled ? 'Đã thanh toán · Giao hàng' : 'Hoàn thành · Nhận tại quầy' }}</p>
         <dl class="receipt-details">
           <dt>Tiền hàng</dt><dd>{{ money(completedReceipt.subtotal) }}</dd><dt>Giảm phiếu</dt><dd>{{ money(completedReceipt.discount) }}</dd>
-          <dt>Vận chuyển</dt><dd>{{ money(completedReceipt.shippingFee) }}</dd><dt>Tổng thanh toán</dt><dd>{{ money(completedReceipt.total) }}</dd>
+          <template v-if="completedReceipt.deliveryEnabled"><dt>Vận chuyển</dt><dd>{{ money(completedReceipt.shippingFee) }}</dd></template><dt>Tổng thanh toán</dt><dd>{{ money(completedReceipt.total) }}</dd>
           <dt>Tiền thừa</dt><dd>{{ money(completedReceipt.change) }}</dd>
         </dl>
         <p v-for="p in completedReceipt.payments" :key="p.transactionCode">{{ p.methodName }}: {{ money(p.amount) }}</p>
@@ -923,6 +1082,11 @@ onBeforeUnmount(() => { if (typeof window !== 'undefined') { window.clearInterva
 </template>
 
 <style scoped>
+.shipping-fee{display:flex;align-items:center;gap:8px}
+
+.selected-customer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;margin-top:10px;background:#f5f9ff;border:1px solid var(--ss-border);border-radius:10px}.selected-customer small{display:block;color:var(--ss-muted);margin-top:4px}
+.buy-more-card{border:1px solid #f2e4b3;background:#fffdf5;border-radius:12px;padding:12px;margin:14px 0}.buy-more-card h3{display:flex;justify-content:space-between;font-size:13px;color:#138366}.buy-more-card h3 small{font-size:10px;color:#b57b0c}.buy-more-item{background:white;border-radius:8px;padding:10px;margin-top:8px;font-size:12px}.buy-more-item>div{display:flex;justify-content:space-between;gap:8px;margin-bottom:6px}.buy-more-item .saving{color:#149a78}
+
 .cash-error{color:#c63249;font-size:11px;line-height:1.5}
 .pos{grid-template-columns:minmax(0,1fr) clamp(390px,30vw,440px)!important;gap:18px!important}.pos .ss-card{border:1px solid #e3eaf0;box-shadow:0 3px 14px #18384d06;border-radius:16px;padding:17px}.pos .ss-head{margin-bottom:12px}.pos .ss-head h2{font-size:15px}.pos .ss-table th{background:#f6f8fb;font-size:11px;padding:13px 10px;white-space:nowrap}.pos .ss-table td{padding:14px 10px;vertical-align:middle}.pos .ss-table .cart-product-name .ss-strong{white-space:normal;overflow-wrap:anywhere;min-width:130px;display:block}.pos .grow{min-height:390px}.right{gap:14px}.right .ss-card{gap:12px}.voucher-card{padding:15px!important}.bank-confirmed{padding:12px;border:1px solid #b8e3d3;background:#f0faf5;color:#167253;border-radius:10px;font-size:12px;line-height:1.6}.pos .btns{margin-top:8px;position:sticky;bottom:0;background:white;padding:12px 0 0}.pos .btns .ss-btn{min-height:42px;font-weight:650}.pos .delivery-card{background:#fff}.pos .qty button{width:25px}.pos .sale-price{font-size:13px}.pos .kv{font-size:12px}.pos .payable-row{font-size:14px}.pos .empty{padding:90px 0}.pos .tabs button{border-radius:9px;min-height:36px}
 @media(max-width:1150px){.pos{grid-template-columns:minmax(0,1fr) 370px!important}.pos .ss-card{padding:13px}}@media(max-width:950px){.pos{grid-template-columns:1fr!important}.pos .btns{position:static}.right{max-height:none}}
@@ -960,6 +1124,11 @@ onBeforeUnmount(() => { if (typeof window !== 'undefined') { window.clearInterva
 </style>
 
 <style scoped>
+.shipping-fee{display:flex;align-items:center;gap:8px}
+
+.selected-customer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;margin-top:10px;background:#f5f9ff;border:1px solid var(--ss-border);border-radius:10px}.selected-customer small{display:block;color:var(--ss-muted);margin-top:4px}
+.buy-more-card{border:1px solid #f2e4b3;background:#fffdf5;border-radius:12px;padding:12px;margin:14px 0}.buy-more-card h3{display:flex;justify-content:space-between;font-size:13px;color:#138366}.buy-more-card h3 small{font-size:10px;color:#b57b0c}.buy-more-item{background:white;border-radius:8px;padding:10px;margin-top:8px;font-size:12px}.buy-more-item>div{display:flex;justify-content:space-between;gap:8px;margin-bottom:6px}.buy-more-item .saving{color:#149a78}
+
 .cust .ss-input{min-width:0;flex:1}.cust .sq{flex-shrink:0}
 .customer-results{border:1px solid var(--ss-border);border-radius:10px;max-height:260px;overflow:auto;background:white}
 .customer-results-head{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--ss-surface);font-size:12px}
@@ -980,4 +1149,13 @@ onBeforeUnmount(() => { if (typeof window !== 'undefined') { window.clearInterva
 .delivery-toggle input:focus-visible+.delivery-switch-track{outline:2px solid var(--ss-primary);outline-offset:3px}
 .delivery-toggle input:disabled+.delivery-switch-track{opacity:.5;cursor:not-allowed}
 .delivery-hint{padding:10px 12px;border-radius:8px;background:#fff7e8;color:#925b13;font-size:12px;line-height:1.6}
+</style>
+
+<style scoped>
+.qty button:disabled,.qty button:disabled:hover{opacity:.4;color:var(--ss-muted);background:var(--ss-surface);cursor:not-allowed}
+.ss-btn:disabled{opacity:.45;cursor:not-allowed}
+</style>
+
+<style scoped>
+.shipping-provider-label { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 </style>

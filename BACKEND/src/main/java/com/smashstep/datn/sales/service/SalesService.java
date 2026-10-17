@@ -35,6 +35,7 @@ import java.util.*;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class SalesService {
+    @org.springframework.beans.factory.annotation.Autowired private GhnPhiVanChuyenService phiGhn;
     private final EntityManager entityManager;
     private final CurrentPriceService dichVuGiaHienTai;
     private final InvoiceCodeService dichVuMaHoaDon;
@@ -92,7 +93,7 @@ public class SalesService {
                         "select v from SanPhamChiTiet v join fetch v.idSanPham"
                                 + " left join fetch v.idMauSac left join fetch v.idKichThuoc"
                                 + dieuKien
-                                + " order by v.id",
+                                + " order by v.idSanPham.ngayTao desc, v.idSanPham.id desc, v.ngayTao desc, v.id desc",
                         SanPhamChiTiet.class);
         for (var query : List.of(countQuery, rowQuery)) {
             query.setParameter("keyword", tuKhoaTimKiem)
@@ -185,8 +186,11 @@ public class SalesService {
         var giaoHang =
                 DeliveryRules.chuanHoa(
                         entityManager, yeuCau.getIdKhachHang(), yeuCau.getGiaoHang());
+        if (giaoHang.apDung()) phiGhn.xacThuc(giaoHang, yeuCau.getDanhSachSanPham().stream()
+                .mapToInt(i -> i.getSoLuong()).sum());
         List<VoucherOption> cacPhieuHopLe = new ArrayList<>();
         List<VoucherOption> phieuChuaDu = new ArrayList<>();
+        List<BuyMoreSuggestion> goiYMuaThem = new ArrayList<>();
         Long idKhachDuocChon = duLieu.khachHang() == null ? null : duLieu.khachHang().getId();
         for (var phieuUngVien :
                 entityManager
@@ -237,6 +241,20 @@ public class SalesService {
                                     phieuUngVien.getHinhThucPhieu(),
                                     null));
             } catch (AppException invalidForCart) {
+                BigDecimal hienTai = duLieu.ketQuaTinhTien().getTongTienHang();
+                BigDecimal toiThieu = phieuUngVien.getGiaTriToiThieu();
+                if (toiThieu != null && toiThieu.compareTo(hienTai) > 0) {
+                    try {
+                        // Re-run all eligibility checks at the threshold; do not suggest expired,
+                        // exhausted, used personal or otherwise invalid vouchers.
+                        var taiNguong = kiemTraPhieu(phieuUngVien.getMaPhieuGiamGia(),
+                                duLieu.khachHang(), toiThieu, false, thoiDiem);
+                        if (taiNguong.tienGiam().signum() > 0)
+                            goiYMuaThem.add(new BuyMoreSuggestion(phieuUngVien.getMaPhieuGiamGia(),
+                                    phieuUngVien.getLoaiGiamGia(), phieuUngVien.getGiaTriGiam(),
+                                    toiThieu.subtract(hienTai), taiNguong.tienGiam()));
+                    } catch (AppException ignored) { /* Not eligible even after adding items. */ }
+                }
                 phieuChuaDu.add(
                         new VoucherOption(
                                 phieuUngVien.getMaPhieuGiamGia(),
@@ -253,6 +271,12 @@ public class SalesService {
                 Comparator.comparing(VoucherOption::tienGiam)
                         .reversed()
                         .thenComparing(VoucherOption::maPhieuGiamGia));
+        BigDecimal totNhat = cacPhieuHopLe.isEmpty() ? BigDecimal.ZERO : cacPhieuHopLe.get(0).tienGiam();
+        goiYMuaThem.removeIf(goiY -> goiY.tienGiamDuKien().compareTo(totNhat) <= 0
+                || goiY.canMuaThem().compareTo(new BigDecimal("500000")) > 0);
+        goiYMuaThem.sort(Comparator.comparing(BuyMoreSuggestion::canMuaThem)
+                .thenComparing(BuyMoreSuggestion::tienGiamDuKien, Comparator.reverseOrder())
+                .thenComparing(BuyMoreSuggestion::maPhieuGiamGia));
         return new Quote(
                 duLieu.ketQuaTinhTien().getTongTienHang(),
                 duLieu.ketQuaTinhTien().getTienGiam(),
@@ -260,7 +284,8 @@ public class SalesService {
                 giaoHang.phiVanChuyen(),
                 cacPhieuHopLe,
                 loiPhieuDaChon)
-                .phieuChuaDuDieuKien(phieuChuaDu);
+                .phieuChuaDuDieuKien(phieuChuaDu)
+                .goiYMuaThem(goiYMuaThem.stream().limit(3).toList());
     }
 
     @Transactional
@@ -474,6 +499,8 @@ public class SalesService {
         var giaoHang =
                 DeliveryRules.chuanHoa(
                         entityManager, yeuCau.getIdKhachHang(), yeuCau.getGiaoHang());
+        if (giaoHang.apDung()) phiGhn.xacThuc(giaoHang, yeuCau.getDanhSachSanPham().stream()
+                .mapToInt(i -> i.getSoLuong()).sum());
         boolean khopDuLieu =
                 Objects.equals(
                         h.getIdKhachHang() == null ? null : h.getIdKhachHang().getId(),

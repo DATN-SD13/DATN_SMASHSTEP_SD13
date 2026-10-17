@@ -9,7 +9,12 @@ function today() {
   return new Date(now.getTime() - offset * 60000).toISOString().slice(0, 10)
 }
 const currentDate = today()
-const filters = reactive({ code: '', from: currentDate, to: currentDate, type: 'all' })
+const filters = reactive({ code: '', from: currentDate, to: currentDate, type: 'all', status: 'all' })
+const statusOptions = [
+  ['all', 'Tất cả'], ['waiting', 'Chờ xác nhận'], ['confirmed', 'Đã xác nhận'],
+  ['ready', 'Chờ giao hàng'], ['shipping', 'Đang giao hàng'], ['delivered', 'Đã giao hàng'],
+  ['done', 'Đã hoàn thành'], ['cancel', 'Đã hủy'], ['refund', 'Hoàn tiền']
+].map(([value, label]) => ({ value, label }))
 const typeOptions = [{ value: 'all', label: 'Tất cả' }, { value: 'online', label: 'Trực tuyến' }, { value: 'store', label: 'Tại quầy' }]
 
 let searchTimer = null
@@ -23,7 +28,7 @@ watch(filters, () => {
 function reset() {
   window.clearTimeout(searchTimer)
   resetting = true
-  Object.assign(filters, { code: '', from: currentDate, to: currentDate, type: 'all' })
+  Object.assign(filters, { code: '', from: currentDate, to: currentDate, type: 'all', status: 'all' })
   emit('reset')
   nextTick(() => { resetting = false })
 }
@@ -33,7 +38,10 @@ onUnmounted(() => window.clearTimeout(searchTimer))
 <template>
   <section class="filter-card card shadow-sm border-0">
     <div class="card-body">
-    <h2>Bộ lọc</h2>
+    <div class="filter-heading">
+      <h2>Bộ lọc</h2>
+      <button class="reset-btn btn btn-outline-primary" type="button" @click="reset"><i class="bi bi-arrow-counterclockwise"></i> Đặt lại bộ lọc</button>
+    </div>
     <div class="filter-grid row g-3">
       <label class="field code-field col-12 col-lg-3">
         <span>Mã hóa đơn</span>
@@ -51,7 +59,10 @@ onUnmounted(() => window.clearTimeout(searchTimer))
         <span>Loại đơn</span>
         <Select2Field v-model="filters.type" :options="typeOptions" placeholder="Chọn loại đơn" :allow-clear="false" />
       </label>
-      <button class="reset-btn btn btn-outline-primary col-12 col-md-6 col-lg-3" type="button" @click="reset"><i class="bi bi-arrow-counterclockwise"></i> Đặt lại bộ lọc</button>
+      <label class="field col-12 col-md-6 col-lg-3">
+        <span>Trạng thái hóa đơn</span>
+        <Select2Field v-model="filters.status" :options="statusOptions" placeholder="Chọn trạng thái" :allow-clear="false" />
+      </label>
     </div>
     </div>
   </section>
@@ -60,11 +71,13 @@ onUnmounted(() => window.clearTimeout(searchTimer))
 <style scoped>
 .filter-card{background:#fff;border-radius:14px;margin-bottom:18px;border:1px solid #e7eef4!important}
 .filter-card .card-body{padding:22px}
-.filter-card h2{font-size:15px;font-weight:700;color:#203744;margin:0 0 18px}
+.filter-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px}
+.filter-card h2{font-size:15px;font-weight:700;color:#203744;margin:0}
+.filter-heading .reset-btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:36px;padding:7px 13px;flex-shrink:0}
 .field{min-width:0;display:block}
 .field>span{display:block;font-size:12px;font-weight:600;color:#687b85;margin-bottom:8px}
 .field .form-control,.field .form-select{min-height:42px;border-color:#dce6ed;border-radius:10px;font-size:13px;color:#40545e;box-shadow:none}
 .field .form-control:focus,.field .form-select:focus{border-color:#1689cf;box-shadow:0 0 0 .2rem rgba(22,137,207,.12)}
-.reset-btn{min-height:42px;align-self:end;border-radius:10px;font-size:12px;font-weight:600;white-space:nowrap;--bs-btn-color:#137fb7;--bs-btn-border-color:#b9d9ec;--bs-btn-hover-bg:#1689cf;--bs-btn-hover-border-color:#1689cf}
-@media(max-width:650px){.filter-card .card-body{padding:16px}.reset-btn{width:100%}}
+.reset-btn{min-height:36px;border-radius:10px;font-size:12px;font-weight:600;white-space:nowrap;--bs-btn-color:#137fb7;--bs-btn-border-color:#b9d9ec;--bs-btn-hover-bg:#1689cf;--bs-btn-hover-border-color:#1689cf}
+@media(max-width:650px){.filter-card .card-body{padding:16px}.filter-heading{gap:10px}.filter-heading .reset-btn{font-size:11px;padding:7px 10px}}
 </style>
