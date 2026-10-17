@@ -271,7 +271,6 @@ function mapInvoice(data) {
       time: item?.thoiGian || null,
       amount: Number(item?.soTien ?? 0),
       transactionCode: item?.maGiaoDich || null,
-      description: item?.moTa || null
     })),
     address: data?.diaChiGiaoHang || data?.diaChi || 'Chưa cập nhật',
     shippingCarrier: data?.donViVanChuyen || '',
@@ -680,9 +679,9 @@ onUnmounted(() => {
               <div class="info-row address-row">
                 <span>Địa chỉ giao hàng</span><strong>{{ invoice.shippingAddress || '—' }}</strong>
               </div>
-              <div class="info-row">
+              <!-- <div class="info-row">
                 <span>Đơn vị vận chuyển</span><strong>{{ invoice.shippingCarrier || '—' }}</strong>
-              </div>
+              </div> -->
               <div class="info-row">
                 <span>Ghi chú</span><strong>{{ invoice.shippingNote || '—' }}</strong>
               </div>
@@ -731,7 +730,6 @@ onUnmounted(() => {
                 <div class="payment-history-amount">
                   <span>Số tiền</span><strong>{{ money(payment.amount) }}</strong>
                 </div>
-                <p v-if="payment.description">{{ payment.description }}</p>
               </div>
             </div>
             <div v-else class="payment-history-empty">
@@ -942,9 +940,9 @@ onUnmounted(() => {
         <div v-if="isDeliveryOrder && hasShippingInfo" class="print-shipping">
           <h3>THÔNG TIN GIAO HÀNG</h3>
           <div v-if="invoice.shippingCarrier" class="print-carrier"><span>Đơn vị vận chuyển:</span><GhnLogo v-if="isGHN" /><template v-else>{{ invoice.shippingCarrier }}</template></div>
-          <div><span>Phí vận chuyển:</span> {{ money(invoice.shippingFee) }}</div>
-          <div v-if="invoice.shippingRecipient"><span>Người nhận:</span> {{ invoice.shippingRecipient }}</div>
-          <div v-if="invoice.shippingRecipientPhone"><span>Số điện thoại:</span> {{ invoice.shippingRecipientPhone }}</div>
+          <!-- <div><span>Phí vận chuyển:</span> {{ money(invoice.shippingFee) }}</div> -->
+          <!-- <div v-if="invoice.shippingRecipient"><span>Người nhận:</span> {{ invoice.shippingRecipient }}</div> -->
+          <!-- <div v-if="invoice.shippingRecipientPhone"><span>Số điện thoại:</span> {{ invoice.shippingRecipientPhone }}</div> -->
           <div v-if="invoice.shippingAddress"><span>Địa chỉ giao hàng:</span> {{ invoice.shippingAddress }}</div>
           <div v-if="invoice.shippingNote"><span>Ghi chú:</span> {{ invoice.shippingNote }}</div>
         </div>

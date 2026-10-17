@@ -27,8 +27,10 @@ let quoteVersion = 0, quoteTimer
 const orders = ref([]), activeId = ref(null)
 const order = computed(() => orders.value.find(o => o.id === activeId.value) || null)
 const deliveryLoading = ref(false), syncingStock = ref(false)
+const checkingVoucher = ref(false), betterVoucherDialog = ref(null)
 let stockSyncTimer, stockPollTimer, stockSyncPromise = null, stockSyncPending = false
-const locked = computed(() => shippingLoading.value || deliveryLoading.value || Boolean(deliveryEditor.value) || busy.value || !ready.value || Boolean(checkoutDialog.value) || Boolean(pendingPayment.value) || recoveryBlocked.value)
+const operationLocked = computed(() => auth.loggingOut || checkingVoucher.value || Boolean(betterVoucherDialog.value) || shippingLoading.value || deliveryLoading.value || Boolean(deliveryEditor.value) || busy.value || !ready.value || Boolean(checkoutDialog.value) || Boolean(pendingPayment.value) || recoveryBlocked.value)
+const locked = computed(() => operationLocked.value || Boolean(bankAccepted.value))
 const picking = ref(false), q = ref(''), colorFilter = ref(''), sizeFilter = ref('')
 const categoryFilter = ref(''), brandFilter = ref(''), attributes = ref({})
 const shown = computed(() => catalog.value)
@@ -116,7 +118,7 @@ const cashError = computed(() => {
   if (!/^(?:0|[1-9]\d{0,15})(?:\.\d{1,2})?$/.test(String(order.value.paid))) return 'Số tiền không âm, tối đa 16 chữ số và 2 số lẻ.'
   return paidNum.value < cashDue.value ? 'Số tiền khách đưa chưa đủ.' : ''
 })
-const canPay = computed(() => !locked.value && !shippingLoading.value && shippingReady.value && quoteReady.value && count.value > 0 && deliveryReady.value && !cartWarnings.value.length
+const canPay = computed(() => !operationLocked.value && !shippingLoading.value && shippingReady.value && quoteReady.value && count.value > 0 && deliveryReady.value && !cartWarnings.value.length
   && (order.value.paymentMode === 'BANK' ? !!method('CHUYEN_KHOAN') && payable.value > 0
     : !!method('TIEN_MAT') && order.value.paid !== '' && Number.isFinite(Number(order.value.paid)) && paidNum.value >= cashDue.value && /^(?:0|[1-9]\d{0,15})(?:\.\d{1,2})?$/.test(String(order.value.paid))))
 const selectedVoucher = computed(() => validVouchers.value.find(v => v.code.toLowerCase() === order.value?.voucherCode?.toLowerCase()))
@@ -128,7 +130,7 @@ const buyMoreSuggestions = computed(() => (order.value?.quote?.buyMoreSuggestion
 
 async function calculateQuote(suggest = true) {
   const target = order.value, version = ++quoteVersion
-  if (!target?.items.length || !quoteInput.value.paymentMethodId || busy.value || pendingPayment.value || checkoutDialog.value || recoveryBlocked.value) return
+  if (bankAccepted.value || auth.loggingOut || checkingVoucher.value || betterVoucherDialog.value || !target?.items.length || !quoteInput.value.paymentMethodId || busy.value || pendingPayment.value || checkoutDialog.value || recoveryBlocked.value) return
   if (target.delivery.enabled && !shippingReady.value) return
   const fingerprint = quoteSignature.value
   target.quoteError = ''
@@ -170,12 +172,39 @@ async function loadPaymentOptions() {
   } catch (e) { error.value = message(e) }
 }
 watch([quoteSignature, busy], () => {
+  if (bankAccepted.value) return
   ++quoteVersion; clearTimeout(quoteTimer)
   if (order.value) { order.value.quote = null; order.value.quotedSignature = '' }
   if (!busy.value) quoteTimer = setTimeout(calculateQuote, 250)
 })
 
 const deliveryEditor = ref(null), deliveryError = ref(''), structuredAddress = ref(true)
+const deliveryFields = ref({})
+function deliveryFieldErrors() {
+  const d = deliveryEditor.value || {}, a = addressForm.value, fields = {}
+  const name = String(d.recipientName || '').trim(), phone = String(d.recipientPhone || '').trim()
+  if (!name) fields.recipientName = 'Vui lòng nhập tên người nhận.'
+  else if (name.length > 255) fields.recipientName = 'Tên người nhận tối đa 255 ký tự.'
+  if (!phone) fields.recipientPhone = 'Vui lòng nhập số điện thoại người nhận.'
+  else if (!/^\d+$/.test(phone)) fields.recipientPhone = 'Số điện thoại chỉ được chứa chữ số.'
+  else if (phone.length !== 10) fields.recipientPhone = `Số điện thoại phải đủ 10 chữ số (bạn đang nhập ${phone.length} số).`
+  else if (!phone.startsWith('0')) fields.recipientPhone = 'Số điện thoại phải bắt đầu bằng số 0.'
+  if (!d.addressId) {
+    if (!provinces.value.some(v => v.id === a.province)) fields.province = 'Vui lòng chọn tỉnh/thành phố.'
+    if (!wards.value.some(v => v.id === a.ward)) fields.ward = 'Vui lòng chọn phường/xã thuộc tỉnh/thành phố đã chọn.'
+    if (!a.street.trim()) fields.street = 'Vui lòng nhập số nhà, tên đường hoặc địa chỉ cụ thể.'
+    else if (a.street.trim().length > 350) fields.street = 'Địa chỉ cụ thể tối đa 350 ký tự.'
+  } else if (!d.address?.trim() || d.address.length > 500) fields.address = 'Địa chỉ đã chọn chưa hợp lệ. Chọn địa chỉ khác để bổ sung.'
+  return fields
+}
+function validateDeliveryField(field) {
+  const message = deliveryFieldErrors()[field]
+  deliveryFields.value = { ...deliveryFields.value, [field]: message || '' }
+}
+function clearDeliveryField(field) {
+  deliveryFields.value = { ...deliveryFields.value, [field]: '' }
+  deliveryError.value = ''
+}
 const completeDelivery = d => !d?.enabled || Boolean(d.recipientName?.trim() && /^0\d{9}$/.test(d.recipientPhone)
   && d.address?.trim() && d.address.length <= 500 && d.shippingFee !== ''
   && Number.isFinite(Number(d.shippingFee)) && Number(d.shippingFee) >= 0)
@@ -216,7 +245,7 @@ async function loadShippingAreas() {
 }
 async function changeProvince() {
   const version = ++areaVersion, province = addressForm.value.province
-  addressForm.value.ward = ''; wards.value = []; deliveryError.value = ''
+  addressForm.value.ward = ''; wards.value = []; deliveryError.value = ''; clearDeliveryField('province'); clearDeliveryField('ward')
   areasLoading.value = true
   try {
     if (!province) return
@@ -257,11 +286,12 @@ function openDelivery() {
   if (locked.value || !order.value) return
   deliveryOrderId = order.value.id
   deliveryEditor.value = JSON.parse(JSON.stringify(order.value.delivery))
-  deliveryError.value = ''; structuredAddress.value = true
+  deliveryError.value = ''; deliveryFields.value = {}; structuredAddress.value = true
   addressForm.value = { province: '', ward: '', street: '' }; wards.value = []; loadShippingAreas()
 }
 function closeDelivery() { if (!busy.value && !shippingLoading.value) { deliveryEditor.value = null; ++areaVersion; areasLoading.value = false } }
 function selectDeliveryAddress(a) {
+  deliveryFields.value = {}; deliveryError.value = ''
   Object.assign(deliveryEditor.value, { recipientName: a.receiverName, recipientPhone: a.receiverPhone, address: a.fullAddress })
   addressForm.value = { province: '', ward: '', street: '' }; wards.value = []; loadShippingAreas()
 }
@@ -298,16 +328,21 @@ async function toggleDelivery(enabled) {
 async function saveDelivery() {
   if (stockSyncPromise) await stockSyncPromise
   if (busy.value || shippingLoading.value || areasLoading.value || !deliveryEditor.value || order.value?.id !== deliveryOrderId) return
+  deliveryFields.value = deliveryFieldErrors()
+  deliveryError.value = ''
+  if (Object.keys(deliveryFields.value).length) return
   const candidate = JSON.parse(JSON.stringify(deliveryEditor.value))
+  candidate.recipientName = candidate.recipientName.trim()
+  candidate.recipientPhone = candidate.recipientPhone.trim()
   if (!candidate.addressId && structuredAddress.value) {
     const a = addressForm.value
-    if (!provinces.value.some(v => v.id === a.province) || !wards.value.some(v => v.id === a.ward) || !a.street.trim()) { deliveryError.value = 'Nhập đầy đủ tỉnh/thành, phường/xã và địa chỉ cụ thể.'; return }
     candidate.address = [a.street.trim(), wards.value.find(v => v.id === a.ward)?.ten, provinces.value.find(v => v.id === a.province)?.ten].filter(Boolean).join(', ')
   }
-  if (!candidate.recipientName.trim() || !/^0\d{9}$/.test(candidate.recipientPhone) || !candidate.address.trim()
-      || candidate.address.length > 500 || candidate.shippingFee === '' || !Number.isFinite(Number(candidate.shippingFee)) || Number(candidate.shippingFee) < 0) {
-    deliveryError.value = 'Kiểm tra người nhận, số điện thoại 10 số, địa chỉ và phí vận chuyển không âm.'; return
+  if (!candidate.address?.trim() || candidate.address.length > 500) {
+    deliveryFields.value.street = 'Địa chỉ giao hàng đầy đủ tối đa 500 ký tự.'; return
   }
+  // A new carrier quote is mandatory below; there is no editable shipping-price input.
+  candidate.shippingFee = 0
   const target = { ...order.value, delivery: candidate, shippingQuote: null, shippingDestination: candidate.addressId ? {} : { ...addressForm.value } }
   if (await saveOrder(target, 'Cập nhật thông tin giao hàng thành công.')) deliveryEditor.value = null
   else deliveryError.value = error.value
@@ -387,7 +422,7 @@ async function readyCheckout() {
   }
   return canPay.value
 }
-async function openQr() {
+async function createPaymentDialog() {
   if (stockSyncPromise) await stockSyncPromise
   if (!(await readyCheckout())) return
   qrFailed.value = false
@@ -395,15 +430,89 @@ async function openQr() {
     total: payable.value, change: change.value, bank: transferred.value, context: paymentContext(), confirmed: false,
     qr: qrLink(bankConfig, transferred.value, order.value.name) }
 }
-async function pay() {
-  if (stockSyncPromise) await stockSyncPromise
-  if (!(await readyCheckout())) return
+async function checkoutQuote() {
+  clearTimeout(quoteTimer); ++quoteVersion
+  const id = order.value?.id, fingerprint = quoteSignature.value
+  const input = JSON.parse(JSON.stringify(quoteInput.value))
+  const result = await salesService.tinhTien(input)
+  if (!alive || order.value?.id !== id || fingerprint !== quoteSignature.value)
+    throw new Error('Hóa đơn đã thay đổi. Kiểm tra lại rồi bấm Thanh toán.')
+  if (bankAccepted.value && Number(bankAccepted.value.total) !== Number(result.total)) bankAccepted.value = null
+  order.value.quote = result; order.value.quotedSignature = fingerprint
+  if (result.selectedVoucherError) {
+    order.value.autoVoucher = false
+    order.value.quoteError = result.selectedVoucherError
+    order.value.quotedSignature = ''
+    throw new Error(`Phiếu đang chọn không còn dùng được: ${result.selectedVoucherError}. Vui lòng chọn lại phiếu trước khi thanh toán.`)
+  }
+  return result
+}
+async function continuePayment() {
+  if (!canPay.value) return
   if (order.value.paymentMode === 'BANK' && bankConfirmed.value) {
-    const request = checkoutPayload(); request.transferConfirmed = true
-    await performPayment({ employeeId: employeeId.value, invoiceCode: order.value.name, payload: request })
+    const accepted = bankAccepted.value
+    if (!accepted.payload) { error.value = 'Thiếu dữ liệu khoản chuyển khoản đã xác nhận. Kiểm tra hóa đơn, không chuyển khoản thêm.'; return }
+    const request = JSON.parse(JSON.stringify(accepted.payload)); request.transferConfirmed = true
+    await performPayment({ employeeId: employeeId.value, invoiceCode: accepted.invoiceCode, payload: request })
     return
   }
-  await openQr()
+  await createPaymentDialog()
+}
+async function openQr() {
+  if (bankAccepted.value) return
+  await pay()
+}
+async function pay() {
+  if (bankAccepted.value) {
+    if (bankConfirmed.value) await continuePayment()
+    else error.value = 'Đã xác nhận nhận tiền nhưng hóa đơn cần kiểm tra lại. Không chuyển khoản thêm.'
+    return
+  }
+  if (checkingVoucher.value || betterVoucherDialog.value) return
+  if (stockSyncPromise) await stockSyncPromise
+  if (!(await readyCheckout())) return
+  if (checkingVoucher.value || betterVoucherDialog.value) return
+  checkingVoucher.value = true
+  try {
+    const result = await checkoutQuote()
+    const best = [...(result.vouchers || [])].sort((a,b) => Number(b.discount) - Number(a.discount))[0]
+    const currentDiscount = Number(result.discount || 0)
+    if (best && best.code.toLowerCase() !== order.value.voucherCode.toLowerCase() && Number(best.discount) > currentDiscount) {
+      betterVoucherDialog.value = {
+        orderId: order.value.id, context: paymentContext(), currentCode: order.value.voucherCode,
+        currentDiscount, nextCode: best.code, nextDiscount: Number(best.discount),
+        saving: roundMoney(Number(best.discount) - currentDiscount), subtotal: Number(result.subtotal),
+        shippingFee: order.value.delivery.enabled ? Number(order.value.delivery.shippingFee) : 0,
+        total: roundMoney(Number(result.total) - Number(best.discount) + currentDiscount)
+      }
+      return
+    }
+  } catch (e) {
+    error.value = message(e); showError(error.value, 'Chưa thể kiểm tra thanh toán'); return
+  } finally { checkingVoucher.value = false }
+  await continuePayment()
+}
+async function chooseCheckoutVoucher(useNew) {
+  const dialog = betterVoucherDialog.value
+  if (!dialog || checkingVoucher.value) return
+  if (order.value?.id !== dialog.orderId || dialog.context !== paymentContext()) {
+    betterVoucherDialog.value = null; error.value = 'Hóa đơn đã thay đổi. Bấm Thanh toán để kiểm tra lại.'; return
+  }
+  checkingVoucher.value = true
+  betterVoucherDialog.value = null
+  try {
+    // Honor the operator's explicit choice; background suggestions must not overwrite it.
+    order.value.autoVoucher = false
+    if (useNew) {
+      order.value.voucherCode = dialog.nextCode
+      bankAccepted.value = null
+      if (!(await saveOrder())) return
+    }
+    await checkoutQuote()
+  } catch (e) {
+    error.value = message(e); showError(error.value, 'Chưa thể áp dụng phiếu'); return
+  } finally { checkingVoucher.value = false }
+  await continuePayment()
 }
 function validRecovery(saved) {
   const p = saved?.payload
@@ -438,7 +547,10 @@ async function confirmPayment() {
     checkoutDialog.value = null; error.value = 'Thông tin hóa đơn đã thay đổi. Vui lòng mở lại mã QR và kiểm tra số tiền.'; return
   }
   if (dialog.bank > 0) {
-    bankAccepted.value = { context: dialog.context, total: dialog.total }
+    clearTimeout(quoteTimer); ++quoteVersion
+    order.value.autoVoucher = false
+    bankAccepted.value = { context: dialog.context, total: dialog.total, invoiceCode: dialog.invoiceCode,
+      payload: JSON.parse(JSON.stringify(dialog.payload)) }
     checkoutDialog.value = null
     showSuccess('Đã xác nhận nhận tiền chuyển khoản. Bấm Thanh toán để hoàn tất hóa đơn.', 'Xác nhận chuyển khoản')
     return
@@ -470,7 +582,9 @@ async function performPayment(saved) {
     await Promise.allSettled([reloadOrders(), loadCatalog()])
   } catch (e) {
     checkoutDialog.value = null
-    if (!e.response || e.response.status >= 500) {
+    if (bankAccepted.value && saved.payload.transferConfirmed) {
+      error.value = 'Đã xác nhận nhận tiền nhưng hóa đơn chưa hoàn tất: ' + message(e) + '. Kiểm tra lại thanh toán bằng yêu cầu đã lưu; không chuyển khoản thêm.'
+    } else if (!e.response || e.response.status >= 500) {
       error.value = 'Chưa xác định được kết quả thanh toán. Bấm Kiểm tra lại thanh toán để gửi lại đúng yêu cầu; không tạo yêu cầu mới.'
     } else {
       clearCheckout(); error.value = message(e)
@@ -493,15 +607,15 @@ function rememberCustomers(drafts) {
 function requestStockSync() {
   stockSyncPending = true
   clearTimeout(stockSyncTimer)
-  if (!alive || busy.value || syncingStock.value || shippingLoading.value || deliveryLoading.value || deliveryEditor.value || pendingPayment.value || recoveryBlocked.value
+  if (!alive || bankAccepted.value || auth.loggingOut || checkingVoucher.value || betterVoucherDialog.value || busy.value || syncingStock.value || shippingLoading.value || deliveryLoading.value || deliveryEditor.value || pendingPayment.value || recoveryBlocked.value
       || (typeof document !== 'undefined' && document.visibilityState === 'hidden')) return
   stockSyncTimer = setTimeout(() => { stockSyncTimer = null; syncCartStock() }, 150)
 }
-watch([busy, shippingLoading, deliveryLoading, deliveryEditor, pendingPayment, recoveryBlocked], () => { if (stockSyncPending) requestStockSync() })
+watch([bankAccepted, () => auth.loggingOut, checkingVoucher, betterVoucherDialog, busy, shippingLoading, deliveryLoading, deliveryEditor, pendingPayment, recoveryBlocked], () => { if (stockSyncPending) requestStockSync() })
 
 async function syncCartStock() {
   if (stockSyncPromise) { stockSyncPending = true; return stockSyncPromise }
-  if (!alive || !ready.value || busy.value || syncingStock.value || shippingLoading.value || deliveryLoading.value || deliveryEditor.value
+  if (!alive || !ready.value || bankAccepted.value || auth.loggingOut || checkingVoucher.value || betterVoucherDialog.value || busy.value || syncingStock.value || shippingLoading.value || deliveryLoading.value || deliveryEditor.value
       || pendingPayment.value || recoveryBlocked.value
       || (typeof document !== 'undefined' && document.visibilityState === 'hidden')) { stockSyncPending = true; return }
   stockSyncPending = false
@@ -826,7 +940,35 @@ watch(customerSearch, () => {
   if (!customerSearch.value.trim()) { customerLoading.value = false; return }
   customerTimer = setTimeout(loadCustomers, 250)
 })
-onBeforeRouteLeave(async () => !busy.value && await saveOrder())
+async function preparePosLogout() {
+  if (bankAccepted.value || busy.value || shippingLoading.value || deliveryLoading.value || checkingVoucher.value
+      || betterVoucherDialog.value || deliveryEditor.value || checkoutDialog.value || pendingPayment.value || recoveryBlocked.value) {
+    showError('Hoàn tất hoặc đóng thao tác đang xử lý trước khi đăng xuất. Phiên đăng nhập vẫn được giữ.', 'Chưa thể đăng xuất')
+    return false
+  }
+  ++quoteVersion; clearTimeout(quoteTimer); clearTimeout(searchTimer); clearTimeout(customerTimer)
+  if (stockSyncPromise) await stockSyncPromise
+  const current = order.value
+  if (!current) return true
+  // An unfinished delivery toggle has never been a valid saved order. Keep the last
+  // persisted delivery mode while saving any other changes; do not cancel the cart or release stock.
+  const target = { ...current, delivery: { ...current.delivery } }
+  if (!completeDelivery(target.delivery)) {
+    const persisted = JSON.parse(current.saved)
+    target.delivery = persisted.delivery || { enabled: false, shippingFee: 0 }
+    target.shippingQuote = null
+    target.shippingDestination = null
+  }
+  if (signature(target) === current.saved) return true
+  if (!(await saveOrder(target))) return false
+  return true
+}
+const unregisterLogoutGuard = auth.setLogoutGuard(preparePosLogout)
+onBeforeRouteLeave(async () => {
+  if (auth.logoutAuthorized || auth.isAuthenticated === false) return true
+  if (auth.loggingOut) return false
+  return !bankAccepted.value && !checkingVoucher.value && !betterVoucherDialog.value && !busy.value && await saveOrder()
+})
 onMounted(async () => {
   try {
     const me = (await api.get('/auth/me')).data.data
@@ -844,7 +986,7 @@ onMounted(async () => {
     }
   } catch (e) { error.value = message(e) }
 })
-onBeforeUnmount(() => { if (typeof window !== 'undefined') { window.clearInterval(stockPollTimer); window.removeEventListener('focus', requestStockSync); window.removeEventListener('online', requestStockSync); document.removeEventListener('visibilitychange', requestStockSync) } clearTimeout(stockSyncTimer); alive = false; ++quoteVersion; ++addressVersion; clearTimeout(quoteTimer); ++catalogVersion; ++customerVersion; clearTimeout(searchTimer); clearTimeout(customerTimer) })
+onBeforeUnmount(() => { unregisterLogoutGuard(); if (typeof window !== 'undefined') { window.clearInterval(stockPollTimer); window.removeEventListener('focus', requestStockSync); window.removeEventListener('online', requestStockSync); document.removeEventListener('visibilitychange', requestStockSync) } clearTimeout(stockSyncTimer); alive = false; ++quoteVersion; ++addressVersion; clearTimeout(quoteTimer); ++catalogVersion; ++customerVersion; clearTimeout(searchTimer); clearTimeout(customerTimer) })
 </script>
 
 <template>
@@ -969,12 +1111,12 @@ onBeforeUnmount(() => { if (typeof window !== 'undefined') { window.clearInterva
             </div>
           </div>
           <small v-if="order.paymentMode !== 'CASH' && !quoteReady" class="ss-hint">Thêm sản phẩm và hoàn tất thông tin giao hàng để tính số tiền chuyển khoản.</small>
-          <button v-if="order.paymentMode !== 'CASH'" class="ss-btn" :disabled="!canPay" @click="openQr">{{ bankConfig ? 'Hiển thị QR chuyển khoản' : 'Xác nhận chuyển khoản thủ công' }}</button>
+          <button v-if="order.paymentMode !== 'CASH' && !bankAccepted" class="ss-btn" :disabled="!canPay" @click="openQr">{{ bankConfig ? 'Hiển thị QR chuyển khoản' : 'Xác nhận chuyển khoản thủ công' }}</button>
           <div v-if="order.paymentMode !== 'BANK'" class="ss-field"><span class="ss-label strong">Tiền mặt khách đưa</span>
             <input class="ss-input" type="text" inputmode="decimal" :value="cashDisplay" @input="inputCash" :disabled="locked" aria-label="Tiền mặt khách đưa" autocomplete="off" placeholder="Nhập số tiền khách đưa" /></div>
           <div v-else class="kv"><span>Cần chuyển khoản:</span><b>{{ money(payable) }}</b></div>
           <small v-if="cashError" class="cash-error" role="alert">{{ cashError }}</small>
-          <p v-if="order.paymentMode === 'BANK' && bankConfirmed" class="bank-confirmed" role="status"><i class="bi bi-check-circle"></i> Đã xác nhận chuyển khoản, chưa hoàn tất hóa đơn. Bấm Thanh toán để hoàn tất.</p>
+          <p v-if="order.paymentMode === 'BANK' && bankConfirmed" class="bank-confirmed" role="status"><i class="bi bi-check-circle"></i> Đã xác nhận nhận tiền. Phiếu và số tiền đã được chốt; bấm Thanh toán để hoàn tất, không chuyển khoản thêm.</p>
           <div class="kv"><span>Tiền thừa trả khách</span><b>{{ money(change) }}</b></div>
           <div class="ss-field"><span class="ss-label strong">Ghi chú thanh toán</span>
             <textarea class="ss-textarea" v-model="order.note" @change="saveOrder(order, 'Cập nhật ghi chú thanh toán thành công.')" maxlength="960" :disabled="locked" placeholder="Ghi chú thêm nếu cần"></textarea></div>
@@ -986,7 +1128,7 @@ onBeforeUnmount(() => { if (typeof window !== 'undefined') { window.clearInterva
           <p v-if="cartWarnings.length" role="alert">Có sản phẩm thay đổi giá hoặc tồn kho. Vui lòng kiểm tra lại.</p>
           <div class="btns">
             <button class="ss-btn" :disabled="locked" @click="cancelOrder">Hủy hóa đơn</button>
-            <button class="ss-btn primary" :disabled="!canPay" @click="pay">Thanh toán</button>
+            <button class="ss-btn primary" :disabled="!canPay" @click="pay">{{ checkingVoucher ? 'Đang kiểm tra phiếu…' : 'Thanh toán' }}</button>
           </div>
         </section>
         <section v-else class="ss-card"><p class="muted-center">Tạo hóa đơn chờ để bắt đầu bán hàng.</p></section>
@@ -998,16 +1140,16 @@ onBeforeUnmount(() => { if (typeof window !== 'undefined') { window.clearInterva
         <div class="ss-head"><h2 id="delivery-title">Chỉnh sửa thông tin giao hàng</h2><span class="ss-spacer"></span><button class="ss-icon-btn" :disabled="busy || shippingLoading" @click="closeDelivery" aria-label="Đóng">×</button></div>
         <p v-if="deliveryError || shippingError" role="alert">{{ deliveryError || shippingError }}</p>
         <section class="delivery-section"><h3>Thông tin liên hệ</h3><div class="delivery-grid">
-          <label>Tên người nhận *<input class="ss-input" v-model="deliveryEditor.recipientName" maxlength="255" :disabled="busy || shippingLoading" @input="deliveryEditor.addressId = null" /></label>
-          <label>Số điện thoại *<input class="ss-input" v-model="deliveryEditor.recipientPhone" maxlength="10" :disabled="busy || shippingLoading" @input="deliveryEditor.addressId = null" /></label>
+          <label>Tên người nhận *<input class="ss-input" v-model="deliveryEditor.recipientName" maxlength="255" :disabled="busy || shippingLoading" @input="deliveryEditor.addressId = null; clearDeliveryField('recipientName')" @blur="validateDeliveryField('recipientName')" :class="{'is-invalid': deliveryFields.recipientName}" :aria-invalid="Boolean(deliveryFields.recipientName)" aria-describedby="delivery-name-error" /><small v-if="deliveryFields.recipientName" id="delivery-name-error" class="field-error" role="alert">{{ deliveryFields.recipientName }}</small></label>
+          <label>Số điện thoại *<input class="ss-input" v-model="deliveryEditor.recipientPhone" type="tel" inputmode="numeric" autocomplete="tel" maxlength="20" :disabled="busy || shippingLoading" @input="deliveryEditor.addressId = null; clearDeliveryField('recipientPhone')" @blur="validateDeliveryField('recipientPhone')" :class="{'is-invalid': deliveryFields.recipientPhone}" :aria-invalid="Boolean(deliveryFields.recipientPhone)" aria-describedby="delivery-phone-error" /><small v-if="deliveryFields.recipientPhone" id="delivery-phone-error" class="field-error" role="alert">{{ deliveryFields.recipientPhone }}</small></label>
         </div></section>
-        <section class="delivery-section"><h3>Địa chỉ giao hàng</h3>
+        <section class="delivery-section"><h3>Địa chỉ giao hàng</h3><p v-if="deliveryFields.address" class="field-error" role="alert">{{ deliveryFields.address }}</p>
           <label v-for="a in addresses" :key="a.id" class="address-choice"><input type="radio" :value="a.id" v-model="deliveryEditor.addressId" :disabled="busy || shippingLoading" @change="selectDeliveryAddress(a)" /><span><b>{{ a.receiverName }}</b> · {{ a.receiverPhone }}<small v-if="a.isDefault" class="voucher-badge">Mặc định</small><br />{{ a.fullAddress }}</span></label>
           <label class="address-choice"><input type="radio" :value="null" v-model="deliveryEditor.addressId" :disabled="busy || shippingLoading" /> Sử dụng địa chỉ khác</label>
           <div v-if="!deliveryEditor.addressId" class="delivery-grid">
-            <label>Tỉnh/Thành phố *<select class="ss-select" v-model="addressForm.province" :disabled="busy || shippingLoading || areasLoading" @change="changeProvince"><option value="">Chọn tỉnh/thành</option><option v-for="a in provinces" :key="a.id" :value="a.id">{{ a.ten }}</option></select></label>
-            <label>Phường/Xã *<select class="ss-select" v-model="addressForm.ward" :disabled="busy || shippingLoading || !addressForm.province || areasLoading"><option value="">Chọn phường/xã</option><option v-for="a in wards" :key="a.id" :value="a.id">{{ a.ten }}</option></select></label>
-            <label class="address-line">Địa chỉ cụ thể *<input class="ss-input" v-model="addressForm.street" :disabled="busy || shippingLoading || areasLoading" maxlength="350" /></label>
+            <label>Tỉnh/Thành phố *<select class="ss-select" v-model="addressForm.province" :disabled="busy || shippingLoading || areasLoading" @change="changeProvince" @blur="validateDeliveryField('province')" :class="{'is-invalid': deliveryFields.province}" :aria-invalid="Boolean(deliveryFields.province)" aria-describedby="delivery-province-error"><option value="">Chọn tỉnh/thành</option><option v-for="a in provinces" :key="a.id" :value="a.id">{{ a.ten }}</option></select><small v-if="deliveryFields.province" id="delivery-province-error" class="field-error" role="alert">{{ deliveryFields.province }}</small></label>
+            <label>Phường/Xã *<select class="ss-select" v-model="addressForm.ward" @change="validateDeliveryField('ward')" @blur="validateDeliveryField('ward')" :class="{'is-invalid': deliveryFields.ward}" :aria-invalid="Boolean(deliveryFields.ward)" aria-describedby="delivery-ward-error" :disabled="busy || shippingLoading || !addressForm.province || areasLoading"><option value="">Chọn phường/xã</option><option v-for="a in wards" :key="a.id" :value="a.id">{{ a.ten }}</option></select><small v-if="deliveryFields.ward" id="delivery-ward-error" class="field-error" role="alert">{{ deliveryFields.ward }}</small></label>
+            <label class="address-line">Địa chỉ cụ thể *<input class="ss-input" v-model="addressForm.street" @input="clearDeliveryField('street')" @blur="validateDeliveryField('street')" :class="{'is-invalid': deliveryFields.street}" :aria-invalid="Boolean(deliveryFields.street)" aria-describedby="delivery-street-error" :disabled="busy || shippingLoading || areasLoading" maxlength="350" /><small v-if="deliveryFields.street" id="delivery-street-error" class="field-error" role="alert">{{ deliveryFields.street }}</small></label>
           </div>
         </section>
         <p v-if="areasLoading" class="ss-hint" role="status">Đang tải danh mục địa chỉ…</p>
@@ -1050,6 +1192,21 @@ onBeforeUnmount(() => { if (typeof window !== 'undefined') { window.clearInterva
       </div>
     </div>
 
+    <div v-if="betterVoucherDialog" class="ss-modal-bg" @click.self="betterVoucherDialog = null">
+      <section class="ss-modal voucher-upgrade" role="dialog" aria-modal="true" aria-labelledby="better-voucher-title">
+        <div class="ss-head"><h2 id="better-voucher-title"><i class="bi bi-info-circle-fill"></i> Có phiếu giảm giá tốt hơn</h2><span class="ss-spacer"></span><button class="ss-icon-btn" aria-label="Đóng" @click="betterVoucherDialog = null">×</button></div>
+        <p class="voucher-upgrade-notice">Có phiếu giúp đơn hàng này giảm được nhiều tiền hơn!</p>
+        <div class="voucher-comparison">
+          <div><span>Phiếu hiện tại</span><b>{{ betterVoucherDialog.currentCode || 'Không sử dụng phiếu' }}</b><small>Giảm: {{ money(betterVoucherDialog.currentDiscount) }}</small></div>
+          <div class="voucher-new"><span>Phiếu mới</span><b>{{ betterVoucherDialog.nextCode }}</b><small>Giảm: {{ money(betterVoucherDialog.nextDiscount) }}</small></div>
+        </div>
+        <div class="voucher-saving"><span>Bạn tiết kiệm thêm</span><strong>+{{ money(betterVoucherDialog.saving) }}</strong></div>
+        <dl class="voucher-totals"><div><dt>Tổng tiền hàng</dt><dd>{{ money(betterVoucherDialog.subtotal) }}</dd></div><div><dt>Giảm giá với phiếu mới</dt><dd>−{{ money(betterVoucherDialog.nextDiscount) }}</dd></div><div v-if="order.delivery.enabled"><dt>Phí vận chuyển</dt><dd>{{ money(betterVoucherDialog.shippingFee) }}</dd></div><div class="voucher-new-total"><dt>Tổng thanh toán với phiếu mới</dt><dd>{{ money(betterVoucherDialog.total) }}</dd></div></dl>
+        
+        <div class="ss-actions"><button class="ss-btn" @click="chooseCheckoutVoucher(false)">Giữ phiếu cũ</button><button class="ss-btn primary" @click="chooseCheckoutVoucher(true)">Dùng phiếu mới (tiết kiệm hơn)</button></div>
+      </section>
+    </div>
+
     <div v-if="checkoutDialog" class="ss-modal-bg">
       <section class="ss-modal pos-receipt" role="dialog" aria-modal="true" aria-label="Xác nhận thanh toán">
         <div class="ss-head"><h2>{{ checkoutDialog.bank > 0 ? 'Quét mã QR để thanh toán' : 'Xác nhận thanh toán' }}</h2></div>
@@ -1075,7 +1232,7 @@ onBeforeUnmount(() => { if (typeof window !== 'undefined') { window.clearInterva
           <dt>Tiền thừa</dt><dd>{{ money(completedReceipt.change) }}</dd>
         </dl>
         <p v-for="p in completedReceipt.payments" :key="p.transactionCode">{{ p.methodName }}: {{ money(p.amount) }}</p>
-        <div class="ss-actions"><button class="ss-btn" @click="completedReceipt = null">Tiếp tục bán</button><button class="ss-btn" @click="openInvoice()">Xem chi tiết</button><button class="ss-btn primary" @click="openInvoice(true)">In hóa đơn</button></div>
+        <div class="ss-actions"><button class="ss-btn" @click="completedReceipt = null">Tiếp tục bán</button><button class="ss-btn" @click="openInvoice()">Xem chi tiết hóa đơn</button></div>
       </section>
     </div>
   </AdminLayout>
@@ -1092,7 +1249,7 @@ onBeforeUnmount(() => { if (typeof window !== 'undefined') { window.clearInterva
 @media(max-width:1150px){.pos{grid-template-columns:minmax(0,1fr) 370px!important}.pos .ss-card{padding:13px}}@media(max-width:950px){.pos{grid-template-columns:1fr!important}.pos .btns{position:static}.right{max-height:none}}
 
 .bank-qr{display:grid;justify-items:center}.bank-qr>img{width:280px;max-width:100%;height:auto}.bank-qr .receipt-details{width:100%;margin:10px 0}.qr-unavailable{padding:12px;background:#fff7e8;border-radius:9px;font-size:12px}
-.pos-photo{position:relative;width:64px;height:64px;border:1px solid var(--ss-border);border-radius:9px;background:var(--ss-surface);display:grid;place-items:center;overflow:hidden}.pos-photo img{width:100%;height:100%;object-fit:cover}.pos-photo>i{font-size:24px;color:var(--ss-muted)}.photo-discount{position:absolute;top:0;right:0;background:#e73355;color:white;font-size:10px;font-weight:700;padding:3px 4px;border-radius:0 0 0 5px}.sale-price{color:#d32c50}.sku{display:block;color:var(--ss-muted);font-size:10px}.pos-filters>label{flex:1;min-width:120px;font-size:11px;color:var(--ss-muted)}.pos-filters{flex-wrap:wrap}.delivery-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.delivery-grid label{display:grid;gap:7px;font-size:11px;color:var(--ss-muted)}.delivery-grid strong{font-size:12px;font-weight:500;color:var(--ss-ink);padding:10px;background:var(--ss-surface);border-radius:7px;overflow-wrap:anywhere}.address-line{grid-column:1/-1}.delivery-card h3,.delivery-section h3{font-size:13px}.delivery-toggle{font-size:11px;white-space:nowrap}.delivery-modal{max-width:590px;max-height:90vh;overflow-y:auto;gap:16px}.delivery-section{padding:16px;border:1px solid var(--ss-border);border-radius:14px;display:grid;gap:14px}.address-choice{display:flex;align-items:flex-start;gap:9px;font-size:12px;padding:12px;border:1px solid var(--ss-border);border-radius:10px}.voucher-card{background:#eefaf5;border:1px solid #d1eee2;border-radius:12px;padding:13px;display:grid;gap:10px;font-size:11px;color:#208969}.voucher-card>div{display:flex;align-items:center;justify-content:space-between;gap:6px}.voucher-card .ss-icon-btn{width:22px;height:22px}.voucher-badge{display:inline-block;background:#d0f3e6;color:#208969;font-size:10px;padding:3px 6px;border-radius:4px;font-weight:700}.payable-row{border-top:1px solid var(--ss-border);padding-top:14px;font-size:14px}.payable-row b{color:var(--ss-primary)}.reduction-row b{color:#208969}.right>.ss-card{border-radius:15px}.kv{padding:9px 0;border-bottom:1px solid var(--ss-border)}
+.pos-photo{position:relative;width:64px;height:64px;border:1px solid var(--ss-border);border-radius:9px;background:var(--ss-surface);display:grid;place-items:center;overflow:hidden}.pos-photo img{width:100%;height:100%;object-fit:cover}.pos-photo>i{font-size:24px;color:var(--ss-muted)}.photo-discount{position:absolute;top:0;right:0;background:#e73355;color:white;font-size:10px;font-weight:700;padding:3px 4px;border-radius:0 0 0 5px}.sale-price{color:#d32c50}.sku{display:block;color:var(--ss-muted);font-size:10px}.pos-filters>label{flex:1;min-width:120px;font-size:11px;color:var(--ss-muted)}.pos-filters{flex-wrap:wrap}.delivery-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.delivery-grid label{display:grid;gap:7px;font-size:11px;color:var(--ss-muted)}.delivery-grid strong{font-size:12px;font-weight:500;color:var(--ss-ink);padding:10px;background:var(--ss-surface);border-radius:7px;overflow-wrap:anywhere}.address-line{grid-column:1/-1}.delivery-card h3,.delivery-section h3{font-size:13px}.delivery-toggle{font-size:11px;white-space:nowrap}.delivery-modal{max-width:590px;max-height:90vh;overflow-y:auto;gap:16px}.delivery-section{padding:16px;border:1px solid var(--ss-border);border-radius:14px;display:grid;gap:14px}.address-choice{display:flex;align-items:flex-start;gap:9px;font-size:12px;padding:12px;border:1px solid var(--ss-border);border-radius:10px}.voucher-card{background:#eefaf5;border:1px solid #d1eee2;border-radius:12px;padding:13px;display:grid;gap:10px;font-size:11px;color:#208969}.voucher-card>div{display:flex;align-items:center;justify-content:space-between;gap:6px}.voucher-card .ss-icon-btn{width:22px;height:22px}.voucher-badge{display:inline-block;background:#d0f3e6;color:#208969;font-size:10px;padding:3px 6px;border-radius:4px;font-weight:700}.payable-row{border-top:1px solid var(--ss-border);padding-top:14px;font-size:14px}.payable-row b{color:var(--ss-primary)}.kv.reduction-row b{color:#208969}.right>.ss-card{border-radius:15px}.kv{padding:9px 0;border-bottom:1px solid var(--ss-border)}
 
 .pos-thumb{width:54px;height:54px;object-fit:cover;border-radius:8px}.pos-filters{display:flex;gap:12px;margin:12px 0}.pos-save-actions{display:flex;align-items:center;gap:8px;color:var(--ss-muted)}
 .pos-price-old{display:block;opacity:.6;font-size:10px}.pos-discount{display:inline-block;margin-left:5px;padding:2px 5px;border-radius:5px;background:#e7f5ff;color:#147fb4;font-size:10px;font-weight:700}
@@ -1158,4 +1315,31 @@ onBeforeUnmount(() => { if (typeof window !== 'undefined') { window.clearInterva
 
 <style scoped>
 .shipping-provider-label { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+</style>
+
+<style scoped>
+.field-error { display: block; margin-top: 5px; color: #dc3545; font-size: 12px; line-height: 1.4; }
+.delivery-modal .is-invalid { border-color: #dc3545; }
+.delivery-modal .is-invalid:focus { box-shadow: 0 0 0 3px rgba(220, 53, 69, .1); }
+.voucher-upgrade { width: min(480px, calc(100vw - 32px)); }
+.voucher-upgrade h2 { display: flex; align-items: center; gap: 8px; font-size: 18px; }
+.voucher-upgrade h2 i { color: #2484ed; }
+.voucher-upgrade-notice, .voucher-saving { background: #edf6ff; color: #216cc0; border-radius: 8px; padding: 12px; }
+.voucher-upgrade-notice { margin: 16px 0; font-size: 13px; }
+.voucher-comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 18px 0; }
+.voucher-comparison > div { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-width: 0; }
+.voucher-comparison span, .voucher-comparison small { color: var(--ss-muted); font-size: 12px; }
+.voucher-comparison b { background: #f0f4f9; color: #235390; padding: 5px 8px; border-radius: 5px; overflow-wrap: anywhere; }
+.voucher-comparison .voucher-new b { background: #e8f8f1; color: #10855d; }
+.voucher-comparison .voucher-new small { color: #10855d; font-weight: 700; }
+.voucher-saving, .voucher-totals > div { display: flex; justify-content: space-between; gap: 16px; align-items: center; }
+.voucher-saving { font-size: 13px; }
+.voucher-totals { margin: 16px 0; font-size: 13px; }
+.voucher-totals > div { padding: 9px 0; }
+.voucher-totals dt { font-weight: 400; color: var(--ss-muted); }
+.voucher-totals dd { margin: 0; font-weight: 700; white-space: nowrap; }
+.voucher-totals .voucher-new-total { border-top: 1px solid var(--ss-border); margin-top: 6px; padding-top: 14px; }
+.voucher-new-total dt, .voucher-new-total dd { color: #1679de; font-weight: 700; }
+.voucher-upgrade .ss-actions { flex-wrap: wrap; }
+@media (max-width: 480px) { .voucher-upgrade .ss-actions > button { width: 100%; } }
 </style>

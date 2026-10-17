@@ -10,6 +10,12 @@ export const useAuthStore = defineStore('auth', () => {
   // ── State ──────────────────────────────────────────────
   const token = ref(localStorage.getItem(TOKEN_KEY) || null)
   const user  = ref(JSON.parse(localStorage.getItem(USER_KEY) || 'null'))
+  const loggingOut = ref(false), logoutAuthorized = ref(false)
+  let logoutGuard = null
+  function setLogoutGuard(handler) {
+    logoutGuard = handler
+    return () => { if (logoutGuard === handler) logoutGuard = null }
+  }
 
   // ── Getters ────────────────────────────────────────────
   const isAuthenticated = computed(() => !!token.value)
@@ -50,16 +56,21 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.setItem(USER_KEY,  JSON.stringify(user.value))
   }
 
-  /** Đăng xuất — xóa token, gọi server, điều hướng về trang login tương ứng. */
+  /** Prepare the active page while credentials still exist, then end the session. */
   async function logout() {
+    if (loggingOut.value) return false
+    loggingOut.value = true
     const wasCustomer = isCustomer.value
     try {
-      await api.post('/auth/logout')
-    } catch {
-      // Bỏ qua lỗi server
-    } finally {
+      if (logoutGuard && (await logoutGuard()) === false) return false
+      logoutAuthorized.value = true
+      try { await api.post('/auth/logout') } catch { /* Local logout still works when the server is unavailable. */ }
       _clearState()
-      router.push(wasCustomer ? '/khach-hang/dang-nhap' : '/dang-nhap')
+      await router.replace(wasCustomer ? '/khach-hang/dang-nhap' : '/dang-nhap')
+      return true
+    } finally {
+      loggingOut.value = false
+      logoutAuthorized.value = false
     }
   }
 
@@ -74,13 +85,13 @@ export const useAuthStore = defineStore('auth', () => {
   function forceLogout() {
     const wasCustomer = isCustomer.value
     _clearState()
-    router.push(wasCustomer ? '/khach-hang/dang-nhap' : '/dang-nhap')
+    return router.replace(wasCustomer ? '/khach-hang/dang-nhap' : '/dang-nhap')
   }
 
   return {
     token, user,
     isAuthenticated, role, userType,
     isAdmin, isStaff, isCustomer,
-    login, logout, forceLogout
+    loggingOut, logoutAuthorized, setLogoutGuard, login, logout, forceLogout
   }
 })

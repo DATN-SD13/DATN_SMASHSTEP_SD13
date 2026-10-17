@@ -3,6 +3,7 @@ import { computed, ref, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import api from '../utils/api'
+import { showError } from '../utils/feedback'
 
 const route     = useRoute()
 const authStore = useAuthStore()
@@ -23,8 +24,10 @@ function confirmLogout() {
 }
 
 async function doLogout() {
-  showLogoutConfirm.value = false
-  await authStore.logout()
+  if (authStore.loggingOut) return
+  try {
+    if (await authStore.logout()) showLogoutConfirm.value = false
+  } catch { showError('Chưa lưu được trạng thái trước khi đăng xuất. Phiên đăng nhập vẫn được giữ.', 'Chưa thể đăng xuất') }
 }
 
 // ── Panel ca làm việc ─────────────────────────────────────
@@ -285,15 +288,16 @@ const crumbs = computed(() => ({
 
   <!-- Modal xác nhận đăng xuất -->
   <Teleport to="body">
-    <div v-if="showLogoutConfirm" class="logout-overlay" @click.self="showLogoutConfirm = false">      <div class="logout-modal" role="dialog" aria-modal="true" aria-labelledby="logout-title">
+    <div v-if="showLogoutConfirm" class="logout-overlay" @click.self="!authStore.loggingOut && (showLogoutConfirm = false)">      <div class="logout-modal" role="dialog" aria-modal="true" aria-labelledby="logout-title">
         <div class="logout-icon">
           <i class="bi bi-box-arrow-right"></i>
         </div>
         <h3 id="logout-title">Xác nhận đăng xuất</h3>
         <p>Bạn có chắc chắn muốn đăng xuất khỏi hệ thống?</p>
+        <p v-if="route.path === '/ban-hang'" class="logout-pos-hint">Giỏ hàng đã lưu vẫn được giữ. Thông tin giao hàng chưa hoàn tất sẽ không được lưu vào đơn.</p>
         <div class="logout-actions">
-          <button class="btn-cancel" @click="showLogoutConfirm = false">Hủy</button>
-          <button class="btn-confirm" @click="doLogout">Đăng xuất</button>
+          <button class="btn-cancel" :disabled="authStore.loggingOut" @click="showLogoutConfirm = false">Hủy</button>
+          <button class="btn-confirm" :disabled="authStore.loggingOut" @click="doLogout">{{ authStore.loggingOut ? 'Đang đăng xuất…' : 'Đăng xuất' }}</button>
         </div>
       </div>
     </div>
@@ -624,4 +628,9 @@ const crumbs = computed(() => ({
   display: flex; align-items: flex-start; gap: 6px;
   padding-top: 4px; border-top: 1px dashed var(--ss-border);
 }
+</style>
+
+<style scoped>
+.logout-modal .logout-pos-hint { font-size: 12px; line-height: 1.5; color: #718096; }
+.logout-actions button:disabled { opacity: .6; cursor: wait; }
 </style>
