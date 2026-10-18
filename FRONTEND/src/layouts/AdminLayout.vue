@@ -94,7 +94,7 @@ onMounted(async () => {
 // Menu theo Figma: Thống kê → Bán hàng → Hóa đơn → Sản phẩm → Khách hàng → Nhân viên → Giảm giá
 const nav = [
 
-  { label: 'Thống kê', icon: 'bi-grid-1x2', to: '/thong-ke' },
+  { label: 'Thống kê', icon: 'bi-grid-1x2', to: '/thong-ke', adminOnly: true },
   // { label: 'Thống kê tổng hợp', icon: 'bi-bar-chart-line', to: '/thong-ke-tong-hop' },
 
   { label: 'Bán hàng tại quầy', icon: 'bi-cart3', to: '/ban-hang' },

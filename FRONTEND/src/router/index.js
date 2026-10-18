@@ -59,7 +59,7 @@ const router = createRouter({
     { path: '/ban-hang',  component: POSSales,       meta: { title: 'Bán hàng tại quầy', requiresAuth: true, userType: 'NHAN_VIEN' } },
 
     // { path: '/thong-ke-tong-hop', component: () => import('../modules/admin/statistics/view/StatisticsDashboard.vue'), meta: { title: 'Thống kê tổng hợp', requiresAuth: true, userType: 'NHAN_VIEN' } },
-    { path: '/thong-ke',  component: StatisticsView, meta: { title: 'Thống kê', requiresAuth: true, userType: 'NHAN_VIEN' } },
+    { path: '/thong-ke',  component: StatisticsView, meta: { title: 'Thống kê', requiresAuth: true, userType: 'NHAN_VIEN', role: 'ADMIN' } },
 
     { path: '/san-pham',           component: () => import('../modules/admin/product/views/ProductList.vue'),    meta: { title: 'Sản phẩm', parent: prod, requiresAuth: true, userType: 'NHAN_VIEN' } },
     { path: '/san-pham/them',      component: () => import('../modules/admin/product/views/ProductCreate.vue'),  meta: { title: 'Thêm sản phẩm', parent: productParent, requiresAuth: true, userType: 'NHAN_VIEN' } },

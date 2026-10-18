@@ -1,7 +1,7 @@
 <script setup>
 import GhnLogo from '../../../../components/GhnLogo.vue'
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
-import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue'
+import { computed, ref, nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
 import { money } from '../../../../utils/paging'
 import { confirmAction, showSuccess, showError } from '../../../../utils/feedback'
 import salesService from '../services/salesService'
@@ -11,6 +11,7 @@ import customerService from '../../customer/services/customerService'
 import { useAuthStore } from '../../../../stores/auth'
 import { productAttributeService } from '../../product/services/productAttributeService'
 import ProductThumbnail from '../../product/components/ProductThumbnail.vue'
+import PosSelect from '../../product/components/Select2Control.vue'
 import { productService } from '../../product/services/productService'
 import { bankConfig, qrLink } from '../services/bankQr'
 import { imageUrl } from '../../product/services/imageUtils'
@@ -35,6 +36,7 @@ const picking = ref(false), q = ref(''), colorFilter = ref(''), sizeFilter = ref
 const categoryFilter = ref(''), brandFilter = ref(''), attributes = ref({})
 const shown = computed(() => catalog.value)
 let catalogVersion = 0, customerVersion = 0, alive = true
+let resettingCatalogFilters = false
 let searchTimer, customerTimer
 const message = e => e.response?.data?.message || e.message || 'Không thể kết nối máy chủ. Hãy thử lại.'
 const payload = o => ({ revision: o.revision, customerId: o.customerId || null, note: o.note || '', voucherCode: o.voucherCode || '', delivery: o.delivery,
@@ -908,6 +910,18 @@ function openPicker() {
   if (locked.value || !order.value) return
   q.value = ''; catalogPage.value = 0; picking.value = true; loadCatalog()
 }
+async function resetCatalogFilters() {
+  if (resettingCatalogFilters) return
+  resettingCatalogFilters = true
+  ++catalogVersion
+  clearTimeout(searchTimer)
+  q.value = ''; colorFilter.value = ''; sizeFilter.value = ''
+  categoryFilter.value = ''; brandFilter.value = ''; catalogPage.value = 0
+  error.value = ''
+  await nextTick()
+  resettingCatalogFilters = false
+  if (alive) await loadCatalog()
+}
 async function loadCatalog(silent = false) {
   const version = ++catalogVersion; if (silent !== true) loading.value = true
   try {
@@ -960,9 +974,10 @@ watch(activeId, () => {
   customerSearch.value = selectedCustomer.value?.name || ''
 })
 watch([q, colorFilter, sizeFilter, categoryFilter, brandFilter], () => {
+  if (resettingCatalogFilters) return
   catalogPage.value = 0; ++catalogVersion; clearTimeout(searchTimer); searchTimer = setTimeout(loadCatalog, 250)
 })
-watch(catalogPage, loadCatalog)
+watch(catalogPage, () => { if (!resettingCatalogFilters) loadCatalog() })
 watch(customerSearch, () => {
   ++customerVersion; clearTimeout(customerTimer)
   customerResults.value = []; customerSearchError.value = ''; customerLoading.value = true
@@ -1107,7 +1122,7 @@ onBeforeUnmount(() => { unregisterLogoutGuard(); if (typeof window !== 'undefine
           <div class="ss-head"><div class="ss-head-icon"><i class="bi bi-receipt"></i></div><h2>Thông tin đơn hàng</h2><span class="ss-spacer"></span><label class="delivery-toggle"><span>Giao hàng</span><input type="checkbox" role="switch" aria-label="Giao hàng" :checked="order.delivery.enabled" :disabled="locked" @change="toggleDelivery($event.target.checked)" /><span class="delivery-switch-track" aria-hidden="true"></span></label></div>
           <div v-if="selectedVoucher && quoteReady" class="voucher-card"><div><i class="bi bi-check2-circle"></i> {{ bestSelected ? 'Đang áp dụng phiếu tốt nhất' : 'Phiếu đang áp dụng' }}<button class="ss-icon-btn" :disabled="locked" aria-label="Bỏ phiếu" @click="applyVoucher('')">×</button></div><div><b>{{ selectedVoucher.code }} <small>{{ selectedVoucher.form === 2 ? 'Cá nhân' : 'Công khai' }}</small></b><span class="voucher-badge">{{ voucherLabel(selectedVoucher) }}</span></div><div><span>Giá trị giảm</span><b>−{{ money(order.quote.discount) }}</b></div></div>
           <div class="ss-field voucher-selector"><label class="ss-label" for="pos-voucher">Phiếu giảm giá</label>
-            <select id="pos-voucher" class="ss-select" :value="order.voucherCode" :disabled="locked || !count" @change="applyVoucher($event.target.value)">
+            <span class="pos-select2"><PosSelect :allow-clear="false" dropdown-parent-selector=".ss-modal" aria-label="Phiếu giảm giá" id="pos-voucher" :model-value="order.voucherCode" :disabled="locked || !count" @change="applyVoucher($event)">
               <option value="">Không sử dụng phiếu</option>
               <optgroup v-for="form in [2, 1]" :key="form" :label="form === 2 ? 'Phiếu cá nhân của khách' : 'Phiếu công khai'">
                 <option v-for="v in validVouchers.filter(v => Number(v.form || 1) === form)" :key="v.code" :value="v.code">{{ v.code }} · {{ voucherLabel(v) }} · Giảm {{ money(v.discount) }}</option>
@@ -1116,7 +1131,7 @@ onBeforeUnmount(() => { unregisterLogoutGuard(); if (typeof window !== 'undefine
                 <option v-for="v in order.quote.ineligibleVouchers" :key="v.code" disabled>{{ v.form === 2 ? 'Cá nhân · ' : '' }}{{ v.code }} · {{ v.reason }}</option>
               </optgroup>
               <option v-if="order.voucherCode && !validVouchers.some(v => v.code.toLowerCase() === order.voucherCode.toLowerCase())" :value="order.voucherCode">{{ order.voucherCode }}</option>
-            </select>
+            </PosSelect></span>
             <small v-if="validVouchers[0]" class="ss-hint">Phiếu tốt nhất: {{ validVouchers[0].code }} · giảm {{ money(validVouchers[0].discount) }}</small>
           </div>
           <div class="kv"><span>Tổng tiền hàng ({{ count }} sản phẩm):</span><b>{{ money(total) }}</b></div>
@@ -1176,8 +1191,8 @@ onBeforeUnmount(() => { unregisterLogoutGuard(); if (typeof window !== 'undefine
           <label v-for="a in addresses" :key="a.id" class="address-choice"><input type="radio" :value="a.id" v-model="deliveryEditor.addressId" :disabled="busy || shippingLoading" @change="selectDeliveryAddress(a)" /><span><b>{{ a.receiverName }}</b> · {{ a.receiverPhone }}<small v-if="a.isDefault" class="voucher-badge">Mặc định</small><br />{{ a.fullAddress }}</span></label>
           <label class="address-choice"><input type="radio" :value="null" v-model="deliveryEditor.addressId" :disabled="busy || shippingLoading" /> Sử dụng địa chỉ khác</label>
           <div v-if="!deliveryEditor.addressId" class="delivery-grid">
-            <label>Tỉnh/Thành phố *<select class="ss-select" v-model="addressForm.province" :disabled="busy || shippingLoading || areasLoading" @change="changeProvince" @blur="validateDeliveryField('province')" :class="{'is-invalid': deliveryFields.province}" :aria-invalid="Boolean(deliveryFields.province)" aria-describedby="delivery-province-error"><option value="">Chọn tỉnh/thành</option><option v-for="a in provinces" :key="a.id" :value="a.id">{{ a.ten }}</option></select><small v-if="deliveryFields.province" id="delivery-province-error" class="field-error" role="alert">{{ deliveryFields.province }}</small></label>
-            <label>Phường/Xã *<select class="ss-select" v-model="addressForm.ward" @change="validateDeliveryField('ward')" @blur="validateDeliveryField('ward')" :class="{'is-invalid': deliveryFields.ward}" :aria-invalid="Boolean(deliveryFields.ward)" aria-describedby="delivery-ward-error" :disabled="busy || shippingLoading || !addressForm.province || areasLoading"><option value="">Chọn phường/xã</option><option v-for="a in wards" :key="a.id" :value="a.id">{{ a.ten }}</option></select><small v-if="deliveryFields.ward" id="delivery-ward-error" class="field-error" role="alert">{{ deliveryFields.ward }}</small></label>
+            <label>Tỉnh/Thành phố *<span class="pos-select2"><PosSelect :allow-clear="false" dropdown-parent-selector=".ss-modal" aria-label="Tỉnh/Thành phố" v-model="addressForm.province" :disabled="busy || shippingLoading || areasLoading" @change="changeProvince" @blur="validateDeliveryField('province')" :class="{'is-invalid': deliveryFields.province}" :aria-invalid="Boolean(deliveryFields.province)" aria-describedby="delivery-province-error"><option value="">Chọn tỉnh/thành</option><option v-for="a in provinces" :key="a.id" :value="a.id">{{ a.ten }}</option></PosSelect></span><small v-if="deliveryFields.province" id="delivery-province-error" class="field-error" role="alert">{{ deliveryFields.province }}</small></label>
+            <label>Phường/Xã *<span class="pos-select2"><PosSelect :allow-clear="false" dropdown-parent-selector=".ss-modal" aria-label="Phường/Xã" v-model="addressForm.ward" @change="validateDeliveryField('ward')" @blur="validateDeliveryField('ward')" :class="{'is-invalid': deliveryFields.ward}" :aria-invalid="Boolean(deliveryFields.ward)" aria-describedby="delivery-ward-error" :disabled="busy || shippingLoading || !addressForm.province || areasLoading"><option value="">Chọn phường/xã</option><option v-for="a in wards" :key="a.id" :value="a.id">{{ a.ten }}</option></PosSelect></span><small v-if="deliveryFields.ward" id="delivery-ward-error" class="field-error" role="alert">{{ deliveryFields.ward }}</small></label>
             <label class="address-line">Địa chỉ cụ thể *<input class="ss-input" v-model="addressForm.street" @input="clearDeliveryField('street')" @blur="validateDeliveryField('street')" :class="{'is-invalid': deliveryFields.street}" :aria-invalid="Boolean(deliveryFields.street)" aria-describedby="delivery-street-error" :disabled="busy || shippingLoading || areasLoading" maxlength="350" /><small v-if="deliveryFields.street" id="delivery-street-error" class="field-error" role="alert">{{ deliveryFields.street }}</small></label>
           </div>
         </section>
@@ -1191,12 +1206,13 @@ onBeforeUnmount(() => { unregisterLogoutGuard(); if (typeof window !== 'undefine
     <div v-if="picking" class="ss-modal-bg" @click.self="picking = false">
       <div class="ss-modal" role="dialog" aria-modal="true" aria-label="Chọn sản phẩm">
         <div class="ss-head"><div class="ss-head-icon"><i class="bi bi-box-seam"></i></div><h2>Chọn sản phẩm</h2><span class="ss-spacer"></span>
+          <button type="button" class="ss-btn catalog-reset-btn" @click="resetCatalogFilters"><i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i> Đặt lại bộ lọc</button>
           <button class="ss-icon-btn" aria-label="Đóng" @click="picking = false"><i class="bi bi-x-lg"></i></button></div>
         <p v-if="error" role="alert">{{ error }}</p>
         <div class="ss-search"><i class="bi bi-search"></i><input class="ss-input" v-model="q" placeholder="Tìm theo mã, tên, màu sắc..." autofocus /></div>
         <div class="pos-filters">
-          <label>Màu sắc<select class="ss-select" v-model="colorFilter"><option value="">Tất cả màu sắc</option><option v-for="a in attributes.colors || []" :key="a.id" :value="a.ten">{{ a.ten }}</option></select></label>
-          <label>Size<select class="ss-select" v-model="sizeFilter"><option value="">Tất cả size</option><option v-for="a in attributes.sizes || []" :key="a.id" :value="a.giaTri || a.ten">{{ a.giaTri || a.ten }}</option></select></label><label>Danh mục<select class="ss-select" v-model="categoryFilter"><option value="">Tất cả danh mục</option><option v-for="a in attributes.categories || []" :key="a.id" :value="a.id">{{ a.ten }}</option></select></label><label>Thương hiệu<select class="ss-select" v-model="brandFilter"><option value="">Tất cả thương hiệu</option><option v-for="a in attributes.brands || []" :key="a.id" :value="a.id">{{ a.ten }}</option></select></label>
+          <label>Màu sắc<span class="pos-select2"><PosSelect :allow-clear="false" dropdown-parent-selector=".ss-modal" aria-label="Màu sắc" v-model="colorFilter"><option value="">Tất cả màu sắc</option><option v-for="a in attributes.colors || []" :key="a.id" :value="a.ten">{{ a.ten }}</option></PosSelect></span></label>
+          <label>Size<span class="pos-select2"><PosSelect :allow-clear="false" dropdown-parent-selector=".ss-modal" aria-label="Size" v-model="sizeFilter"><option value="">Tất cả size</option><option v-for="a in attributes.sizes || []" :key="a.id" :value="a.giaTri || a.ten">{{ a.giaTri || a.ten }}</option></PosSelect></span></label><label>Danh mục<span class="pos-select2"><PosSelect :allow-clear="false" dropdown-parent-selector=".ss-modal" aria-label="Danh mục" v-model="categoryFilter"><option value="">Tất cả danh mục</option><option v-for="a in attributes.categories || []" :key="a.id" :value="a.id">{{ a.ten }}</option></PosSelect></span></label><label>Thương hiệu<span class="pos-select2"><PosSelect :allow-clear="false" dropdown-parent-selector=".ss-modal" aria-label="Thương hiệu" v-model="brandFilter"><option value="">Tất cả thương hiệu</option><option v-for="a in attributes.brands || []" :key="a.id" :value="a.id">{{ a.ten }}</option></PosSelect></span></label>
         </div>
         <div class="ss-table-wrap">
           <table class="ss-table" style="min-width:600px">
@@ -1371,4 +1387,40 @@ onBeforeUnmount(() => { unregisterLogoutGuard(); if (typeof window !== 'undefine
 .voucher-new-total dt, .voucher-new-total dd { color: #1679de; font-weight: 700; }
 .voucher-upgrade .ss-actions { flex-wrap: wrap; }
 @media (max-width: 480px) { .voucher-upgrade .ss-actions > button { width: 100%; } }
+</style>
+
+<style scoped>
+.catalog-reset-btn { flex-shrink: 0; min-height: 34px; gap: 7px; color: var(--ss-primary); border-color: var(--ss-border); font-size: 12px; }
+.catalog-reset-btn:hover { background: var(--ss-primary-soft); border-color: var(--ss-primary); }
+@media (max-width: 540px) {
+  .ss-modal[aria-label="Chọn sản phẩm"] > .ss-head { flex-wrap: wrap; }
+  .catalog-reset-btn { order: 1; width: 100%; justify-content: center; }
+}
+</style>
+
+<style scoped>
+.pos-select2 { display: block; min-width: 0; width: 100%; }
+.pos-select2 :deep(.select2-container) { width: 100% !important; min-width: 0; font-family: inherit; font-size: 12px; }
+.pos-select2 :deep(.select2-selection--single) { min-height: 40px; height: 40px; display: flex; align-items: center; background: var(--ss-surface); border: 1px solid var(--ss-border); border-radius: 8px; }
+.pos-select2 :deep(.select2-selection--single .select2-selection__rendered) { display: block; width: 100%; line-height: 38px; padding-left: 12px; padding-right: 30px; color: var(--ss-text) !important; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pos-select2 :deep(.select2-selection--single .select2-selection__placeholder) { color: var(--ss-text) !important; }
+.pos-select2 :deep(.select2-selection--single .select2-selection__arrow) { height: 38px; right: 8px; }
+.pos-select2 :deep(.select2-container--focus .select2-selection),.pos-select2 :deep(.select2-container--open .select2-selection) { border-color: var(--ss-primary); box-shadow: 0 0 0 3px rgba(40,121,227,.1); }
+.pos-select2 :deep(.select2-container--disabled .select2-selection) { opacity: .6; cursor: not-allowed; }
+.pos-select2 :deep(.is-invalid + .select2-container .select2-selection) { border-color: #dc3545; }
+.ss-modal :deep(.select2-container--open .select2-dropdown) { z-index: 20; border-color: var(--ss-border); border-radius: 8px; overflow: hidden; font-size: 12px; color: var(--ss-text); }
+.ss-modal :deep(.select2-search__field) { border: 1px solid var(--ss-border); border-radius: 6px; padding: 8px; outline-color: var(--ss-primary); }
+.ss-modal :deep(.select2-results__option--highlighted[aria-selected]) { background: var(--ss-primary); color: #fff; }
+</style>
+
+<style scoped>
+/* Keep image badges inside the table's layer, below Select2 popups. */
+.ss-modal[aria-label="Chọn sản phẩm"] > .ss-table-wrap {
+  position: relative;
+  z-index: 0;
+  isolation: isolate;
+}
+.ss-modal > :deep(.select2-container--open) {
+  z-index: 20;
+}
 </style>
