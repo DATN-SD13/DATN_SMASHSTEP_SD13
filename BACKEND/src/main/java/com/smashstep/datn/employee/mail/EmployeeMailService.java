@@ -17,7 +17,7 @@ public class EmployeeMailService {
     @Value("${spring.mail.username}")
     private String fromEmail;
 
-    @Value("${smashstep.website-url:http://localhost:5173}")
+    @Value("${smashstep.website-url:${app.frontend-url:http://localhost:5173}}")
     private String frontendUrl;
 
     public EmployeeMailService(JavaMailSender mailSender) {

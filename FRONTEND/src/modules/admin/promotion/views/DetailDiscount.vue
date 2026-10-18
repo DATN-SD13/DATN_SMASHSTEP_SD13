@@ -1,4 +1,6 @@
 <script setup>
+import { voucherRemaining } from '../services/voucherUsage'
+import { showError } from '../../../../utils/feedback'
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -37,7 +39,7 @@ function formatDate(value) {
     date.split('-')
 
   return y && m && d
-    ? `${d}/${m}/${y}`
+    ? `${d}/${m}/${y}${String(value).length >= 16 ? " " + String(value).substring(11, 16) : ""}`
     : date
 }
 
@@ -57,7 +59,7 @@ async function loadDetail() {
 
     console.error(error)
 
-    alert(
+    showError(
       error.response?.data?.message ||
       'Không thể tải chi tiết phiếu giảm giá!'
     )
@@ -140,12 +142,12 @@ onMounted(loadDetail)
 
           <div class="detail-item">
             <span>Mã phiếu</span>
-            <strong>{{ voucher.code }}</strong>
+            <strong>{{ voucher.code || '—' }}</strong>
           </div>
 
           <div class="detail-item">
             <span>Tên phiếu</span>
-            <strong>{{ voucher.name }}</strong>
+            <strong>{{ voucher.name || '—' }}</strong>
           </div>
 
           <div class="detail-item">
@@ -166,7 +168,7 @@ onMounted(loadDetail)
             <strong>
               {{
                 voucher.discountType === 1
-                  ? `${voucher.discountValue}%`
+                  ? (voucher.discountValue == null ? '—' : `${voucher.discountValue}%`)
                   : formatMoney(voucher.discountValue)
               }}
             </strong>
@@ -187,17 +189,22 @@ onMounted(loadDetail)
           </div>
 
           <div class="detail-item">
-            <span>Số lượng</span>
+            <span>Tổng lượt phát hành</span>
             <strong>
-              {{ voucher.unlimited ? 'Không giới hạn' : voucher.quantity }}
+              {{ voucher.unlimited ? 'Không giới hạn' : (voucher.quantity ?? '—') }}
             </strong>
           </div>
 
           <div class="detail-item">
             <span>Đã sử dụng</span>
             <strong>
-              {{ voucher.usedQuantity }}
+              {{ voucher.usedQuantity ?? 0 }}
             </strong>
+          </div>
+
+          <div class="detail-item">
+            <span>Còn lại</span>
+            <strong class="voucher-remaining">{{ voucherRemaining(voucher) }}</strong>
           </div>
 
           <div class="detail-item">
@@ -321,4 +328,8 @@ onMounted(loadDetail)
 
 }
 
+</style>
+
+<style scoped>
+.voucher-remaining { color: #208969; }
 </style>

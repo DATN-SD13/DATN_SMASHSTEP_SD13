@@ -4,10 +4,13 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 @Getter
 @Setter
 public class PhieuGiamGiaResponse {
+
+    private VoucherEmailResult emailResult = new VoucherEmailResult();
 
     private Long id;
 
@@ -37,6 +40,10 @@ public class PhieuGiamGiaResponse {
     private String statusLabel;
 
     private String description;
-// vo han phieu
+    // vo han phieu
     private Boolean unlimited;
+    private List<Long> customerIds;
+
+    private Integer timeStatus;
+    private String timeStatusLabel;
 }

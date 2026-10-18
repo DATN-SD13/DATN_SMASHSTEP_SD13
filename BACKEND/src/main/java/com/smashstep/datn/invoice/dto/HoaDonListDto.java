@@ -4,6 +4,8 @@ import com.smashstep.datn.customer.entity.KhachHang;
 import com.smashstep.datn.employee.entity.NhanVien;
 import com.smashstep.datn.invoice.entity.HoaDon;
 import com.smashstep.datn.invoice.enums.LoaiHoaDon;
+import com.smashstep.datn.invoice.enums.HinhThucNhan;
+import com.smashstep.datn.invoice.rules.HoaDonRules;
 import com.smashstep.datn.invoice.enums.TrangThaiHoaDon;
 import com.smashstep.datn.payment.entity.PhuongThucThanhToan;
 import lombok.Builder;
@@ -20,6 +22,9 @@ public class HoaDonListDto {
     private final String maHoaDon;
     private final String tenNhanVien;
     private final String maNhanVien;
+    private final Long idKhachHang;
+    private final String maKhachHang;
+    private final Long idNhanVien;
     private final String tenKhachHang;
     private final String soDienThoai;
     private final String ngayTao;
@@ -29,6 +34,8 @@ public class HoaDonListDto {
     private final BigDecimal thanhTien;
     private final String loaiHoaDon;
     private final Integer maLoaiHoaDon;
+    private final String hinhThucNhan;
+    private final Integer maHinhThucNhan;
     private final String trangThai;
     private final String lopTrangThai;
     private final Integer maTrangThai;
@@ -41,25 +48,31 @@ public class HoaDonListDto {
         PhuongThucThanhToan pt = h.getIdPhuongThucThanhToan();
         TrangThaiHoaDon tt = TrangThaiHoaDon.tuMa(h.getTrangThai());
         LoaiHoaDon loai = LoaiHoaDon.tuMa(h.getLoaiHoaDon());
+        HinhThucNhan htn = HoaDonRules.resolveHinhThucNhan(h);
 
         return HoaDonListDto.builder()
                 .id(h.getId())
                 .maHoaDon(h.getMaHoaDon())
                 .tenNhanVien(nv != null ? nv.getTenNhanVien() : null)
                 .maNhanVien(nv != null ? nv.getMaNhanVien() : null)
-                .tenKhachHang(firstNotBlank(kh != null ? kh.getTenKhachHang() : null, h.getHoTenNguoiNhan(), "Khách lẻ"))
+                .idKhachHang(kh != null ? kh.getId() : null)
+                .maKhachHang(kh != null ? kh.getMaKhachHang() : null)
+                .idNhanVien(nv != null ? nv.getId() : null)
+                .tenKhachHang(firstNotBlank(h.getHoTenNguoiNhan(), kh != null ? kh.getTenKhachHang() : null, "Khách lẻ"))
                 .soDienThoai(firstNotBlank(h.getSoDienThoaiNguoiNhan(), kh != null ? kh.getSoDienThoai() : null, ""))
                 .ngayTao(h.getNgayTao() != null ? h.getNgayTao().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss")) : null)
                 .tongTien(nz(h.getTongTien()))
-                .tienGiamGia(nz(h.getTienGiamGia()))
+                .tienGiamGia(HoaDonAmounts.discount(h))
                 .phiVanChuyen(nz(h.getPhiVanChuyen()))
                 .thanhTien(nz(h.getThanhTien()))
                 .loaiHoaDon(loai != null ? loai.getKhoa() : null)
                 .maLoaiHoaDon(h.getLoaiHoaDon())
+                .hinhThucNhan(htn.getNhan())
+                .maHinhThucNhan(htn.getMa())
                 .trangThai(tt != null ? tt.getNhan() : "Không xác định")
                 .lopTrangThai(tt != null ? tt.getLop() : "unknown")
                 .maTrangThai(h.getTrangThai())
-                .phuongThucThanhToan(pt != null ? pt.getTenPhuongThuc() : null)
+                .phuongThucThanhToan(pt != null ? pt.getTenPhuongThuc() : com.smashstep.datn.invoice.rules.PosDraftRules.managed(h) && h.getNgayThanhToan() != null ? "Kết hợp" : null)
                 .diaChi(h.getDiaChiGiaoHang())
                 .build();
     }

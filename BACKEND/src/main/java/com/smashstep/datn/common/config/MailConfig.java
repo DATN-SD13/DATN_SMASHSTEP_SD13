@@ -1,15 +1,9 @@
 package com.smashstep.datn.common.config;
 
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.crypto.password.PasswordEncoder;
 
 @Configuration
 public class MailConfig {
-
-    @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
-    }
+    // Mail được cấu hình qua application.properties (spring.mail.*)
+    // PasswordEncoder đã được khai báo trong SecurityConfig
 }

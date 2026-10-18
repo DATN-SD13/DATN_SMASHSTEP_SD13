@@ -21,9 +21,13 @@ public class LichSuThanhToanDto {
 
     public static LichSuThanhToanDto from(LichSuThanhToan item) {
         Integer status = item.getTrangThai();
-        String statusLabel = status != null && status == 1 ? "Đã thanh toán" : "Chưa thanh toán";
-        String method = item.getIdPhuongThucThanhToan() != null
-                ? item.getIdPhuongThucThanhToan().getTenPhuongThuc()
+        String statusLabel = Integer.valueOf(2).equals(status) ? "Đã hoàn tiền" : Integer.valueOf(1).equals(status) ? "Đã thanh toán" : "Chờ đối soát";
+        var paymentMethod = item.getIdPhuongThucThanhToan();
+        if (paymentMethod == null && item.getIdHoaDon() != null) {
+            paymentMethod = item.getIdHoaDon().getIdPhuongThucThanhToan();
+        }
+        String method = paymentMethod != null
+                ? paymentMethod.getTenPhuongThuc()
                 : "Chưa cập nhật";
 
         return LichSuThanhToanDto.builder()
@@ -34,7 +38,7 @@ public class LichSuThanhToanDto {
                 .thoiGian(item.getThoiGian() == null ? null : item.getThoiGian().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss")))
                 .maTrangThai(status)
                 .trangThai(statusLabel)
-                .moTa(item.getMoTa())
+                .moTa(item.getMoTa() == null ? null : item.getMoTa().replaceFirst("^POS2:[0-9a-f]{64} \\| ", ""))
                 .build();
     }
 }

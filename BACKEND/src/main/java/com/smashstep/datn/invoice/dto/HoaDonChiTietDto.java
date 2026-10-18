@@ -25,6 +25,9 @@ public class HoaDonChiTietDto {
     private Integer soLuong;
     private BigDecimal donGia;
     private BigDecimal thanhTien;
+    private BigDecimal giaGoc;
+    private BigDecimal phanTramGiam;
+    public void priceSnapshot(BigDecimal original, BigDecimal percent) { this.giaGoc = original; this.phanTramGiam = percent; }
 
     public static HoaDonChiTietDto from(HoaDonChiTiet chiTiet) {
         String tenSanPham = null;

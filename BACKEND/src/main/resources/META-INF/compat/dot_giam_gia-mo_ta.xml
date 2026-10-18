@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<entity-mappings xmlns="https://jakarta.ee/xml/ns/persistence/orm" version="3.2">
+    <entity class="com.smashstep.datn.promotion.entity.DotGiamGia" access="FIELD">
+        <attributes><transient name="moTa" /></attributes>
+    </entity>
+</entity-mappings>

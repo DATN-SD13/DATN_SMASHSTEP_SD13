@@ -45,7 +45,6 @@ function onKeydown(event) {
         <div v-for="(item, index) in details" :key="index"><dt>{{ item.label }}</dt><dd>{{ item.value }}</dd></div>
       </dl>
       <slot />
-      <div v-if="error" class="alert alert-danger" role="alert">{{ error }}</div>
       <div v-if="loading" role="status">Đang xử lý...</div>
       <div class="p-form-actions">
         <button ref="cancelButton" type="button" class="p-btn" :disabled="loading" @click="cancel">{{ cancelText }}</button>

@@ -37,6 +37,11 @@ public class SanPhamResponse {
     private long soKichThuoc;
     private String anhChinh;
 
+    private BigDecimal giaSauGiamThapNhat;
+    private BigDecimal giaSauGiamCaoNhat;
+    private Boolean dangGiamGia;
+    private BigDecimal phanTramGiamCaoNhat;
+
     public String getDanhMuc() { return tenDanhMuc; }
     public String getThuongHieu() { return tenThuongHieu; }
     public String getChatLieu() { return tenChatLieu; }

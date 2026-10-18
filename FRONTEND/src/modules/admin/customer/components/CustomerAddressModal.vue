@@ -6,65 +6,17 @@ import {
 } from 'vue'
 
 import { useAddressApi } from '../../../../composables/useAddressApi'
-import AppToast
-  from '../../../../components/AppToast.vue'
-
-import ConfirmModal
-  from '../../../../components/ConfirmModal.vue'
-
-import {
-  useToast
-} from '../../../../composables/useToast'
 
 import customerService
   from '../services/customerService'
-  const props = defineProps({
+import { confirmAction, showSuccess, showError } from '../../../../utils/feedback'
+
+const props = defineProps({
   customer: {
     type: Object,
     required: true
   }
 })
-
-const {
-  toast,
-  success,
-  error: showError,
-  closeToast
-} = useToast()
-
-const confirmModal = ref({
-  show: false,
-  title: '',
-  message: '',
-  action: null
-})
-
-const confirmLoading = ref(false)
-
-function closeConfirm() {
-  if (confirmLoading.value) {
-    return
-  }
-
-  confirmModal.value.show = false
-  confirmModal.value.action = null
-}
-
-async function executeConfirm() {
-  if (!confirmModal.value.action) {
-    return
-  }
-
-  confirmLoading.value = true
-
-  try {
-    await confirmModal.value.action()
-  } finally {
-    confirmLoading.value = false
-    confirmModal.value.show = false
-    confirmModal.value.action = null
-  }
-}
 
 const emit = defineEmits([
   'close',
@@ -75,26 +27,8 @@ const addresses = ref([])
 const loading = ref(false)
 const saving = ref(false)
 const err = ref('')
+const msg = ref('')
 const editingId = ref(null)
-
-
-let toastTimer = null
-
-function showToast(message, type = 'success') {
-  if (toastTimer) {
-    clearTimeout(toastTimer)
-  }
-
-  toast.value = {
-    show: true,
-    message,
-    type
-  }
-
-  toastTimer = setTimeout(() => {
-    toast.value.show = false
-  }, 3000)
-}
 
 const emptyForm = () => ({
   receiverName: '',
@@ -111,23 +45,7 @@ const f = ref(
   emptyForm()
 )
 
-const {
-  provinces,
-  wards,
-
-  provinceCode,
-  wardCode,
-
-  loadingProvinces,
-  loadingWards,
-
-  addressError,
-
-  changeProvince,
-  changeWard,
-  restoreAddress,
-  resetAddress
-} = useAddressApi(f)
+const { provinces, wards, loadingProvinces, loadingWards, addressError, changeProvince, resetAddress } = useAddressApi(f)
 
 const errorMessage = (e) =>
   e?.response?.data?.message ||
@@ -150,36 +68,49 @@ async function load() {
 }
 
 function resetForm() {
+  if (saving.value) return
   editingId.value = null
-
   f.value = emptyForm()
-
-  resetAddress()
-
+    resetAddress()
   err.value = ''
+  msg.value = ''
 }
 
 function edit(a) {
+  if (saving.value || loading.value) return
   editingId.value = a.id
+  err.value = ''
+  msg.value = ''
 
   f.value = {
-    receiverName: a.receiverName || '',
-    receiverPhone: a.receiverPhone || '',
+    receiverName:
+      a.receiverName || '',
 
-    province: a.province || '',
-    district: a.district || '',
-    ward: a.ward || '',
+    receiverPhone:
+      a.receiverPhone || '',
 
-    street: a.street || '',
+    province:
+      a.province || '',
 
-    addressType: a.addressType ?? 1,
-    isDefault: !!a.isDefault
+    district:
+      a.district || '',
+
+    ward:
+      a.ward || '',
+
+    street:
+      a.street || '',
+
+    addressType:
+      a.addressType ?? 1,
+
+    isDefault:
+      !!a.isDefault
   }
-
-  restoreAddress()
 }
 
 async function save() {
+  if (saving.value || loading.value) return
   const v = f.value
 
   if (
@@ -189,16 +120,8 @@ async function save() {
     !v.ward ||
     !v.street.trim()
   ) {
-    const message =
+    err.value =
       'Vui lòng nhập đầy đủ các trường bắt buộc.'
-
-    err.value = message
-
-    showError(
-      message,
-      'Dữ liệu không hợp lệ'
-    )
-
     return
   }
 
@@ -207,21 +130,14 @@ async function save() {
       v.receiverPhone.trim()
     )
   ) {
-    const message =
+    err.value =
       'Số điện thoại phải gồm 10 số và bắt đầu bằng 0.'
-
-    err.value = message
-
-    showError(
-      message,
-      'Dữ liệu không hợp lệ'
-    )
-
     return
   }
 
   saving.value = true
   err.value = ''
+  msg.value = ''
 
   try {
     const payload = {
@@ -234,7 +150,8 @@ async function save() {
       province:
         v.province,
 
-      district: null,
+      district:
+        v.district?.trim() || null,
 
       ward:
         v.ward,
@@ -243,176 +160,103 @@ async function save() {
         v.street.trim(),
 
       addressType:
-        Number(
-          v.addressType
-        ),
+        Number(v.addressType),
 
       isDefault:
         !!v.isDefault
     }
 
-    const isEditing =
-      !!editingId.value
-
-    if (isEditing) {
-      await customerService
-        .updateAddress(
-          props.customer.code,
-          editingId.value,
-          payload
-        )
+    if (editingId.value) {
+      await customerService.updateAddress(
+        props.customer.code,
+        editingId.value,
+        payload
+      )
     } else {
-      await customerService
-        .createAddress(
-          props.customer.code,
-          payload
-        )
+      await customerService.createAddress(
+        props.customer.code,
+        payload
+      )
     }
 
-    resetForm()
+    editingId.value = null
+    f.value = emptyForm()
+    resetAddress()
 
     await load()
-
-    success(
-      isEditing
-        ? 'Cập nhật địa chỉ thành công'
-        : 'Thêm địa chỉ thành công',
-
-      isEditing
-        ? 'Cập nhật thành công'
-        : 'Thêm thành công'
-    )
+    msg.value = 'Đã lưu địa chỉ thành công.'
+    showSuccess(msg.value)
 
     emit('changed')
-
   } catch (e) {
-    const message =
-      errorMessage(e)
-
-    err.value = message
-
-    showError(
-      message,
-      'Thao tác thất bại'
-    )
-
+    err.value = errorMessage(e)
   } finally {
     saving.value = false
   }
 }
 
 async function makeDefault(a) {
-  if (a.isDefault) {
+  if (a.isDefault || saving.value || loading.value) {
     return
   }
 
+  saving.value = true
+  err.value = ''
+  msg.value = ''
   try {
-    await customerService
-      .setDefaultAddress(
-        props.customer.code,
-        a.id
-      )
+    await customerService.setDefaultAddress(
+      props.customer.code,
+      a.id
+    )
 
     await load()
-
-    success(
-      'Đặt địa chỉ mặc định thành công',
-      'Cập nhật thành công'
-    )
+    msg.value = 'Đã đặt địa chỉ mặc định.'
+    showSuccess(msg.value)
 
     emit('changed')
-
   } catch (e) {
-    const message =
-      errorMessage(e)
-
-    err.value = message
-
-    showError(
-      message,
-      'Cập nhật thất bại'
-    )
+    err.value = errorMessage(e)
+  } finally {
+    saving.value = false
   }
 }
 
-function stop(a) {
-  confirmModal.value = {
-    show: true,
-
-    title:
-      'Xác nhận cập nhật',
-
-    message:
-      `Bạn có chắc chắn muốn ngừng sử dụng địa chỉ của ${a.receiverName || 'khách hàng'} không?`,
-
-    action: async () => {
-      try {
-        await customerService
-          .stopAddress(
-            props.customer.code,
-            a.id
-          )
-
-        if (
-          editingId.value ===
-          a.id
-        ) {
-          resetForm()
-        }
-
-        await load()
-
-        success(
-          'Ngừng sử dụng địa chỉ thành công',
-          'Cập nhật thành công'
-        )
-
-        emit('changed')
-
-      } catch (e) {
-        const message =
-          errorMessage(e)
-
-        err.value = message
-
-        showError(
-          message,
-          'Cập nhật thất bại'
-        )
+async function stop(a) {
+  if (saving.value || loading.value) return
+  confirmAction('Ngừng sử dụng địa chỉ này?', async () => {
+    if (saving.value || loading.value) return
+    saving.value = true
+    err.value = ''
+    msg.value = ''
+    try {
+      await customerService.stopAddress(props.customer.code, a.id)
+      if (editingId.value === a.id) {
+        editingId.value = null
+        f.value = emptyForm()
+    resetAddress()
       }
+      await load()
+      msg.value = 'Đã ngừng sử dụng địa chỉ.'
+      showSuccess(msg.value)
+      emit('changed')
+    } catch (e) {
+      err.value = errorMessage(e)
+      showError(err.value)
+    } finally {
+      saving.value = false
     }
-  }
+  })
 }
 
 onMounted(load)
 </script>
 
 <template>
-
-  <AppToast
-  :show="toast.show"
-  :type="toast.type"
-  :title="toast.title"
-  :message="toast.message"
-  @close="closeToast"
-/>
-
-<ConfirmModal
-  :show="confirmModal.show"
-  :title="confirmModal.title"
-  :message="confirmModal.message"
-  :loading="confirmLoading"
-  confirm-text="Đồng ý"
-  cancel-text="Hủy"
-  @confirm="executeConfirm"
-  @cancel="closeConfirm"
-/>
-
-  
   <div
     class="modal-mask"
     @click.self="$emit('close')"
   >
+    <p v-if="addressError" class="ss-alert error" role="alert">{{ addressError }}</p>
     <section class="modal-card">
 
       <div class="modal-head">
@@ -487,6 +331,7 @@ onMounted(load)
             <button
               class="ss-icon-btn"
               title="Sửa"
+              :disabled="saving || loading"
               @click="edit(a)"
             >
               <i class="bi bi-pencil"></i>
@@ -495,7 +340,7 @@ onMounted(load)
             <button
               class="ss-icon-btn"
               title="Đặt mặc định"
-              :disabled="a.isDefault"
+              :disabled="a.isDefault || saving || loading"
               @click="makeDefault(a)"
             >
               <i class="bi bi-star"></i>
@@ -504,6 +349,7 @@ onMounted(load)
             <button
               class="ss-icon-btn danger"
               title="Ngừng sử dụng"
+              :disabled="saving || loading"
               @click="stop(a)"
             >
               <i class="bi bi-trash"></i>
@@ -566,69 +412,31 @@ onMounted(load)
 
           <div class="ss-field">
 
-  <label class="ss-label">
-    Tỉnh/Thành phố
-    <span class="req">*</span>
-  </label>
+            <label class="ss-label">
+              Tỉnh/Thành phố
+              <span class="req">*</span>
+            </label>
 
-  <select
-    class="ss-select"
-    v-model="provinceCode"
-    :disabled="loadingProvinces"
-    @change="changeProvince"
-  >
-
-    <option value="">
-      -- Chọn tỉnh/thành --
-    </option>
-
-    <option
-      v-for="p in provinces"
-      :key="p.code"
-      :value="String(p.code)"
-    >
-      {{ p.name }}
-    </option>
-
-  </select>
-
-</div>
+            <select class="ss-select" v-model="f.province" :disabled="loadingProvinces" @change="changeProvince">
+              <option value="">Chọn tỉnh/thành</option>
+              <option v-for="p in provinces" :key="p.code" :value="p.name">{{ p.name }}</option>
+            </select>
+          </div>
 
           <div class="ss-field">
 
-  <label class="ss-label">
-    Phường/Xã
-    <span class="req">*</span>
-  </label>
+            <label class="ss-label">
+              Phường/Xã
+              <span class="req">*</span>
+            </label>
 
-  <select
-    class="ss-select"
-    v-model="wardCode"
-    :disabled="!provinceCode || loadingWards"
-    @change="changeWard"
-  >
+            <select class="ss-select" v-model="f.ward" :disabled="loadingWards || !f.province">
+              <option value="">Chọn phường/xã</option>
+              <option v-for="w in wards" :key="w.code" :value="w.name">{{ w.name }}</option>
+            </select>
+          </div>
 
-    <option value="">
-      -- Chọn phường/xã --
-    </option>
-
-    <option
-      v-for="w in wards"
-      :key="w.code"
-      :value="String(w.code)"
-    >
-      {{ w.name }}
-    </option>
-
-  </select>
-
-</div>
-
-<p v-if="addressError" class="text-danger">
-  {{ addressError }}
-</p>
-
-          <!-- <div class="ss-field">
+          <div class="ss-field">
 
             <label class="ss-label">
               Quận/Huyện
@@ -639,7 +447,7 @@ onMounted(load)
               v-model="f.district"
               placeholder="Không bắt buộc"
             />
-          </div> -->
+          </div>
 
           <div class="ss-field">
 
@@ -674,7 +482,6 @@ onMounted(load)
               placeholder="Số nhà, tên đường..."
             />
           </div>
-          
 
           <div class="ss-field check-field">
 
@@ -698,11 +505,13 @@ onMounted(load)
           {{ err }}
         </p>
 
+        <p v-if="msg" class="ss-hint" role="status">{{ msg }}</p>
+
         <div class="ss-actions left">
 
           <button
             class="ss-btn primary"
-            :disabled="saving"
+            :disabled="saving || loading"
             @click="save"
           >
             {{
@@ -719,6 +528,7 @@ onMounted(load)
           <button
             v-if="editingId"
             class="ss-btn"
+            :disabled="saving || loading"
             @click="resetForm"
           >
             Hủy sửa
@@ -832,140 +642,6 @@ onMounted(load)
   .address-item {
     align-items: flex-start;
     flex-direction: column;
-  }
-}
-
-/* ================================
-   TOAST NOTIFICATION
-================================ */
-
-.app-toast {
-  position: fixed;
-  top: 24px;
-  right: 24px;
-
-  z-index: 99999;
-
-  min-width: 330px;
-  max-width: 430px;
-
-  display: flex;
-  align-items: center;
-  gap: 12px;
-
-  padding: 14px 16px;
-
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 14px;
-
-  box-shadow:
-    0 12px 35px rgba(15, 23, 42, 0.16);
-
-  color: #0f172a;
-}
-
-.app-toast.success {
-  border-left: 5px solid #22c55e;
-}
-
-.app-toast.error {
-  border-left: 5px solid #ef4444;
-}
-
-.toast-icon {
-  width: 38px;
-  height: 38px;
-
-  flex-shrink: 0;
-
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  border-radius: 50%;
-
-  font-size: 18px;
-}
-
-.success .toast-icon {
-  color: #15803d;
-  background: #dcfce7;
-}
-
-.error .toast-icon {
-  color: #dc2626;
-  background: #fee2e2;
-}
-
-.toast-content {
-  flex: 1;
-
-  display: flex;
-  flex-direction: column;
-
-  gap: 2px;
-}
-
-.toast-content strong {
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.toast-content span {
-  font-size: 13px;
-  color: #64748b;
-}
-
-.toast-close {
-  width: 30px;
-  height: 30px;
-
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  border: 0;
-  border-radius: 8px;
-
-  background: transparent;
-  color: #94a3b8;
-
-  cursor: pointer;
-}
-
-.toast-close:hover {
-  background: #f1f5f9;
-  color: #475569;
-}
-
-
-/* Animation */
-
-.toast-enter-active,
-.toast-leave-active {
-  transition:
-    opacity 0.25s ease,
-    transform 0.25s ease;
-}
-
-.toast-enter-from,
-.toast-leave-to {
-  opacity: 0;
-  transform: translateX(30px);
-}
-
-
-/* Mobile */
-
-@media (max-width: 640px) {
-  .app-toast {
-    top: 16px;
-    left: 16px;
-    right: 16px;
-
-    min-width: 0;
-    max-width: none;
   }
 }
 </style>

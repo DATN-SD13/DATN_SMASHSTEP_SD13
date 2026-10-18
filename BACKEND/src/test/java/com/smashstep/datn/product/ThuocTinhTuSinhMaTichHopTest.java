@@ -47,7 +47,7 @@ class ThuocTinhTuSinhMaTichHopTest {
             mvc.perform(get("/api/product-attributes/" + type + "/next-code"))
                     .andExpect(status().isOk()).andExpect(jsonPath("$.ma").value(preview));
             Map<String, Object> request = new LinkedHashMap<>(Map.of("ten", testName + "-" + type, "trangThai", 1));
-            if (type.equals("colors")) request.put("maMauHex", "#00FFFF");
+            if (type.equals("colors")) request.put("maMauHex", String.format("#%06X", UUID.randomUUID().hashCode() & 0xFFFFFF));
             String body = mvc.perform(post("/api/product-attributes/" + type).contentType(MediaType.APPLICATION_JSON)
                             .content(mapper.writeValueAsString(request)))
                     .andExpect(status().isCreated()).andExpect(jsonPath("$.ma").value(preview))
@@ -60,11 +60,13 @@ class ThuocTinhTuSinhMaTichHopTest {
             assertEquals(new java.math.BigInteger(preview.substring(2)).add(java.math.BigInteger.ONE),
                     new java.math.BigInteger(next.substring(2)));
             request.put("ma", "FORGED999"); request.put("ten", testName + "-second-" + type);
+            if (type.equals("colors")) request.put("maMauHex", String.format("#%06X", UUID.randomUUID().hashCode() & 0xFFFFFF));
             mvc.perform(post("/api/product-attributes/" + type).contentType(MediaType.APPLICATION_JSON)
                             .content(mapper.writeValueAsString(request)))
                     .andExpect(status().isCreated()).andExpect(jsonPath("$.ma").value(next));
 
             request.put("ma", entry.getValue() + "999"); request.put("ten", testName + "-updated-" + type);
+            if (type.equals("colors")) request.put("maMauHex", service.layChiTiet(type, id).getMaMauHex());
             mvc.perform(put("/api/product-attributes/" + type + "/" + id).contentType(MediaType.APPLICATION_JSON)
                             .content(mapper.writeValueAsString(request)))
                     .andExpect(status().isOk()).andExpect(jsonPath("$.ma").value(preview));
@@ -83,7 +85,7 @@ class ThuocTinhTuSinhMaTichHopTest {
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").value("Kích thước không có mã."));
         mvc.perform(get("/api/product-attributes/unknown/next-code")).andExpect(status().isBadRequest());
         String body = mvc.perform(post("/api/product-attributes/sizes").contentType(MediaType.APPLICATION_JSON)
-                        .content(mapper.writeValueAsString(Map.of("giaTri", testName + "-46.5", "ghiChu", "Test size", "trangThai", 1))))
+                        .content(mapper.writeValueAsString(Map.of("giaTri", "46." + new java.math.BigInteger(UUID.randomUUID().toString().replace("-", ""), 16), "ghiChu", "Test size", "trangThai", 1))))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.ma").isEmpty())
                 .andReturn().getResponse().getContentAsString();
         long id = mapper.readTree(body).get("id").asLong();

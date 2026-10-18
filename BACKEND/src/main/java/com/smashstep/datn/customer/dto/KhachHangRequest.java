@@ -39,7 +39,7 @@ public class KhachHangRequest {
     @PastOrPresent(message = "Ngày sinh không được lớn hơn ngày hiện tại")
     private LocalDate dob;
 
-    private String image;
+    @Size(max = 1000) private String image;
 
     @Valid
     private DiaChiKhachHangRequest defaultAddress;

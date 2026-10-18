@@ -55,7 +55,7 @@ onMounted(loadEmployee)
         </button>
 
         <strong v-if="employee">
-          Mã nhân viên: {{ employee.code }}
+          Mã nhân viên: {{ employee.code || '—' }}
         </strong>
       </div>
 

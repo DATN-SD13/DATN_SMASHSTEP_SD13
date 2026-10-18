@@ -1,6 +1,8 @@
 package com.smashstep.datn.customer.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Getter;
@@ -39,6 +41,8 @@ public class DiaChiKhachHangRequest {
     @Size(max = 500)
     private String street;
 
+    @Min(value = 1, message = "Loại địa chỉ chỉ nhận 1 hoặc 2")
+    @Max(value = 2, message = "Loại địa chỉ chỉ nhận 1 hoặc 2")
     private Integer addressType = 1;
 
     private Boolean isDefault = false;

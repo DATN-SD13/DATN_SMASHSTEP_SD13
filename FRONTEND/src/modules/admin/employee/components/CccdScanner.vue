@@ -29,7 +29,7 @@ let finished = false
 
 /* ================================
    XỬ LÝ DỮ LIỆU CCCD
-================================ */
+-------------------------------- */
 
 function normalizeText(value) {
   return String(value ?? '').trim()
@@ -63,6 +63,8 @@ function parseDate(value) {
   const year =
     text.slice(4, 8)
 
+  const date = new Date(Number(year), Number(month) - 1, Number(day))
+  if (date.getFullYear() !== Number(year) || date.getMonth() !== Number(month) - 1 || date.getDate() !== Number(day)) return ''
   return `${year}-${month}-${day}`
 }
 
@@ -91,7 +93,7 @@ function parseCccd(text) {
       .split('|')
       .map(item => item.trim())
 
-  if (parts.length < 6) {
+  if (parts.length < 6 || !/^\d{12}$/.test(parts[0]) || !parts[2] || !parseDate(parts[3])) {
     throw new Error(
       'QR không đúng định dạng CCCD.'
     )
@@ -126,7 +128,7 @@ function parseCccd(text) {
 
 /* ================================
    CAMERA
-================================ */
+-------------------------------- */
 
 async function stopScanner() {
   const current =
@@ -259,7 +261,7 @@ finished = false
     scanning.value = true
 
   } catch (e) {
-    console.error(e)
+    console.warn(e)
 
     error.value =
       'Không mở được camera. ' +
@@ -272,7 +274,7 @@ finished = false
 
 /* ================================
    XỬ LÝ ẢNH
-================================ */
+-------------------------------- */
 
 /*
  * Đọc File thành Image.
@@ -847,7 +849,7 @@ async function createImageVariants(
 
 /* ================================
    QUÉT FILE
-================================ */
+-------------------------------- */
 
 async function tryScanFile(
   html5QrCode,
@@ -873,7 +875,7 @@ async function tryScanFile(
 
 /* ================================
    QUÉT ẢNH CCCD
-================================ */
+-------------------------------- */
 
 function chooseImage() {
   if (
@@ -1005,7 +1007,7 @@ previewUrl.value =
     )
 
   } catch (e) {
-    console.error(
+    console.warn(
       'Lỗi quét ảnh CCCD:',
       e
     )
@@ -1035,7 +1037,7 @@ previewUrl.value =
 
 /* ================================
    ĐÓNG
-================================ */
+-------------------------------- */
 
 async function close() {
   finished = true

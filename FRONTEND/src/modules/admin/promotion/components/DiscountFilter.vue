@@ -1,7 +1,9 @@
 <script setup>
 import { ref, watch } from 'vue'
+import Select2 from './Select2.vue'
 
 const props = defineProps({
+  formSupported: { type: Boolean, default: true },
   modelValue: {
     type: Object,
     default: () => ({
@@ -23,6 +25,24 @@ const emit = defineEmits([
 ])
 
 const local = ref({ ...props.modelValue })
+
+const typeOptions = [
+  { value: 'all', label: 'Tất cả hình thức' },
+  { value: 1, label: 'Công khai' },
+  { value: 2, label: 'Cá nhân' }
+]
+
+const discountOptions = [
+  { value: 'all', label: 'Tất cả loại giảm' },
+  { value: 1, label: 'Phần trăm (%)' },
+  { value: 2, label: 'Tiền mặt (VNĐ)' }
+]
+
+const statusOptions = [
+  { value: 'all', label: 'Tất cả trạng thái' },
+  { value: 1, label: 'Hoạt động' },
+  { value: 0, label: 'Ngừng hoạt động' }
+]
 
 watch(
   () => props.modelValue,
@@ -70,7 +90,7 @@ function reset() {
 
       <!-- MÃ PHIẾU -->
       <div class="ss-field">
-        <span class="ss-label">Mã phiếu</span>
+        <span class="ss-label">Mã hoặc tên phiếu</span>
 
         <div class="ss-search">
           <i class="bi bi-search"></i>
@@ -78,7 +98,7 @@ function reset() {
           <input
             v-model="local.keyword"
             class="ss-input"
-            placeholder="Nhập mã phiếu..."
+            placeholder="Nhập mã hoặc tên phiếu..."
             @keyup.enter="search"
           />
         </div>
@@ -88,22 +108,14 @@ function reset() {
       <div class="ss-field">
         <span class="ss-label">Hình thức</span>
 
-        <select
+        <Select2
           v-model="local.type"
-          class="ss-select"
-        >
-          <option value="all">
-            Tất cả hình thức
-          </option>
-
-          <option :value="1">
-            Công khai
-          </option>
-
-          <option :value="2">
-            Cá nhân
-          </option>
-        </select>
+          :options="typeOptions"
+          :disabled="!formSupported"
+          placeholder="Tất cả hình thức"
+          search-placeholder="Tìm hình thức..."
+        />
+        <small v-if="!formSupported" class="ss-hint warn">Hình thức phiếu chưa khả dụng.</small>
       </div>
 
       <!-- TỪ NGÀY -->
@@ -132,44 +144,24 @@ function reset() {
       <div class="ss-field">
         <span class="ss-label">Loại giảm</span>
 
-        <select
+        <Select2
           v-model="local.discount"
-          class="ss-select"
-        >
-          <option value="all">
-            Tất cả loại giảm
-          </option>
-
-          <option :value="1">
-            Phần trăm
-          </option>
-
-          <option :value="2">
-            Tiền mặt
-          </option>
-        </select>
+          :options="discountOptions"
+          placeholder="Tất cả loại giảm"
+          search-placeholder="Tìm loại giảm..."
+        />
       </div>
 
       <!-- TRẠNG THÁI -->
       <div class="ss-field">
         <span class="ss-label">Trạng thái</span>
 
-        <select
+        <Select2
           v-model="local.status"
-          class="ss-select"
-        >
-          <option value="all">
-            Tất cả trạng thái
-          </option>
-
-          <option :value="1">
-            Hoạt động
-          </option>
-
-          <option :value="0">
-            Ngừng hoạt động
-          </option>
-        </select>
+          :options="statusOptions"
+          placeholder="Tất cả trạng thái"
+          search-placeholder="Tìm trạng thái..."
+        />
       </div>
 
     </div>

@@ -24,7 +24,7 @@ class SanPhamServiceTest {
 
     @BeforeEach
     void setup() {
-        service = new SanPhamService(products, variants, images, mock(DanhMucRepository.class),
+        service = new SanPhamService(mock(KhoaGhiSanPham.class), mock(com.smashstep.datn.common.pricing.CurrentPriceService.class), products, variants, images, mock(DanhMucRepository.class),
                 mock(ThuongHieuRepository.class), mock(ChatLieuRepository.class), mock(KieuDangRepository.class),
                 mock(CoGiayRepository.class), mock(XuatXuRepository.class));
         imageService = new HinhAnhSanPhamService(products, images);

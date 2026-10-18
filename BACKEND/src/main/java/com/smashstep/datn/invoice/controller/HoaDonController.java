@@ -7,6 +7,7 @@ import com.smashstep.datn.invoice.dto.HoaDonDetailDto;
 import com.smashstep.datn.invoice.dto.HoaDonListDto;
 import com.smashstep.datn.invoice.dto.LichSuHoaDonDto;
 import com.smashstep.datn.invoice.service.HoaDonService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -51,10 +52,17 @@ public class HoaDonController {
         return ApiResponse.ok("Lấy lịch sử hóa đơn thành công", hoaDonService.lichSu(ma));
     }
 
+    @PutMapping("/{ma}/xu-ly-giao-that-bai")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
+    public ApiResponse<HoaDonDetailDto> xuLyGiaoThatBai(@PathVariable String ma,
+                                                        @Valid @RequestBody com.smashstep.datn.invoice.dto.XuLyGiaoThatBaiDto request) {
+        return ApiResponse.ok("Đã lưu kết quả xử lý hóa đơn", hoaDonService.xuLyGiaoThatBai(ma,request));
+    }
+
     @PutMapping("/{ma}/trang-thai")
     public ApiResponse<HoaDonDetailDto> capNhatTrangThai(
             @PathVariable String ma,
-            @RequestBody CapNhatTrangThaiHoaDonDto request) {
+            @Valid @RequestBody CapNhatTrangThaiHoaDonDto request) {
         return ApiResponse.ok(
                 "Cập nhật trạng thái hóa đơn thành công",
                 hoaDonService.capNhatTrangThai(ma, request)

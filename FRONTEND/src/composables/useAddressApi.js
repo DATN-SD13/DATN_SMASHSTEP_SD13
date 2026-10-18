@@ -1,189 +1,88 @@
-import { ref, watch, onMounted } from 'vue'
+import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import axios from 'axios'
 
-const api = axios.create({
-  baseURL: 'https://provinces.open-api.vn/api/v2',
-  timeout: 15000
-})
-
-// Cache để không gọi API nhiều lần
-let provinceCache = null
+const api = axios.create({ baseURL: 'https://provinces.open-api.vn/api/v2', timeout: 15000 })
+let provinceCache
 const wardCache = new Map()
-
+const normalize = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase()
+  .replace(/^(thanh pho|tinh|tp\.?|phuong|xa|thi tran)\s+/, '').trim()
+function checkedList(data) {
+  if (!Array.isArray(data) || !data.length || data.some(item => !item?.name || item.code == null)) {
+    throw new Error('Dữ liệu địa chỉ không hợp lệ')
+  }
+  return data
+}
 async function fetchProvinces() {
-  if (provinceCache) return provinceCache
-
-  const { data } = await api.get('/p/')
-
-  provinceCache = Array.isArray(data) ? data : []
-
+  if (!provinceCache) provinceCache = checkedList((await api.get('/p/')).data)
   return provinceCache
 }
-
-async function fetchWards(provinceCode) {
-  if (!provinceCode) return []
-
-  const key = String(provinceCode)
-
-  if (wardCache.has(key)) {
-    return wardCache.get(key)
+async function fetchWards(code) {
+  const key = String(code)
+  if (!wardCache.has(key)) {
+    const { data } = await api.get('/w/', { params: { province: code } })
+    const wards = checkedList(data)
+    if (wards.some(ward => String(ward.province_code) !== key)) throw new Error('Phường/xã không thuộc tỉnh đã chọn')
+    wardCache.set(key, wards)
   }
-
-  const { data } = await api.get('/w/', {
-    params: {
-      province: provinceCode
-    }
-  })
-
-  const result = Array.isArray(data) ? data : []
-
-  wardCache.set(key, result)
-
-  return result
+  return wardCache.get(key)
 }
-
+// Keep saved legacy names until the user chooses a new address. They are data, not fallback API lists.
+function withStoredValue(items, name) {
+  return name && !items.some(item => item.name === name)
+    ? [{ code: `stored:${name}`, name }, ...items] : items
+}
 export function useAddressApi(form) {
-  const provinces = ref([])
-  const wards = ref([])
-
-  const loadingProvinces = ref(false)
-  const loadingWards = ref(false)
-
-  const addressError = ref('')
-
-  // Dùng tên tỉnh/phường để tương thích backend
-  const provinceCode = ref('')
-  const wardCode = ref('')
-
-  let requestId = 0
-
+  const provinceItems = ref([]), wardItems = ref([])
+  const provinces = computed(() => withStoredValue(provinceItems.value, form.value.province))
+  const wards = computed(() => withStoredValue(wardItems.value, form.value.ward))
+  const loadingProvinces = ref(false), loadingWards = ref(false), addressError = ref('')
+  let requestId = 0, disposed = false
+  async function restoreAddress() {
+    const current = ++requestId
+    const name = form.value.province
+    wardItems.value = []
+    const province = provinceItems.value.find(p => normalize(p.name) === normalize(name))
+    if (!province || !name) { loadingWards.value = false; return }
+    loadingWards.value = true
+    addressError.value = ''
+    try {
+      const result = await fetchWards(province.code)
+      if (disposed || current !== requestId || form.value.province !== name) return
+      wardItems.value = result
+    } catch (error) {
+      if (!disposed && current === requestId) addressError.value = 'Không tải được danh sách phường/xã. Vui lòng thử lại.'
+    } finally {
+      if (!disposed && current === requestId) loadingWards.value = false
+    }
+  }
   async function loadProvinces() {
     loadingProvinces.value = true
     addressError.value = ''
-
     try {
-      provinces.value = await fetchProvinces()
-
-      // Khi sửa dữ liệu cũ
+      const result = await fetchProvinces()
+      if (disposed) return
+      provinceItems.value = result
       await restoreAddress()
     } catch (error) {
-      console.error('Lỗi tải tỉnh/thành:', error)
-
-      addressError.value =
-        'Không tải được danh sách tỉnh/thành.'
+      if (!disposed) addressError.value = 'Không tải được danh sách tỉnh/thành. Vui lòng thử lại.'
     } finally {
-      loadingProvinces.value = false
+      if (!disposed) loadingProvinces.value = false
     }
   }
-
-  async function loadWards(code) {
-    const currentRequest = ++requestId
-
-    wards.value = []
-
-    if (!code) {
-      loadingWards.value = false
-      return
-    }
-
-    loadingWards.value = true
-
-    try {
-      const result = await fetchWards(code)
-
-      // Tránh API cũ ghi đè dữ liệu tỉnh mới
-      if (currentRequest !== requestId) return
-
-      wards.value = result
-    } catch (error) {
-      if (currentRequest !== requestId) return
-
-      console.error('Lỗi tải phường/xã:', error)
-
-      addressError.value =
-        'Không tải được danh sách phường/xã.'
-    } finally {
-      if (currentRequest === requestId) {
-        loadingWards.value = false
-      }
-    }
-  }
-
-  async function changeProvince() {
-    const province = provinces.value.find(
-      p => String(p.code) === String(provinceCode.value)
-    )
-
-    form.value.province = province?.name || ''
+  function changeProvince() {
     form.value.ward = ''
-
-    wardCode.value = ''
-
-    await loadWards(provinceCode.value)
+    form.value.district = ''
+    restoreAddress()
   }
-
-  function changeWard() {
-    const ward = wards.value.find(
-      w => String(w.code) === String(wardCode.value)
-    )
-
-    form.value.ward = ward?.name || ''
-  }
-
-  async function restoreAddress() {
-    if (!provinces.value.length) return
-
-    const province = provinces.value.find(
-      p => p.name === form.value.province
-    )
-
-    if (!province) {
-      provinceCode.value = ''
-      wardCode.value = ''
-      wards.value = []
-      return
-    }
-
-    provinceCode.value = String(province.code)
-
-    await loadWards(province.code)
-
-    const ward = wards.value.find(
-      w => w.name === form.value.ward
-    )
-
-    wardCode.value = ward
-      ? String(ward.code)
-      : ''
-  }
-
   function resetAddress() {
     requestId++
-
-    provinceCode.value = ''
-    wardCode.value = ''
-
-    wards.value = []
+    wardItems.value = []
+    loadingWards.value = false
+    addressError.value = ''
   }
-
+  watch(() => form.value.province, restoreAddress)
   onMounted(loadProvinces)
-
-  return {
-    provinces,
-    wards,
-
-    provinceCode,
-    wardCode,
-
-    loadingProvinces,
-    loadingWards,
-
-    addressError,
-
-    loadProvinces,
-    changeProvince,
-    changeWard,
-    restoreAddress,
-    resetAddress
-  }
+  onBeforeUnmount(() => { disposed = true; requestId++ })
+  return { provinces, wards, loadingProvinces, loadingWards, addressError, changeProvince, restoreAddress, resetAddress, loadProvinces }
 }

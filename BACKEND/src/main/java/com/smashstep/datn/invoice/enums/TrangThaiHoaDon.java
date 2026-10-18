@@ -11,7 +11,8 @@ public enum TrangThaiHoaDon {
     HOAN_THANH(5, "Hoàn thành", "done"),
     DA_HUY(6, "Đã hủy", "cancel"),
     HOAN_TIEN(7, "Hoàn tiền", "refund"),
-    HOA_DON_CHO(8, "Hóa đơn chờ", "pending");
+    HOA_DON_CHO(8, "Hóa đơn chờ", "pending"),
+    GIAO_HANG_THAT_BAI(9, "Giao hàng thất bại", "failed");
 
     private final int ma;
     private final String nhan;
@@ -28,9 +29,20 @@ public enum TrangThaiHoaDon {
     public String getLop() { return lop; }
 
     public static TrangThaiHoaDon trangThaiTiepTheo(Integer maHienTai) {
-        if (maHienTai == null || maHienTai < CHO_XAC_NHAN.ma || maHienTai >= HOAN_THANH.ma) {
-            return null;
-        }
+        return trangThaiTiepTheo(maHienTai, true);
+    }
+
+    public static TrangThaiHoaDon trangThaiTiepTheo(Integer maHienTai, boolean giaoHang) {
+        if (maHienTai == null) return null;
+        if (giaoHang && maHienTai == GIAO_HANG_THAT_BAI.ma) return DANG_GIAO_HANG;
+
+        // Phiếu tạm giữ của khách lẻ nhận tại quầy: Hóa đơn chờ -> Hoàn thành.
+        if (maHienTai == HOA_DON_CHO.ma) return HOAN_THANH;
+
+        // Đơn nhận tại quầy có khách hàng vẫn giữ luồng tuần tự hiện có.
+        if (!giaoHang && maHienTai == DA_XAC_NHAN.ma) return HOAN_THANH;
+
+        if (maHienTai < CHO_XAC_NHAN.ma || maHienTai >= HOAN_THANH.ma) return null;
         return tuMa(maHienTai + 1);
     }
 

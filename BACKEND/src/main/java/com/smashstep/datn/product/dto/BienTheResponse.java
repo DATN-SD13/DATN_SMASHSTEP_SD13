@@ -30,6 +30,12 @@ public class BienTheResponse {
     private String anhChinh;
     private String maMauSac;
 
+    private BigDecimal giaSauGiam;
+    private BigDecimal phanTramGiamHienTai;
+    private Boolean dangGiamGia;
+    private String maDotGiamGia;
+    private String tenDotGiamGia;
+
     public Long getIdSanPham() { return sanPhamId; }
     public Long getIdMauSac() { return mauSacId; }
     public Long getIdKichThuoc() { return kichThuocId; }

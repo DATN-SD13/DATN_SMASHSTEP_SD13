@@ -31,11 +31,11 @@ public final class PasswordGenerator {
                 new StringBuilder();
 
         /*
-         * Bắt buộc ít nhất:
-         * - 1 chữ hoa
-         * - 1 chữ thường
-         * - 1 số
-         * - 1 ký tự đặc biệt
+         * Đảm bảo có:
+         * - chữ hoa
+         * - chữ thường
+         * - số
+         * - ký tự đặc biệt
          */
         password.append(
                 randomChar(UPPER)
@@ -54,21 +54,19 @@ public final class PasswordGenerator {
         );
 
         /*
-         * Tổng cộng 10 ký tự.
+         * Tổng 10 ký tự
          */
         while (password.length() < 10) {
-
             password.append(
                     randomChar(ALL)
             );
         }
 
         /*
-         * Trộn thứ tự ký tự.
+         * Trộn vị trí
          */
         char[] chars =
-                password
-                        .toString()
+                password.toString()
                         .toCharArray();
 
         for (
@@ -76,11 +74,8 @@ public final class PasswordGenerator {
                 i > 0;
                 i--
         ) {
-
             int j =
-                    RANDOM.nextInt(
-                            i + 1
-                    );
+                    RANDOM.nextInt(i + 1);
 
             char temp =
                     chars[i];
@@ -92,15 +87,12 @@ public final class PasswordGenerator {
                     temp;
         }
 
-        return new String(
-                chars
-        );
+        return new String(chars);
     }
 
     private static char randomChar(
             String source
     ) {
-
         return source.charAt(
                 RANDOM.nextInt(
                         source.length()

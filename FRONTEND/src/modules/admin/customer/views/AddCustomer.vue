@@ -1,70 +1,14 @@
 <script setup>
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import AvatarCard from '../../../../components/AvatarCard.vue'
-
-import { ref } from 'vue'
+import { persistAvatar } from '../../../../utils/avatar'
+import { ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-
 import { useAddressApi } from '../../../../composables/useAddressApi'
-
 import customerService from '../services/customerService'
-
-import AppToast from '../../../../components/AppToast.vue'
-import ConfirmModal from '../../../../components/ConfirmModal.vue'
-import { useToast } from '../../../../composables/useToast'
+import { confirmAction, showSuccess, showError } from '../../../../utils/feedback'
 
 const router = useRouter()
-
-/* ================================
-   TOAST
-================================ */
-
-const {
-  toast,
-  success,
-  error: showError,
-  closeToast
-} = useToast()
-
-/* ================================
-   CONFIRM
-================================ */
-
-const confirmModal = ref({
-  show: false,
-  action: null
-})
-
-const confirmLoading = ref(false)
-
-function closeConfirm() {
-  if (confirmLoading.value) {
-    return
-  }
-
-  confirmModal.value.show = false
-  confirmModal.value.action = null
-}
-
-async function executeConfirm() {
-  if (!confirmModal.value.action) {
-    return
-  }
-
-  confirmLoading.value = true
-
-  try {
-    await confirmModal.value.action()
-  } finally {
-    confirmLoading.value = false
-    confirmModal.value.show = false
-    confirmModal.value.action = null
-  }
-}
-
-/* ================================
-   FORM
-================================ */
 
 const f = ref({
   name: '',
@@ -74,47 +18,32 @@ const f = ref({
   dob: '',
   image: '',
 
+  rName: '',
+  rPhone: '',
+
   province: '',
   ward: '',
   street: '',
 
-  /*
-   * 1 = Nhà riêng
-   * 2 = Văn phòng
-   */
   addressType: 1
 })
 
-/* ================================
-   ADDRESS API
-================================ */
+const { provinces, wards, loadingProvinces, loadingWards, addressError, changeProvince, resetAddress } = useAddressApi(f)
+// Use customer details for the default recipient until the user enters a different recipient.
+watch(() => f.value.name, (name, previous) => {
+  if (!f.value.rName || f.value.rName === previous) f.value.rName = name
+})
+watch(() => f.value.phone, (phone, previous) => {
+  if (!f.value.rPhone || f.value.rPhone === previous) f.value.rPhone = phone
+})
 
-const {
-  provinces,
-  wards,
-
-  provinceCode,
-  wardCode,
-
-  loadingProvinces,
-  loadingWards,
-
-  addressError,
-
-  changeProvince,
-  changeWard
-} = useAddressApi(f)
-
-/* ================================
-   STATE
-================================ */
 
 const err = ref('')
 const saving = ref(false)
 
-/* ================================
-   GIỚI HẠN TUỔI
-================================ */
+const errorMessage = (e) =>
+  e?.response?.data?.message || e?.message ||
+  'Không thể tạo khách hàng, vui lòng thử lại.'
 
 function getMaxDob() {
   const today = new Date()
@@ -184,359 +113,155 @@ function validateAge(dobValue) {
 
 /* ================================
    ERROR
-================================ */
-
-function errorMessage(e) {
-  const response =
-    e?.response?.data
-
-  if (
-    response?.data &&
-    typeof response.data === 'object' &&
-    !Array.isArray(response.data)
-  ) {
-    const messages =
-      Object.values(
-        response.data
-      ).filter(Boolean)
-
-    if (messages.length) {
-      return messages.join(', ')
-    }
-  }
-
-  return (
-    response?.message ||
-    e?.message ||
-    'Không thể tạo khách hàng, vui lòng thử lại.'
-  )
-}
-
-/* ================================
-   SAVE
-================================ */
+-------------------------------- */
 
 async function save() {
+  if (saving.value) return
   const v = f.value
 
-  err.value = ''
-
-  /*
-   * Trường bắt buộc
-   */
   if (
     !v.name.trim() ||
     !v.email.trim() ||
     !v.phone.trim() ||
     !v.dob ||
+    !v.rName.trim() ||
+    !v.rPhone.trim() ||
     !v.province ||
     !v.ward ||
     !v.street.trim()
   ) {
-    const message =
+    err.value =
       'Vui lòng nhập đầy đủ các trường bắt buộc (*).'
-
-    err.value = message
-
-    showError(
-      message,
-      'Dữ liệu không hợp lệ'
-    )
-
     return
   }
 
-  /*
-   * Email
-   */
   if (
-    !/^\S+@\S+\.\S+$/.test(
-      v.email.trim()
-    )
+    !/^\S+@\S+\.\S+$/.test(v.email.trim())
   ) {
-    const message =
+    err.value =
       'Email không hợp lệ.'
-
-    err.value = message
-
-    showError(
-      message,
-      'Dữ liệu không hợp lệ'
-    )
-
     return
   }
 
-  /*
-   * Số điện thoại
-   */
   if (
-    !/^0\d{9}$/.test(
-      v.phone.trim()
-    )
+    v.phone &&
+    !/^0\d{9}$/.test(v.phone.trim())
   ) {
-    const message =
-      'Số điện thoại phải gồm 10 chữ số và bắt đầu bằng 0.'
-
-    err.value = message
-
-    showError(
-      message,
-      'Dữ liệu không hợp lệ'
-    )
-
+    err.value =
+      'Số điện thoại khách hàng phải gồm 10 số và bắt đầu bằng 0.'
     return
   }
 
-  /*
-   * Giới tính
-   */
   if (
-    v.gender !== '' &&
-    ![0, 1, 2].includes(
-      Number(v.gender)
-    )
+    !/^0\d{9}$/.test(v.rPhone.trim())
   ) {
-    const message =
-      'Giới tính không hợp lệ.'
-
-    err.value = message
-
-    showError(
-      message,
-      'Dữ liệu không hợp lệ'
-    )
-
+    err.value =
+      'Số điện thoại người nhận phải gồm 10 số và bắt đầu bằng 0.'
     return
   }
 
-  /*
-   * Tuổi >= 15
-   */
-  if (
-    !validateAge(
-      v.dob
-    )
-  ) {
-    const message =
-      'Khách hàng phải đủ 15 tuổi trở lên.'
-
-    err.value = message
-
-    showError(
-      message,
-      'Không đủ tuổi'
-    )
-
+  if (!validateAge(v.dob)) {
+    err.value = 'Khách hàng phải đủ 15 tuổi trở lên.'
+    showError(err.value)
     return
   }
-
-  /*
-   * Loại địa chỉ
-   */
-  if (
-    ![1, 2].includes(
-      Number(v.addressType)
-    )
-  ) {
-    const message =
-      'Loại địa chỉ không hợp lệ.'
-
-    err.value = message
-
-    showError(
-      message,
-      'Dữ liệu không hợp lệ'
-    )
-
-    return
+  if (v.gender !== '' && ![0, 1, 2].includes(Number(v.gender))) {
+    err.value = 'Giới tính không hợp lệ.'; return
   }
+  if (![1, 2].includes(Number(v.addressType))) {
+    err.value = 'Loại địa chỉ không hợp lệ.'; return
+  }
+  confirmAction('Xác nhận thêm khách hàng?', async () => {
+  if (saving.value) return
+  saving.value = true
+  err.value = ''
 
-  /*
-   * Hiện popup xác nhận
-   */
-  confirmModal.value = {
-    show: true,
+  try {
+    const image = await persistAvatar(v.image)
+    v.image = image || ''
 
-    action: async () => {
-      saving.value = true
+    await customerService.createCustomer({
+      name: v.name.trim(),
 
-      try {
-        /*
-         * Backend hiện không lưu base64
-         */
-        const image =
-          v.image?.startsWith(
-            'data:image/'
-          )
-            ? null
-            : v.image || null
+      email: v.email.trim(),
 
-        const payload = {
-          name:
-            v.name.trim(),
+      phone:
+        v.phone.trim() || null,
 
-          email:
-            v.email.trim(),
+      gender:
+        v.gender === ''
+          ? null
+          : Number(v.gender),
 
-          phone:
-            v.phone.trim(),
+      dob:
+        v.dob || null,
 
-          gender:
-            v.gender === ''
-              ? null
-              : Number(
-                  v.gender
-                ),
+      image,
 
-          dob:
-            v.dob,
+      defaultAddress: {
+        receiverName:
+          v.rName.trim(),
 
-          image,
+        receiverPhone:
+          v.rPhone.trim(),
 
-          /*
-           * Địa chỉ mặc định
-           */
-          defaultAddress: {
-            /*
-             * Người nhận luôn chính là khách hàng
-             */
-            receiverName:
-              v.name.trim(),
+        province:
+          v.province,
 
-            /*
-             * SĐT nhận hàng luôn là SĐT khách hàng
-             */
-            receiverPhone:
-              v.phone.trim(),
+        district:
+          null,
 
-            province:
-              v.province,
+        ward:
+          v.ward,
 
-            /*
-             * Địa chỉ hành chính 2 cấp
-             */
-            district: null,
+        street:
+          v.street.trim(),
 
-            ward:
-              v.ward,
+        addressType:
+          Number(v.addressType),
 
-            street:
-              v.street.trim(),
-
-            addressType:
-              Number(
-                v.addressType
-              ),
-
-            isDefault: true
-          }
-        }
-
-        await customerService
-          .createCustomer(
-            payload
-          )
-
-        success(
-          'Thêm khách hàng thành công',
-          'Thêm thành công'
-        )
-
-        setTimeout(
-          () => {
-            router.push(
-              '/khach-hang'
-            )
-          },
-          1200
-        )
-
-      } catch (e) {
-        console.error(e)
-
-        const message =
-          errorMessage(e)
-
-        err.value = message
-
-        showError(
-          message,
-          'Thêm thất bại'
-        )
-
-      } finally {
-        saving.value = false
+        isDefault:
+          true
       }
-    }
+    })
+
+    showSuccess(
+      'Đã tạo khách hàng thành công'
+    )
+
+    router.push('/khach-hang')
+
+  } catch (e) {
+    err.value = errorMessage(e)
+    showError(err.value)
+
+  } finally {
+    saving.value = false
   }
+  })
 }
 </script>
 
 <template>
-
-  <!-- ============================
-       TOAST
-  ============================= -->
-
-  <AppToast
-    :show="toast.show"
-    :type="toast.type"
-    :title="toast.title"
-    :message="toast.message"
-    @close="closeToast"
-  />
-
-  <!-- ============================
-       CONFIRM
-  ============================= -->
-
-  <ConfirmModal
-    :show="confirmModal.show"
-    title="Xác nhận thêm khách hàng"
-    :message="
-      `Bạn có chắc chắn muốn thêm khách hàng ${f.name || ''} không?`
-    "
-    :loading="confirmLoading"
-    confirm-text="Đồng ý"
-    cancel-text="Hủy"
-    @confirm="executeConfirm"
-    @cancel="closeConfirm"
-  />
-
   <AdminLayout>
-
     <main class="ss-page">
 
-      <!-- ======================
-           BACK
-      ======================= -->
-
       <div>
+    <p v-if="addressError" class="ss-alert error" role="alert">{{ addressError }}</p>
         <button
           class="ss-back"
-          type="button"
           aria-label="Quay lại"
-          @click="
-            router.push(
-              '/khach-hang'
-            )
-          "
+          @click="router.push('/khach-hang')"
         >
-          <i
-            class="bi bi-arrow-left"
-          ></i>
+          <i class="bi bi-arrow-left"></i>
         </button>
       </div>
 
       <div class="ss-split">
 
-        <!-- ======================
-             AVATAR
-        ======================= -->
-
         <AvatarCard
           v-model:image="f.image"
+          :disabled="saving"
           :name="f.name"
           :email="f.email"
           fallback="KH"
@@ -544,22 +269,12 @@ async function save() {
 
         <div class="ss-stack">
 
-          <!-- ======================
-               THÔNG TIN CƠ BẢN
-          ======================= -->
-
-          <section
-            class="ss-card ss-form"
-          >
+          <section class="ss-card ss-form">
 
             <div class="ss-head">
 
-              <div
-                class="ss-head-icon"
-              >
-                <i
-                  class="bi bi-person"
-                ></i>
+              <div class="ss-head-icon">
+                <i class="bi bi-person"></i>
               </div>
 
               <div>
@@ -569,7 +284,7 @@ async function save() {
 
                 <p>
                   Họ tên, email, liên hệ
-                  và thông tin khách hàng.
+                  và tài khoản.
                 </p>
               </div>
 
@@ -577,20 +292,10 @@ async function save() {
 
             <div class="ss-grid2">
 
-              <!-- HỌ TÊN -->
-
               <div class="ss-field">
-
-                <label
-                  class="ss-label"
-                >
+                <label class="ss-label">
                   Họ và tên
-
-                  <span
-                    class="req"
-                  >
-                    *
-                  </span>
+                  <span class="req">*</span>
                 </label>
 
                 <input
@@ -598,23 +303,12 @@ async function save() {
                   v-model="f.name"
                   placeholder="Nhập họ tên"
                 />
-
               </div>
 
-              <!-- EMAIL -->
-
               <div class="ss-field">
-
-                <label
-                  class="ss-label"
-                >
+                <label class="ss-label">
                   Email
-
-                  <span
-                    class="req"
-                  >
-                    *
-                  </span>
+                  <span class="req">*</span>
                 </label>
 
                 <input
@@ -623,49 +317,23 @@ async function save() {
                   v-model="f.email"
                   placeholder="Nhập email"
                 />
-
               </div>
 
-              <!-- SỐ ĐIỆN THOẠI -->
-
               <div class="ss-field">
-
-                <label
-                  class="ss-label"
-                >
-                  Số điện thoại
-
-                  <span
-                    class="req"
-                  >
-                    *
-                  </span>
+                <label class="ss-label">
+                  Số điện thoại <span class="req">*</span>
                 </label>
 
                 <input
                   class="ss-input"
                   v-model="f.phone"
-                  maxlength="10"
-                  inputmode="numeric"
                   placeholder="VD: 0901234567"
                 />
-
-                <small
-                  class="ss-hint"
-                >
-                  Số điện thoại này cũng
-                  được sử dụng để nhận hàng.
-                </small>
-
               </div>
-
-              <!-- GIỚI TÍNH -->
 
               <div class="ss-field">
 
-                <label
-                  class="ss-label"
-                >
+                <label class="ss-label">
                   Giới tính
                 </label>
 
@@ -673,7 +341,6 @@ async function save() {
                   class="ss-select"
                   v-model="f.gender"
                 >
-
                   <option value="">
                     -- Chọn giới tính --
                   </option>
@@ -694,35 +361,17 @@ async function save() {
 
               </div>
 
-              <!-- NGÀY SINH -->
-
               <div class="ss-field">
 
-                <label
-                  class="ss-label"
-                >
-                  Ngày sinh
-
-                  <span
-                    class="req"
-                  >
-                    *
-                  </span>
+                <label class="ss-label">
+                  Ngày sinh <span class="req">*</span>
                 </label>
 
                 <input
                   class="ss-input"
                   type="date"
-                  v-model="f.dob"
-                  :max="maxDob"
+                  v-model="f.dob" :max="maxDob"
                 />
-
-                <small
-                  class="ss-hint"
-                >
-                  Khách hàng phải đủ
-                  15 tuổi trở lên.
-                </small>
 
               </div>
 
@@ -730,22 +379,12 @@ async function save() {
 
           </section>
 
-          <!-- ======================
-               ĐỊA CHỈ GIAO HÀNG
-          ======================= -->
-
-          <section
-            class="ss-card ss-form"
-          >
+          <section class="ss-card ss-form">
 
             <div class="ss-head">
 
-              <div
-                class="ss-head-icon"
-              >
-                <i
-                  class="bi bi-geo-alt"
-                ></i>
+              <div class="ss-head-icon">
+                <i class="bi bi-geo-alt"></i>
               </div>
 
               <div>
@@ -763,194 +402,73 @@ async function save() {
 
             <div class="ss-grid2">
 
-              <!-- ======================
-                   HỌ TÊN NGƯỜI NHẬN
-              ======================= -->
+              <div class="ss-field">
 
-              <!-- HỌ TÊN NGƯỜI NHẬN -->
-<div class="ss-field">
-  <label class="ss-label">
-    Họ tên người nhận
-  </label>
+                <label class="ss-label">
+                  Họ tên người nhận
+                  <span class="req">*</span>
+                </label>
 
-  <input
-    class="ss-input"
-    :value="f.name"
-    :placeholder="
-      f.name
-        ? ''
-        : 'Họ tên người nhận'
-    "
-    disabled
-  />
-</div>
+                <input
+                  class="ss-input"
+                  v-model="f.rName"
+                  placeholder="Họ tên người nhận"
+                />
 
-<!-- SỐ ĐIỆN THOẠI NHẬN HÀNG -->
-<div class="ss-field">
-  <label class="ss-label">
-    Số điện thoại nhận hàng
-  </label>
-
-  <input
-    class="ss-input"
-    :value="f.phone"
-    :placeholder="
-      f.phone
-        ? ''
-        : 'VD: 0901234567'
-    "
-    disabled
-  />
-</div>
-
-              <!-- ======================
-                   TỈNH / THÀNH PHỐ
-              ======================= -->
+              </div>
 
               <div class="ss-field">
 
-                <label
-                  class="ss-label"
-                >
+                <label class="ss-label">
+                  Số điện thoại <span class="req">*</span>
+                  <span class="req">*</span>
+                </label>
+
+                <input
+                  class="ss-input"
+                  v-model="f.rPhone"
+                  placeholder="VD: 0901234567"
+                />
+
+              </div>
+
+              <div class="ss-field">
+
+                <label class="ss-label">
                   Tỉnh/Thành phố
-
-                  <span
-                    class="req"
-                  >
-                    *
-                  </span>
+                  <span class="req">*</span>
                 </label>
 
-                <select
-                  class="ss-select"
-                  v-model="provinceCode"
-                  :disabled="
-                    loadingProvinces
-                  "
-                  @change="
-                    changeProvince
-                  "
-                >
-
-                  <option value="">
-                    {{
-                      loadingProvinces
-                        ? 'Đang tải...'
-                        : '-- Chọn tỉnh/thành --'
-                    }}
-                  </option>
-
-                  <option
-                    v-for="p in provinces"
-                    :key="p.code"
-                    :value="
-                      String(
-                        p.code
-                      )
-                    "
-                  >
-                    {{ p.name }}
-                  </option>
-
-                </select>
+                <select class="ss-select" v-model="f.province" :disabled="loadingProvinces" @change="changeProvince">
+              <option value="">Chọn tỉnh/thành</option>
+              <option v-for="p in provinces" :key="p.code" :value="p.name">{{ p.name }}</option>
+            </select>
 
               </div>
 
-              <!-- ======================
-                   PHƯỜNG / XÃ
-              ======================= -->
-
               <div class="ss-field">
 
-                <label
-                  class="ss-label"
-                >
+                <label class="ss-label">
                   Phường/Xã
-
-                  <span
-                    class="req"
-                  >
-                    *
-                  </span>
+                  <span class="req">*</span>
                 </label>
 
-                <select
-                  class="ss-select"
-                  v-model="wardCode"
-                  :disabled="
-                    !provinceCode ||
-                    loadingWards
-                  "
-                  @change="
-                    changeWard
-                  "
-                >
-
-                  <option value="">
-                    {{
-                      loadingWards
-                        ? 'Đang tải...'
-                        : '-- Chọn phường/xã --'
-                    }}
-                  </option>
-
-                  <option
-                    v-for="w in wards"
-                    :key="w.code"
-                    :value="
-                      String(
-                        w.code
-                      )
-                    "
-                  >
-                    {{ w.name }}
-                  </option>
-
-                </select>
+                <select class="ss-select" v-model="f.ward" :disabled="loadingWards || !f.province">
+              <option value="">Chọn phường/xã</option>
+              <option v-for="w in wards" :key="w.code" :value="w.name">{{ w.name }}</option>
+            </select>
 
               </div>
-
-              <!-- ======================
-                   LỖI ADDRESS API
-              ======================= -->
-
-              <div
-                v-if="addressError"
-                class="ss-field full"
-              >
-
-                <p
-                  class="ss-hint warn"
-                >
-                  <i
-                    class="
-                      bi
-                      bi-exclamation-triangle
-                    "
-                  ></i>
-
-                  {{ addressError }}
-                </p>
-
-              </div>
-
-              <!-- ======================
-                   LOẠI ĐỊA CHỈ
-              ======================= -->
 
               <div class="ss-field">
 
-                <label
-                  class="ss-label"
-                >
+                <label class="ss-label">
                   Loại địa chỉ
                 </label>
 
                 <select
                   class="ss-select"
-                  v-model="
-                    f.addressType
-                  "
+                  v-model="f.addressType"
                 >
 
                   <option :value="1">
@@ -965,79 +483,38 @@ async function save() {
 
               </div>
 
-              <!-- ======================
-                   ĐỊA CHỈ CỤ THỂ
-              ======================= -->
+              <div class="ss-field full">
 
-              <div
-                class="ss-field full"
-              >
-
-                <label
-                  class="ss-label"
-                >
+                <label class="ss-label">
                   Địa chỉ cụ thể
-
-                  <span
-                    class="req"
-                  >
-                    *
-                  </span>
+                  <span class="req">*</span>
                 </label>
 
                 <input
                   class="ss-input"
                   v-model="f.street"
-                  placeholder="
-                    Số nhà, tên đường...
-                  "
+                  placeholder="Số nhà, tên đường..."
                 />
 
               </div>
 
             </div>
 
-            <!-- ======================
-                 ERROR
-            ======================= -->
-
             <p
               v-if="err"
               class="ss-hint warn"
             >
-              <i
-                class="
-                  bi
-                  bi-exclamation-triangle
-                "
-              ></i>
-
+              <i class="bi bi-exclamation-triangle"></i>
               {{ err }}
             </p>
 
-            <!-- ======================
-                 ACTIONS
-            ======================= -->
-
-            <div
-              class="ss-actions left"
-            >
+            <div class="ss-actions left">
 
               <button
-                type="button"
                 class="ss-btn primary"
                 :disabled="saving"
                 @click="save"
               >
-
-                <span
-                  v-if="saving"
-                  class="
-                    spinner-border
-                    spinner-border-sm
-                  "
-                ></span>
-
                 {{
                   saving
                     ? 'Đang tạo...'
@@ -1046,14 +523,8 @@ async function save() {
               </button>
 
               <button
-                type="button"
                 class="ss-btn"
-                :disabled="saving"
-                @click="
-                  router.push(
-                    '/khach-hang'
-                  )
-                "
+                @click="router.push('/khach-hang')"
               >
                 Hủy
               </button>
@@ -1063,11 +534,7 @@ async function save() {
           </section>
 
         </div>
-
       </div>
-
     </main>
-
   </AdminLayout>
-
 </template>

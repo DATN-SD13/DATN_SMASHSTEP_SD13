@@ -41,9 +41,9 @@ const formatDate = (value) =>
           </h2>
 
           <p>
-            {{ customer.code }}
+            {{ customer.code || '—' }}
             ·
-            {{ customer.username }}
+            {{ customer.username || '—' }}
           </p>
         </div>
 
@@ -61,14 +61,14 @@ const formatDate = (value) =>
         <div>
           <span>Họ tên</span>
           <strong>
-            {{ customer.name }}
+            {{ customer.name || '—' }}
           </strong>
         </div>
 
         <div>
           <span>Email</span>
           <strong>
-            {{ customer.email }}
+            {{ customer.email || '—' }}
           </strong>
         </div>
 
@@ -107,7 +107,7 @@ const formatDate = (value) =>
         <div>
           <span>Trạng thái</span>
           <strong>
-            {{ customer.statusLabel }}
+            {{ customer.statusLabel || '—' }}
           </strong>
         </div>
 
@@ -130,19 +130,19 @@ const formatDate = (value) =>
           <strong>
             {{
               customer.defaultAddress
-                .receiverName
+                .receiverName || '—'
             }}
             ·
             {{
               customer.defaultAddress
-                .receiverPhone
+                .receiverPhone || '—'
             }}
           </strong>
 
           <p>
             {{
               customer.defaultAddress
-                .fullAddress
+                .fullAddress || '—'
             }}
           </p>
 

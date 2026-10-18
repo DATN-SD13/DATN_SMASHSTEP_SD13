@@ -13,33 +13,48 @@ import java.math.BigDecimal;
 @NoArgsConstructor(onConstructor_ = @JsonCreator)
 @AllArgsConstructor
 public class SanPhamChiTietThemRequest {
-    @NotNull(groups = BienTheDocLap.class) @Positive
+    @NotNull(groups = BienTheDocLap.class, message = "Vui lòng chọn sản phẩm.") @Positive(message = "Vui lòng chọn sản phẩm hợp lệ.")
     @JsonAlias({"idSanPham", "productId"})
     private Long sanPhamId;
     @NotBlank(message = "Mã biến thể không được trống")
-    @Size(max = 100)
-    @Pattern(regexp = "^[A-Za-z0-9][A-Za-z0-9._-]*$")
+    @Size(max = 100, message = "Mã biến thể tối đa 100 ký tự.")
+    @Pattern(regexp = "^[A-Za-z0-9][A-Za-z0-9._-]*$", message = "Mã chỉ gồm chữ Latin, số, dấu chấm, gạch dưới hoặc gạch ngang.")
     private String maChiTietSanPham;
     @NotBlank(message = "SKU không được trống")
-    @Size(max = 100)
-    @Pattern(regexp = "^[A-Za-z0-9][A-Za-z0-9._-]*$")
+    @Size(max = 100, message = "SKU tối đa 100 ký tự.")
+    @Pattern(regexp = "^[A-Za-z0-9][A-Za-z0-9._-]*$", message = "Mã chỉ gồm chữ Latin, số, dấu chấm, gạch dưới hoặc gạch ngang.")
     private String sku;
-    @NotNull @Positive
+    @NotNull(message = "Vui lòng chọn màu sắc.") @Positive(message = "Vui lòng chọn màu sắc hợp lệ.")
     @JsonAlias("idMauSac")
     private Long mauSacId;
-    @NotNull @Positive
+    @NotNull(message = "Vui lòng chọn kích thước.") @Positive(message = "Vui lòng chọn kích thước hợp lệ.")
     @JsonAlias("idKichThuoc")
     private Long kichThuocId;
-    @NotNull @Min(value = 0, message = "Số lượng phải từ 0 trở lên")
+    @NotNull(message = "Số lượng không được để trống.") @Min(value = 0, message = "Số lượng phải từ 0 trở lên")
     private Integer soLuong;
-    @NotNull @DecimalMin(value = "0", inclusive = false, message = "Giá bán phải lớn hơn 0")
+    @NotNull(message = "Giá bán không được để trống.") @DecimalMin(value = "0", inclusive = false, message = "Giá bán phải lớn hơn 0")
     @Digits(integer = 16, fraction = 2, message = "Giá bán tối đa 16 chữ số và 2 số thập phân")
     private BigDecimal giaBan;
-    @NotNull
+    @NotNull(message = "Kích hoạt không được để trống.")
     private Boolean kichHoat;
-    @NotNull @Min(0) @Max(1)
+    @NotNull(message = "Trạng thái không được để trống.") @Min(value = 0, message = "Trạng thái phải là 0 hoặc 1.") @Max(value = 1, message = "Trạng thái phải là 0 hoặc 1.")
     private Integer trangThai;
 
+    @com.fasterxml.jackson.annotation.JsonSetter("sanPhamId")
+    public void setSanPhamId(Object value) { sanPhamId = SoLuongSanPham.docId(value); }
+
+    @com.fasterxml.jackson.annotation.JsonSetter("mauSacId")
+    public void setMauSacId(Object value) { mauSacId = SoLuongSanPham.docId(value); }
+
+    @com.fasterxml.jackson.annotation.JsonSetter("kichThuocId")
+    public void setKichThuocId(Object value) { kichThuocId = SoLuongSanPham.docId(value); }
+
+    @com.fasterxml.jackson.annotation.JsonSetter("trangThai")
+    public void setTrangThai(Object value) { trangThai = SoLuongSanPham.docTrangThai(value); }
+
     public void setMaChiTietSanPham(String value) { maChiTietSanPham = value == null ? null : value.trim(); }
+    @com.fasterxml.jackson.annotation.JsonSetter("soLuong")
+    public void setSoLuong(Object value) { soLuong = SoLuongSanPham.doc(value); }
+
     public void setSku(String value) { sku = value == null ? null : value.trim(); }
 }

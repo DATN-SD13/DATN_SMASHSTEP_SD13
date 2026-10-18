@@ -1,40 +1,23 @@
 <script setup>
+import * as XLSX from 'xlsx'
+import { avatarUrl } from '../../../../utils/avatar'
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import SsPager from '../../../../components/SsPager.vue'
 import { initials } from '../../../../utils/paging'
 import employeeService from '../services/employeeService'
-import AppToast from '../../../../components/AppToast.vue'
-import ConfirmModal from '../../../../components/ConfirmModal.vue'
-import { useToast } from '../../../../composables/useToast'
+import { confirmAction, showSuccess, showError } from '../../../../utils/feedback'
 
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
-import * as XLSX from 'xlsx'
-
 const router = useRouter()
-
-const {
-  toast,
-  success,
-  error: showError,
-  closeToast
-} = useToast()
-
-const confirmModal = ref({
-  show: false,
-  title: '',
-  message: '',
-  action: null
-})
-
-const confirmLoading = ref(false)
 
 const rows = ref([])
 const roles = ref([])
 
 const loading = ref(false)
 const error = ref('')
+const updatingStatus = ref('')
 
 const f = ref({
   q: '',
@@ -48,6 +31,7 @@ const pages = ref(1)
 const totalElements = ref(0)
 
 let searchTimer = null
+let loadVersion = 0
 
 function getErrorMessage(err) {
   return (
@@ -57,37 +41,151 @@ function getErrorMessage(err) {
   )
 }
 
-function askConfirm(title, message, action) {
-  confirmModal.value = {
-    show: true,
-    title,
-    message,
-    action
+async function loadRoles() {
+  try {
+    const data = await employeeService.getRoles()
+    roles.value = Array.isArray(data) ? data : []
+  } catch (err) {
+    console.error('Không tải được vai trò:', err)
   }
 }
 
-function closeConfirm() {
-  if (confirmLoading.value) return
-
-  confirmModal.value.show = false
-  confirmModal.value.action = null
-}
-
-async function executeConfirm() {
-  if (!confirmModal.value.action) return
-
-  confirmLoading.value = true
+async function loadEmployees() {
+  const version = ++loadVersion
+  loading.value = true
+  error.value = ''
 
   try {
-    await confirmModal.value.action()
+    const params = {
+      page: page.value,
+      size: size.value
+    }
+
+    const keyword = f.value.q.trim()
+
+    if (keyword) {
+      params.tuKhoa = keyword
+    }
+
+    if (f.value.roleId !== 'all') {
+      params.vaiTroId = Number(f.value.roleId)
+    }
+
+    if (f.value.status !== 'all') {
+      params.trangThai = Number(f.value.status)
+    }
+
+    const data = await employeeService.getEmployees(params)
+
+    if (version !== loadVersion) return
+
+    rows.value = data?.content ?? []
+    pages.value = Math.max(data?.totalPages ?? 0, 1)
+    totalElements.value = data?.totalElements ?? 0
+
+    if (page.value > pages.value) {
+      page.value = pages.value
+    }
+  } catch (err) {
+    if (version !== loadVersion) return
+    console.error(err)
+    rows.value = []
+    pages.value = 1
+    totalElements.value = 0
+    error.value = getErrorMessage(err)
   } finally {
-    confirmLoading.value = false
-    confirmModal.value.show = false
-    confirmModal.value.action = null
+    if (version === loadVersion) loading.value = false
   }
 }
 
+async function toggleStatus(employee) {
+  if (updatingStatus.value) return
+  const nextStatus = employee.active ? 0 : 1
+
+  const action = employee.active
+    ? 'khóa tài khoản'
+    : 'mở khóa tài khoản'
+
+  confirmAction(`Bạn có chắc muốn ${action} ${employee.name || employee.code}?`, async () => {
+    if (updatingStatus.value) return
+    try {
+      updatingStatus.value = employee.code
+      await employeeService.updateStatus(employee.code, nextStatus)
+      showSuccess(nextStatus === 1 ? 'Đã mở khóa nhân viên.' : 'Đã khóa nhân viên.')
+      await loadEmployees()
+    } catch (err) {
+      showError(getErrorMessage(err))
+    } finally {
+      updatingStatus.value = ''
+    }
+  })
+}
+
+function reset() {
+  f.value = {
+    q: '',
+    roleId: 'all',
+    status: 'all'
+  }
+
+  page.value = 1
+  loadEmployees()
+}
+
+watch(
+  () => f.value.q,
+  () => {
+    ++loadVersion
+    clearTimeout(searchTimer)
+
+    searchTimer = setTimeout(() => {
+      page.value = 1
+      loadEmployees()
+    }, 400)
+  }
+)
+
+watch(
+  () => f.value.roleId,
+  () => {
+    page.value = 1
+    loadEmployees()
+  }
+)
+
+watch(
+  () => f.value.status,
+  () => {
+    page.value = 1
+    loadEmployees()
+  }
+)
+
+watch(page, () => {
+  loadEmployees()
+})
+
+watch(size, () => {
+  if (page.value !== 1) {
+    page.value = 1
+  } else {
+    loadEmployees()
+  }
+})
+
+onMounted(async () => {
+  await Promise.all([
+    loadRoles(),
+    loadEmployees()
+  ])
+})
+
+onBeforeUnmount(() => {
+  clearTimeout(searchTimer)
+  ++loadVersion
+})
 function exportExcel() {
+  if (loading.value) return
   if (!rows.value?.length) {
     showError(
       'Không có dữ liệu nhân viên để xuất.',
@@ -161,218 +259,9 @@ function exportExcel() {
   )
 }
 
-async function loadRoles() {
-  try {
-    const data =
-      await employeeService.getRoles()
-
-    roles.value =
-      Array.isArray(data)
-        ? data
-        : []
-  } catch (err) {
-    console.error(
-      'Không tải được vai trò:',
-      err
-    )
-  }
-}
-
-async function loadEmployees() {
-  loading.value = true
-  error.value = ''
-
-  try {
-    const params = {
-      page: page.value,
-      size: size.value
-    }
-
-    const keyword =
-      f.value.q.trim()
-
-    if (keyword) {
-      params.tuKhoa = keyword
-    }
-
-    if (f.value.roleId !== 'all') {
-      params.vaiTroId =
-        Number(f.value.roleId)
-    }
-
-    if (f.value.status !== 'all') {
-      params.trangThai =
-        Number(f.value.status)
-    }
-
-    const data =
-      await employeeService.getEmployees(
-        params
-      )
-
-    rows.value =
-      data?.content ?? []
-
-    pages.value =
-      Math.max(
-        data?.totalPages ?? 0,
-        1
-      )
-
-    totalElements.value =
-      data?.totalElements ?? 0
-
-    if (page.value > pages.value) {
-      page.value = pages.value
-    }
-  } catch (err) {
-    console.error(err)
-
-    rows.value = []
-    pages.value = 1
-    totalElements.value = 0
-
-    error.value =
-      getErrorMessage(err)
-
-    showError(
-      error.value,
-      'Không thể tải dữ liệu'
-    )
-  } finally {
-    loading.value = false
-  }
-}
-
-function toggleStatus(employee) {
-  const isActive =
-    employee.active === true ||
-    employee.status === 1
-
-  const nextStatus =
-    isActive ? 0 : 1
-
-  askConfirm(
-    'Xác nhận cập nhật',
-
-    isActive
-      ? `Bạn có chắc chắn muốn khóa nhân viên ${employee.code} - ${employee.name} không?`
-      : `Bạn có chắc chắn muốn mở khóa nhân viên ${employee.code} - ${employee.name} không?`,
-
-    async () => {
-      try {
-        await employeeService.updateStatus(
-          employee.code,
-          nextStatus
-        )
-
-        await loadEmployees()
-
-        success(
-          isActive
-            ? 'Khóa tài khoản nhân viên thành công'
-            : 'Mở khóa tài khoản nhân viên thành công',
-          'Cập nhật thành công'
-        )
-      } catch (err) {
-        console.error(err)
-
-        showError(
-          getErrorMessage(err),
-          'Cập nhật thất bại'
-        )
-      }
-    }
-  )
-}
-
-function reset() {
-  f.value = {
-    q: '',
-    roleId: 'all',
-    status: 'all'
-  }
-
-  page.value = 1
-  loadEmployees()
-}
-
-watch(
-  () => f.value.q,
-  () => {
-    clearTimeout(searchTimer)
-
-    searchTimer = setTimeout(
-      () => {
-        page.value = 1
-        loadEmployees()
-      },
-      400
-    )
-  }
-)
-
-watch(
-  () => f.value.roleId,
-  () => {
-    page.value = 1
-    loadEmployees()
-  }
-)
-
-watch(
-  () => f.value.status,
-  () => {
-    page.value = 1
-    loadEmployees()
-  }
-)
-
-watch(
-  page,
-  () => {
-    loadEmployees()
-  }
-)
-
-watch(
-  size,
-  () => {
-    if (page.value !== 1) {
-      page.value = 1
-    } else {
-      loadEmployees()
-    }
-  }
-)
-
-onMounted(async () => {
-  await Promise.all([
-    loadRoles(),
-    loadEmployees()
-  ])
-})
 </script>
 
 <template>
-  <AppToast
-    :show="toast.show"
-    :type="toast.type"
-    :title="toast.title"
-    :message="toast.message"
-    @close="closeToast"
-  />
-
-  <ConfirmModal
-    :show="confirmModal.show"
-    :title="confirmModal.title"
-    :message="confirmModal.message"
-    :loading="confirmLoading"
-    confirm-text="Đồng ý"
-    cancel-text="Hủy"
-    @confirm="executeConfirm"
-    @cancel="closeConfirm"
-  />
   <AdminLayout>
     <main class="ss-page">
 
@@ -442,14 +331,10 @@ onMounted(async () => {
             Đặt lại bộ lọc
           </button>
 
-          <button
-  type="button"
-  class="ss-btn"
-  @click="exportExcel"
->
-  <i class="bi bi-file-earmark-excel"></i>
-  Xuất Excel
-</button>
+          <button class="ss-btn" @click="exportExcel" :disabled="loading" title="Xuất dữ liệu trang hiện tại">
+            <i class="bi bi-file-earmark-excel"></i>
+            Xuất Excel
+          </button>
 
           <button
             class="ss-btn primary"
@@ -533,7 +418,7 @@ onMounted(async () => {
                 <td>
                   <img
                     v-if="e.image"
-                    :src="e.image"
+                    :src="avatarUrl(e.image)"
                     :alt="e.name"
                     class="employee-avatar"
                   />
@@ -553,24 +438,24 @@ onMounted(async () => {
 
                 <td>
                   <span class="ss-code">
-                    {{ e.code }}
+                    {{ e.code || '—' }}
                   </span>
                 </td>
 
                 <td class="ss-strong">
-                  {{ e.name }}
+                  {{ e.name || '—' }}
                 </td>
 
                 <td>
-                  {{ e.email }}
+                  {{ e.email || '—' }}
                 </td>
 
                 <td>
-                  {{ e.genderLabel }}
+                  {{ e.genderLabel || '—' }}
                 </td>
 
                 <td class="nowrap">
-                  {{ e.phone }}
+                  {{ e.phone || '—' }}
                 </td>
 
                 <td style="min-width:220px">
@@ -578,7 +463,7 @@ onMounted(async () => {
                 </td>
 
                 <td class="nowrap">
-                  {{ e.role }}
+                  {{ e.role || '—' }}
                 </td>
 
                 <td>
@@ -611,6 +496,7 @@ onMounted(async () => {
 
                     <button
                       class="ss-icon-btn danger"
+                      :disabled="!!updatingStatus"
                       :title="
                         e.active
                           ? 'Khóa tài khoản'

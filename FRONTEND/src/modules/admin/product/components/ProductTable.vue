@@ -1,7 +1,8 @@
 <script setup>
+import ProductPrice from './ProductPrice.vue'
 import StatusBadge from './StatusBadge.vue'
 import ProductThumbnail from './ProductThumbnail.vue'
-import { priceRange, dateTime } from '../services/productService'
+import { dateTime } from '../services/productService'
 
 defineProps({ rows: { type: Array, default: () => [] }, offset: Number, busy: Boolean })
 defineEmits(['status'])
@@ -16,7 +17,7 @@ defineEmits(['status'])
         <template v-else>
           <tr v-for="(p, i) in rows" :key="p.id">
             <td>{{ (offset || 0) + i + 1 }}</td>
-            <td><ProductThumbnail :url="p.anhChinh" :alt="p.tenSanPham" /></td>
+            <td><ProductThumbnail :url="p.anhChinh" :alt="p.tenSanPham" :item="p" range /></td>
             <td><strong>{{ p.maSanPham }}</strong></td>
             <td class="p-name">{{ p.tenSanPham }}</td>
             <td>{{ p.tenDanhMuc || '—' }}</td>
@@ -26,14 +27,14 @@ defineEmits(['status'])
             <td>{{ p.soMau ?? 0 }}</td>
             <td>{{ p.soKichThuoc ?? 0 }}</td>
             <td>{{ p.tongSoLuong ?? 0 }}</td>
-            <td class="nowrap">{{ priceRange(p) }}</td>
+            <td class="nowrap"><ProductPrice :item="p" range /></td>
             <td><StatusBadge :status="p.trangThai" /></td>
             <td class="nowrap">{{ dateTime(p.ngayTao) }}</td>
             <td>
               <div class="p-actions nowrap">
                 <RouterLink class="p-btn" :to="'/san-pham/' + p.id" title="Xem chi tiết" aria-label="Xem chi tiết sản phẩm"><i class="bi bi-eye"></i></RouterLink>
                 <RouterLink class="p-btn" :to="'/san-pham/' + p.id + '/sua'" title="Sửa" aria-label="Sửa sản phẩm"><i class="bi bi-pencil"></i></RouterLink>
-                <button class="p-btn" :class="{ danger: p.trangThai === 1 }" :disabled="busy" :title="p.trangThai === 1 ? 'Ngừng hoạt động' : 'Bật hoạt động'" aria-label="Đổi trạng thái sản phẩm" @click="$emit('status', p)"><i class="bi bi-power"></i></button>
+                <button class="p-btn" :class="{ danger: p.trangThai === 1 }" :disabled="busy" :title="p.trangThai === 1 ? 'Ngừng kinh doanh' : 'Kinh doanh'" aria-label="Đổi trạng thái sản phẩm" @click="$emit('status', p)"><i class="bi bi-power"></i></button>
               </div>
             </td>
           </tr>

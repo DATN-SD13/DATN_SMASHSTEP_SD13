@@ -14,6 +14,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
+import jakarta.validation.Valid;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/phieu-giam-gia")
@@ -21,6 +23,11 @@ import java.time.LocalDate;
 public class PhieuGiamGiaController {
 
     private final PhieuGiamGiaService phieuGiamGiaService;
+
+    @GetMapping("/capabilities")
+    public ApiResponse<Map<String, Boolean>> capabilities() {
+        return ApiResponse.ok(Map.of("formSupported", phieuGiamGiaService.supportsForm()));
+    }
 
     @GetMapping
     public ApiResponse<PageResponse<PhieuGiamGiaResponse>> getAll(
@@ -64,7 +71,7 @@ public class PhieuGiamGiaController {
 
     @PostMapping
     public ApiResponse<PhieuGiamGiaResponse> create(
-            @RequestBody PhieuGiamGiaRequest request
+            @Valid @RequestBody PhieuGiamGiaRequest request
     ) {
 
         return ApiResponse.ok(
@@ -75,7 +82,7 @@ public class PhieuGiamGiaController {
     @PutMapping("/{id}")
     public ApiResponse<PhieuGiamGiaResponse> update(
             @PathVariable Long id,
-            @RequestBody PhieuGiamGiaRequest request
+            @Valid @RequestBody PhieuGiamGiaRequest request
     ) {
 
         return ApiResponse.ok(

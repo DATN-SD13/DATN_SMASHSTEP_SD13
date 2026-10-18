@@ -1,15 +1,14 @@
 <script setup>
+import * as XLSX from 'xlsx'
+import { avatarUrl } from '../../../../utils/avatar'
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import SsPager from '../../../../components/SsPager.vue'
-import AppToast from '../../../../components/AppToast.vue'
-import ConfirmModal from '../../../../components/ConfirmModal.vue'
-
 import { initials } from '../../../../utils/paging'
-import { useToast } from '../../../../composables/useToast'
-import * as XLSX from 'xlsx'
+import { confirmAction, showSuccess, showError } from '../../../../utils/feedback'
 
 import {
   onMounted,
+  onBeforeUnmount,
   ref,
   watch
 } from 'vue'
@@ -30,88 +29,44 @@ import CustomerAddressModal
 
 const router = useRouter()
 
-const {
-  toast,
-  success,
-  error: showError,
-  closeToast
-} = useToast()
-
-const confirmModal = ref({
-  show: false,
-  title: '',
-  message: '',
-  action: null
-})
-
-const confirmLoading = ref(false)
-
 const rows = ref([])
+
 const q = ref('')
+
 const status = ref('')
 
 const page = ref(1)
+
 const size = ref(5)
 
 const pages = ref(1)
+
 const totalElements = ref(0)
 
 const loading = ref(false)
+
 const error = ref('')
 
 const selected = ref(null)
-const modal = ref('')
 
-let searchTimer = null
+const modal = ref('')
+const updatingStatus = ref('')
+const openingModal = ref(false)
+
+let searchTimer
+let loadVersion = 0
 
 const errorMessage = (e) =>
-  e?.response?.data?.message ||
-  e?.message ||
-  'Có lỗi xảy ra. Vui lòng thử lại.'
-
-function askConfirm(
-  title,
-  message,
-  action
-) {
-  confirmModal.value = {
-    show: true,
-    title,
-    message,
-    action
-  }
-}
-
-function closeConfirm() {
-  if (confirmLoading.value) {
-    return
-  }
-
-  confirmModal.value.show = false
-  confirmModal.value.action = null
-}
-
-async function executeConfirm() {
-  if (!confirmModal.value.action) {
-    return
-  }
-
-  confirmLoading.value = true
-
-  try {
-    await confirmModal.value.action()
-  } finally {
-    confirmLoading.value = false
-    confirmModal.value.show = false
-    confirmModal.value.action = null
-  }
-}
+  e?.response?.data?.message
+  || 'Không thể tải dữ liệu khách hàng.'
 
 async function loadCustomers() {
+  const version = ++loadVersion
   loading.value = true
   error.value = ''
 
   try {
+
     const params = {
       page: page.value,
       size: size.value
@@ -131,6 +86,8 @@ async function loadCustomers() {
       await customerService
         .getCustomers(params)
 
+    if (version !== loadVersion) return
+
     rows.value =
       data?.content || []
 
@@ -143,24 +100,26 @@ async function loadCustomers() {
     totalElements.value =
       data?.totalElements || 0
 
-    if (page.value > pages.value) {
+    if (
+      page.value > pages.value
+    ) {
       page.value =
         pages.value
     }
 
   } catch (e) {
+
+    if (version !== loadVersion) return
+
     error.value =
       errorMessage(e)
 
     rows.value = []
-
-    showError(
-      error.value,
-      'Không thể tải dữ liệu'
-    )
+    pages.value = 1
+    totalElements.value = 0
 
   } finally {
-    loading.value = false
+    if (version === loadVersion) loading.value = false
   }
 }
 
@@ -168,66 +127,151 @@ async function openModal(
   type,
   customer
 ) {
+  if (openingModal.value) return
+  openingModal.value = true
   try {
+
     selected.value =
       await customerService
         .getCustomer(
           customer.code
         )
 
-    modal.value = type
+    modal.value =
+      type
 
   } catch (e) {
+
     showError(
-      errorMessage(e),
-      'Không thể tải thông tin'
+      errorMessage(e)
     )
+  } finally {
+    openingModal.value = false
   }
 }
 
-function toggleStatus(customer) {
-  const isActive =
-    customer.active === true ||
-    customer.status === 1
+async function toggleStatus(
+  customer
+) {
+  if (updatingStatus.value) return
+  const next =
+    customer.active
+      ? 0
+      : 1
 
-  const nextStatus =
-    isActive ? 0 : 1
+  const text =
+    customer.active
+      ? 'khóa'
+      : 'mở khóa'
 
-  askConfirm(
-    'Xác nhận cập nhật',
-
-    isActive
-      ? `Bạn có chắc chắn muốn khóa khách hàng ${customer.code} - ${customer.name} không?`
-      : `Bạn có chắc chắn muốn mở khóa khách hàng ${customer.code} - ${customer.name} không?`,
-
-    async () => {
-      try {
-        await customerService
-          .updateStatus(
-            customer.code,
-            nextStatus
-          )
-
-        await loadCustomers()
-
-        success(
-          isActive
-            ? 'Khóa tài khoản khách hàng thành công'
-            : 'Mở khóa tài khoản khách hàng thành công',
-          'Cập nhật thành công'
-        )
-
-      } catch (e) {
-        showError(
-          errorMessage(e),
-          'Cập nhật thất bại'
-        )
-      }
+  confirmAction(`Bạn có chắc muốn ${text} khách hàng ${customer.name || customer.code}?`, async () => {
+    if (updatingStatus.value) return
+    try {
+      updatingStatus.value = customer.code
+      await customerService.updateStatus(customer.code, next)
+      showSuccess(next === 1 ? 'Đã mở khóa khách hàng.' : 'Đã khóa khách hàng.')
+      await loadCustomers()
+    } catch (e) {
+      showError(errorMessage(e))
+    } finally {
+      updatingStatus.value = ''
     }
-  )
+  })
 }
 
+function reset() {
+
+  q.value = ''
+
+  status.value = ''
+
+  page.value = 1
+
+  loadCustomers()
+}
+
+function closeModal() {
+
+  modal.value = ''
+
+  selected.value = null
+}
+
+async function saved() {
+
+  closeModal()
+
+  await loadCustomers()
+}
+
+async function addressChanged() {
+  const code = selected.value?.code
+  await loadCustomers()
+
+  if (!code || selected.value?.code !== code) return
+  try {
+    const customer = await customerService.getCustomer(code)
+    if (selected.value?.code === code) selected.value = customer
+  } catch (e) {
+    error.value = errorMessage(e)
+  }
+}
+
+/*
+ * Search debounce 400ms.
+ */
+watch(
+  q,
+  () => {
+
+    ++loadVersion
+
+    clearTimeout(
+      searchTimer
+    )
+
+    searchTimer =
+      setTimeout(
+        () => {
+          page.value = 1
+          loadCustomers()
+        },
+        400
+      )
+  }
+)
+
+watch(
+  status,
+  () => {
+    page.value = 1
+    loadCustomers()
+  }
+)
+
+watch(
+  page,
+  loadCustomers
+)
+
+watch(
+  size,
+  () => {
+    page.value = 1
+    loadCustomers()
+  }
+)
+
+onMounted(
+  loadCustomers
+)
+
+onBeforeUnmount(() => {
+  clearTimeout(searchTimer)
+  ++loadVersion
+})
 function exportExcel() {
+  if (loading.value) return
   if (!rows.value?.length) {
     showError(
       'Không có dữ liệu khách hàng để xuất.',
@@ -321,112 +365,15 @@ function exportExcel() {
     `Danh_sach_khach_hang_${fileDate}.xlsx`
   )
 
-  success(
+  showSuccess(
     'Xuất danh sách khách hàng thành công',
     'Xuất Excel thành công'
   )
 }
 
-function reset() {
-  q.value = ''
-  status.value = ''
-  page.value = 1
-
-  loadCustomers()
-}
-
-function closeModal() {
-  modal.value = ''
-  selected.value = null
-}
-
-async function saved() {
-  closeModal()
-
-  await loadCustomers()
-
-  success(
-    'Cập nhật thông tin khách hàng thành công',
-    'Cập nhật thành công'
-  )
-}
-
-async function addressChanged() {
-  await loadCustomers()
-
-  if (selected.value) {
-    selected.value =
-      await customerService
-        .getCustomer(
-          selected.value.code
-        )
-  }
-}
-
-watch(
-  q,
-  () => {
-    clearTimeout(
-      searchTimer
-    )
-
-    searchTimer =
-      setTimeout(
-        () => {
-          page.value = 1
-          loadCustomers()
-        },
-        400
-      )
-  }
-)
-
-watch(
-  status,
-  () => {
-    page.value = 1
-    loadCustomers()
-  }
-)
-
-watch(
-  page,
-  loadCustomers
-)
-
-watch(
-  size,
-  () => {
-    page.value = 1
-    loadCustomers()
-  }
-)
-
-onMounted(
-  loadCustomers
-)
 </script>
 
 <template>
-
-  <AppToast
-  :show="toast.show"
-  :type="toast.type"
-  :title="toast.title"
-  :message="toast.message"
-  @close="closeToast"
-/>
-
-<ConfirmModal
-  :show="confirmModal.show"
-  :title="confirmModal.title"
-  :message="confirmModal.message"
-  :loading="confirmLoading"
-  confirm-text="Đồng ý"
-  cancel-text="Hủy"
-  @confirm="executeConfirm"
-  @cancel="closeConfirm"
-/>
 
   <AdminLayout>
 
@@ -488,14 +435,12 @@ onMounted(
           </button>
 
           <button
-  type="button"
-  class="ss-btn"
-  @click="exportExcel"
->
-  <i class="bi bi-file-earmark-excel"></i>
-
-  Xuất Excel
-</button>
+            class="ss-btn"
+            @click="exportExcel" :disabled="loading" title="Xuất dữ liệu trang hiện tại"
+          >
+            <i class="bi bi-file-earmark-excel"></i>
+            Xuất Excel
+          </button>
 
           <button
             class="ss-btn primary"
@@ -605,7 +550,7 @@ onMounted(
               <tr
                 v-for="(c, i) in rows"
                 v-else
-                :key="c.code"
+                :key="c.id ?? c.code"
               >
 
                 <td class="c">
@@ -621,7 +566,7 @@ onMounted(
 
                   <img
                     v-if="c.image"
-                    :src="c.image"
+                    :src="avatarUrl(c.image)"
                     class="customer-avatar-img"
                   />
 
@@ -640,15 +585,15 @@ onMounted(
                 </td>
 
                 <td class="ss-strong nowrap">
-                  {{ c.code }}
+                  {{ c.code || '—' }}
                 </td>
 
                 <td class="ss-strong">
-                  {{ c.name }}
+                  {{ c.name || '—' }}
                 </td>
 
                 <td>
-                  {{ c.email }}
+                  {{ c.email || '—' }}
                 </td>
 
                 <td style="min-width:240px">
@@ -672,7 +617,7 @@ onMounted(
                         : 'danger'
                     "
                   >
-                    {{ c.statusLabel }}
+                    {{ c.statusLabel || '—' }}
                   </span>
 
                 </td>
@@ -684,6 +629,7 @@ onMounted(
                     <button
                       class="ss-icon-btn"
                       title="Xem chi tiết"
+                      :disabled="openingModal"
                       @click="
                         openModal(
                           'detail',
@@ -697,6 +643,7 @@ onMounted(
                     <button
                       class="ss-icon-btn"
                       title="Sửa"
+                      :disabled="openingModal"
                       @click="
                         openModal(
                           'edit',
@@ -710,6 +657,7 @@ onMounted(
                     <button
                       class="ss-icon-btn"
                       title="Địa chỉ"
+                      :disabled="openingModal"
                       @click="
                         openModal(
                           'address',
@@ -722,6 +670,7 @@ onMounted(
 
                     <button
                       class="ss-icon-btn danger"
+                      :disabled="!!updatingStatus"
                       :title="
                         c.active
                           ? 'Khóa tài khoản'

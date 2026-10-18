@@ -1,38 +1,159 @@
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, ref, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { useAuthStore } from '../stores/auth'
+import api from '../utils/api'
+import { showError } from '../utils/feedback'
 
-const route = useRoute()
-const logo = new URL('../assets/logo3D.png', import.meta.url).href
+const route     = useRoute()
+const authStore = useAuthStore()
+const logo      = new URL('../assets/logo3D.png', import.meta.url).href
 const collapsed = ref(typeof window !== 'undefined' && window.innerWidth < 992)
+
+const userAvatarInitials = computed(() => {
+  const name = authStore.user?.name || ''
+  return name.split(' ').slice(-2).map(w => w[0]).join('').toUpperCase() || 'NV'
+})
+
+const userName = computed(() => authStore.user?.name || 'Nhân viên')
+
+const showLogoutConfirm = ref(false)
+
+function confirmLogout() {
+  showLogoutConfirm.value = true
+}
+
+async function doLogout() {
+  if (authStore.loggingOut) return
+  try {
+    if (await authStore.logout()) showLogoutConfirm.value = false
+  } catch { showError('Chưa lưu được trạng thái trước khi đăng xuất. Phiên đăng nhập vẫn được giữ.', 'Chưa thể đăng xuất') }
+}
+
+// ── Panel ca làm việc ─────────────────────────────────────
+const showCaPanel  = ref(false)
+const caList       = ref([])
+const caLoading    = ref(false)
+
+const STATUS_CA = {
+  0: { label: 'Chờ giao ca',  cls: 'warn'    },
+  1: { label: 'Giao ca',      cls: 'info'    },
+  2: { label: 'Vắng mặt',    cls: 'danger'  },
+  3: { label: 'Đã kết thúc', cls: 'success' }
+}
+
+function caStatusInfo(trangThai) {
+  return STATUS_CA[trangThai] || { label: 'Không xác định', cls: '' }
+}
+
+function fmtTime(str) {
+  if (!str) return ''
+  return str.replace('\n', ' ')
+}
+
+async function openCaPanel() {
+  showCaPanel.value = true
+  if (caLoading.value) return
+  caLoading.value = true
+  try {
+    const res = await api.get('/lich-lam-viec/ca-hom-nay')
+    caList.value = res.data?.data || []
+    caHomNayCount.value = caList.value.length
+  } catch { caList.value = [] }
+  finally { caLoading.value = false }
+}
+
+const caHomNayCount = ref(0)
+
+// Tính số ca đang diễn ra hiện tại (trangThai=1 và trong khoảng giờ ca)
+function demCaHienTai(list) {
+  const now = new Date()
+  const nowMin = now.getHours() * 60 + now.getMinutes()
+  return list.filter(ca => {
+    if (ca.trangThai !== 1) return false
+    if (!ca.thoiGian) return true // không có giờ thì cứ tính là đang diễn ra
+    // thoiGian dạng "08:00 - 17:00"
+    const match = ca.thoiGian.match(/(\d{2}):(\d{2})\s*-\s*(\d{2}):(\d{2})/)
+    if (!match) return true
+    const bdMin = parseInt(match[1]) * 60 + parseInt(match[2])
+    const ktMin = parseInt(match[3]) * 60 + parseInt(match[4])
+    // Ca qua đêm: ktMin < bdMin
+    if (ktMin < bdMin) return nowMin >= bdMin || nowMin <= ktMin
+    return nowMin >= bdMin && nowMin <= ktMin
+  }).length
+}
+
+onMounted(async () => {
+  try {
+    const res = await api.get('/lich-lam-viec/ca-hom-nay')
+    caList.value = res.data?.data || []
+    caHomNayCount.value = caList.value.length
+  } catch { /* ignore */ }
+})
 
 // Menu theo Figma: Thống kê → Bán hàng → Hóa đơn → Sản phẩm → Khách hàng → Nhân viên → Giảm giá
 const nav = [
-  { label: 'Thống kê', icon: 'bi-grid-1x2', to: '/thong-ke' },
+
+  { label: 'Thống kê', icon: 'bi-grid-1x2', to: '/thong-ke', adminOnly: true },
+  // { label: 'Thống kê tổng hợp', icon: 'bi-bar-chart-line', to: '/thong-ke-tong-hop' },
+
   { label: 'Bán hàng tại quầy', icon: 'bi-cart3', to: '/ban-hang' },
   { label: 'Quản lý hóa đơn', icon: 'bi-receipt', to: '/hoa-don' },
   {
-    key: 'product', label: 'Quản lý sản phẩm', icon: 'bi-box-seam',
+    key: 'product', label: 'Quản lý sản phẩm', icon: 'bi-box-seam', adminOnly: true,
     children: [
       { label: 'Sản phẩm', to: '/san-pham' },
-      { label: 'Biến thể sản phẩm', to: '/bien-the-san-pham' },
-      { label: 'Thiết lập biến thể sản phẩm', to: '/thuoc-tinh' }
+      { label: 'Biến thể sản phẩm', to: '/bien-the-san-pham' }
     ]
   },
-  { label: 'Quản lý khách hàng', icon: 'bi-people', to: '/khach-hang' },
-  { label: 'Quản lý nhân viên', icon: 'bi-person-badge', to: '/nhan-vien' },
   {
-    key: 'promo', label: 'Quản lý giảm giá', icon: 'bi-tags',
+    key: 'attributes', label: 'Thuộc tính', icon: 'bi-sliders', adminOnly: true,
+    children: [
+      { label: 'Thương hiệu', to: '/thuoc-tinh/thuong-hieu' },
+      { label: 'Danh mục', to: '/thuoc-tinh/danh-muc' },
+      { label: 'Chất liệu', to: '/thuoc-tinh/chat-lieu' },
+      { label: 'Kiểu dáng', to: '/thuoc-tinh/kieu-dang' },
+      { label: 'Cổ giày', to: '/thuoc-tinh/co-giay' },
+      { label: 'Xuất xứ', to: '/thuoc-tinh/xuat-xu' },
+      { label: 'Màu sắc', to: '/thuoc-tinh/mau-sac' },
+      { label: 'Kích thước', to: '/thuoc-tinh/kich-thuoc' }
+    ]
+  },
+  {
+    key: 'promo', label: 'Quản lý giảm giá', icon: 'bi-tags', adminOnly: true,
     children: [
       { label: 'Phiếu giảm giá', to: '/giam-gia' },
       { label: 'Đợt giảm giá', to: '/dot-giam-gia' }
+    ]
+  },
+  { label: 'Quản lý khách hàng', icon: 'bi-people', to: '/khach-hang' },
+  { label: 'Quản lý nhân viên', icon: 'bi-person-badge', to: '/nhan-vien', adminOnly: true },
+  {
+    key: 'schedule', label: 'Quản lý lịch làm', icon: 'bi-calendar-week', adminOnly: true,
+    children: [
+      { label: 'Lịch làm việc',     to: '/lich-lam-viec' },
+      { label: 'Lịch ca làm',       to: '/ca-lam-viec'   },
+      { label: 'Lịch sử hoạt động', to: '/lich-su-hoat-dong' }
     ]
   }
 ]
 
 const isOn = (to) => route.path === to || route.path.startsWith(to + '/')
 const groupActive = (item) => item.children ? item.children.some(c => isOn(c.to)) : isOn(item.to)
-const open = reactive({ product: true, promo: true })
+const openGroup = ref(null)
+
+watch(() => route.path, () => {
+  openGroup.value = nav.find(item => item.children && groupActive(item))?.key ?? null
+}, { immediate: true })
+
+function toggleGroup(key) {
+  openGroup.value = openGroup.value === key ? null : key
+}
+
+// Chỉ hiện menu có adminOnly khi role là ADMIN
+const visibleNav = computed(() =>
+  nav.filter(item => !item.adminOnly || authStore.isAdmin)
+)
 
 const crumbs = computed(() => ({
   parent: route.meta?.parent || null,
@@ -47,15 +168,15 @@ const crumbs = computed(() => ({
       <div class="group-label">Quản trị cửa hàng</div>
 
       <nav class="menu">
-        <template v-for="item in nav" :key="item.label">
+        <template v-for="item in visibleNav" :key="item.label">
           <!-- Mục có menu con -->
           <div v-if="item.children" class="nav-group">
-            <button type="button" class="nav-item" :class="{ active: groupActive(item) }" :title="item.label" @click="open[item.key] = !open[item.key]">
+            <button type="button" class="nav-item" :class="{ active: groupActive(item) }" :title="item.label" :aria-expanded="openGroup === item.key && !collapsed" @click="toggleGroup(item.key)">
               <i class="bi nav-icon" :class="item.icon"></i>
               <span class="nav-text">{{ item.label }}</span>
-              <i class="bi bi-chevron-down chev" :class="{ up: open[item.key] }"></i>
+              <i class="bi bi-chevron-down chev" :class="{ up: openGroup === item.key }"></i>
             </button>
-            <div v-show="open[item.key] && !collapsed" class="sub">
+            <div v-show="openGroup === item.key && !collapsed" class="sub">
               <RouterLink v-for="c in item.children" :key="c.to" :to="c.to" class="sub-item" :class="{ on: isOn(c.to) }">
                 <span class="bullet"></span><span>{{ c.label }}</span>
               </RouterLink>
@@ -82,12 +203,19 @@ const crumbs = computed(() => ({
         </div>
 
         <div class="right">
-          <button type="button" class="pill shift"><i class="bi bi-arrow-left-right"></i><span>Ca làm việc</span></button>
-          <button type="button" class="bell" aria-label="Thông báo">4</button>
+          <button type="button" class="pill shift" @click="openCaPanel">
+            <i class="bi bi-arrow-left-right"></i>
+            <span>Ca làm việc</span>
+            <span v-if="caHomNayCount > 0" class="ca-badge">{{ caHomNayCount }}</span>
+          </button>
+          <button type="button" class="bell" @click="openCaPanel" :title="caHomNayCount + ' ca hôm nay'">{{ caHomNayCount }}</button>
           <button type="button" class="pill user">
-            <span class="avatar">TA</span>
-            <span class="user-name">Vũ Chí Tuấn Anh</span>
+            <span class="avatar">{{ userAvatarInitials }}</span>
+            <span class="user-name">{{ userName }}</span>
             <i class="bi bi-chevron-down"></i>
+          </button>
+          <button type="button" class="pill logout" title="Đăng xuất" @click="confirmLogout">
+            <i class="bi bi-box-arrow-right"></i>
           </button>
         </div>
       </header>
@@ -95,6 +223,87 @@ const crumbs = computed(() => ({
       <slot />
     </section>
   </div>
+
+  <!-- Panel ca làm việc hôm nay -->
+  <Teleport to="body">
+    <Transition name="ca-panel">
+      <div v-if="showCaPanel" class="ca-overlay" @click.self="showCaPanel=false">
+        <div class="ca-panel">
+          <!-- Header -->
+          <div class="ca-panel-head">
+            <div class="ca-panel-title">
+              <i class="bi bi-calendar-check"></i>
+              <span>Ca làm việc hôm nay</span>
+            </div>
+            <button class="ca-close" @click="showCaPanel=false"><i class="bi bi-x-lg"></i></button>
+          </div>
+
+          <!-- Ngày -->
+          <div class="ca-date-label">
+            <i class="bi bi-calendar3"></i>
+            {{ new Date().toLocaleDateString('vi-VN', { weekday:'long', day:'2-digit', month:'long', year:'numeric' }) }}
+          </div>
+
+          <!-- Loading -->
+          <div v-if="caLoading" class="ca-empty">
+            <i class="bi bi-arrow-repeat ca-spin"></i> Đang tải...
+          </div>
+
+          <!-- Không có ca -->
+          <div v-else-if="!caList.length" class="ca-empty">
+            <i class="bi bi-calendar-x" style="font-size:32px;color:var(--ss-faint)"></i>
+            <p>Bạn không có ca làm việc hôm nay</p>
+          </div>
+
+          <!-- Danh sách ca -->
+          <div v-else class="ca-list">
+            <div v-for="ca in caList" :key="ca.id" class="ca-card">
+              <div class="ca-card-top">
+                <div class="ca-shift-name">{{ ca.tenCa }}</div>
+                <span class="ca-pill" :class="caStatusInfo(ca.trangThai).cls">
+                  {{ caStatusInfo(ca.trangThai).label }}
+                </span>
+              </div>
+              <div class="ca-time-row">
+                <i class="bi bi-clock"></i>
+                <span>{{ ca.thoiGian }}</span>
+              </div>
+              <div v-if="ca.thoiGianBatDau || ca.thoiGianKetThuc" class="ca-time-detail">
+                <div v-if="ca.thoiGianBatDau" class="ca-time-item">
+                  <span class="ca-time-lbl">Bắt đầu</span>
+                  <span class="ca-time-val">{{ fmtTime(ca.thoiGianBatDau) }}</span>
+                </div>
+                <div v-if="ca.thoiGianKetThuc" class="ca-time-item">
+                  <span class="ca-time-lbl">Kết thúc</span>
+                  <span class="ca-time-val">{{ fmtTime(ca.thoiGianKetThuc) }}</span>
+                </div>
+              </div>
+              <div v-if="ca.ghiChu" class="ca-note">
+                <i class="bi bi-chat-left-text"></i> {{ ca.ghiChu }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+
+  <!-- Modal xác nhận đăng xuất -->
+  <Teleport to="body">
+    <div v-if="showLogoutConfirm" class="logout-overlay" @click.self="!authStore.loggingOut && (showLogoutConfirm = false)">      <div class="logout-modal" role="dialog" aria-modal="true" aria-labelledby="logout-title">
+        <div class="logout-icon">
+          <i class="bi bi-box-arrow-right"></i>
+        </div>
+        <h3 id="logout-title">Xác nhận đăng xuất</h3>
+        <p>Bạn có chắc chắn muốn đăng xuất khỏi hệ thống?</p>
+        <p v-if="route.path === '/ban-hang'" class="logout-pos-hint">Giỏ hàng đã lưu vẫn được giữ. Thông tin giao hàng chưa hoàn tất sẽ không được lưu vào đơn.</p>
+        <div class="logout-actions">
+          <button class="btn-cancel" :disabled="authStore.loggingOut" @click="showLogoutConfirm = false">Hủy</button>
+          <button class="btn-confirm" :disabled="authStore.loggingOut" @click="doLogout">{{ authStore.loggingOut ? 'Đang đăng xuất…' : 'Đăng xuất' }}</button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -184,6 +393,105 @@ const crumbs = computed(() => ({
 .pill:hover { border-color: var(--ss-primary); }
 .shift { padding: 0 18px; }
 .shift i { color: var(--ss-primary); font-size: 13px; }
+.pill.logout {
+  padding: 0 14px;
+  color: #e53935;
+  border-color: #fcc;
+}
+.pill.logout:hover { background: #fff1f1; border-color: #e53935; }
+
+/* ── Modal xác nhận đăng xuất ── */
+.logout-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  animation: fade-in .15s ease;
+}
+
+.logout-modal {
+  background: #fff;
+  border-radius: 14px;
+  padding: 36px 32px 28px;
+  width: 340px;
+  text-align: center;
+  box-shadow: 0 16px 48px rgba(0,0,0,.2);
+  animation: slide-up .2s ease;
+}
+
+.logout-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #fff1f1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 16px;
+  font-size: 24px;
+  color: #e53935;
+}
+
+.logout-modal h3 {
+  font-size: 17px;
+  font-weight: 700;
+  color: #1a2b3c;
+  margin: 0 0 8px;
+}
+
+.logout-modal p {
+  font-size: 13.5px;
+  color: #5f7384;
+  margin: 0 0 24px;
+}
+
+.logout-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.btn-cancel {
+  flex: 1;
+  height: 40px;
+  border: 1.5px solid #d0dbe6;
+  border-radius: 8px;
+  background: #fff;
+  color: #4f5e6d;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color .15s;
+}
+
+.btn-cancel:hover { border-color: #168dcc; color: #168dcc; }
+
+.btn-confirm {
+  flex: 1;
+  height: 40px;
+  border: none;
+  border-radius: 8px;
+  background: #e53935;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s;
+}
+
+.btn-confirm:hover { background: #c62828; }
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes slide-up {
+  from { transform: translateY(16px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
 .bell {
   width: 38px; height: 38px; border-radius: 50%;
   border: 1px solid var(--ss-border); background: var(--ss-surface);
@@ -201,4 +509,130 @@ const crumbs = computed(() => ({
   .shift { padding: 0 12px; }
   .crumb-parent, .crumb-slash { display: none; }
 }
+
+/* ── Ca badge ─────────────────────────────────────────────── */
+.ca-badge {
+  min-width: 18px; height: 18px; border-radius: 999px;
+  background: var(--ss-primary); color: #fff;
+  font-size: 10px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0 5px; margin-left: 2px;
+}
+
+/* ── Panel overlay ─────────────────────────────────────────── */
+.ca-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.35);
+  z-index: 9998;
+  display: flex; justify-content: flex-end;
+}
+
+.ca-panel {
+  width: 340px; max-width: 100%;
+  height: 100vh; overflow-y: auto;
+  background: #fff;
+  box-shadow: -4px 0 24px rgba(0,0,0,.15);
+  display: flex; flex-direction: column;
+  padding: 0;
+}
+
+/* transition */
+.ca-panel-enter-active, .ca-panel-leave-active { transition: all .25s ease; }
+.ca-panel-enter-from .ca-panel, .ca-panel-leave-to .ca-panel { transform: translateX(100%); }
+
+/* ── Panel header ──────────────────────────────────────────── */
+.ca-panel-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--ss-border);
+  background: var(--ss-primary);
+  color: #fff;
+  flex-shrink: 0;
+}
+.ca-panel-title {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 15px; font-weight: 700;
+}
+.ca-close {
+  width: 32px; height: 32px; border-radius: 50%;
+  border: none; background: rgba(255,255,255,.2);
+  color: #fff; font-size: 14px; cursor: pointer;
+  display: grid; place-items: center;
+  transition: background .15s;
+}
+.ca-close:hover { background: rgba(255,255,255,.35); }
+
+/* ── Ngày ──────────────────────────────────────────────────── */
+.ca-date-label {
+  padding: 12px 20px;
+  font-size: 12px; font-weight: 600; color: var(--ss-muted);
+  display: flex; align-items: center; gap: 6px;
+  background: var(--ss-surface);
+  border-bottom: 1px solid var(--ss-border);
+  flex-shrink: 0;
+}
+
+/* ── Empty ─────────────────────────────────────────────────── */
+.ca-empty {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 12px; padding: 40px 20px;
+  font-size: 13px; color: var(--ss-muted); text-align: center;
+}
+.ca-spin { animation: ca-spin-kf .7s linear infinite; display: inline-block; font-size: 24px; }
+@keyframes ca-spin-kf { to { transform: rotate(360deg); } }
+
+/* ── List ──────────────────────────────────────────────────── */
+.ca-list { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+
+.ca-card {
+  border: 1px solid var(--ss-border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  background: #fff;
+  display: flex; flex-direction: column; gap: 8px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.05);
+  transition: box-shadow .15s;
+}
+.ca-card:hover { box-shadow: 0 3px 10px rgba(0,0,0,.1); }
+
+.ca-card-top {
+  display: flex; align-items: center;
+  justify-content: space-between; gap: 8px;
+}
+.ca-shift-name { font-size: 14px; font-weight: 700; color: var(--ss-text); }
+
+.ca-pill {
+  padding: 2px 10px; border-radius: 20px;
+  font-size: 11px; font-weight: 600; white-space: nowrap;
+}
+.ca-pill.warn    { background: #fff8e1; color: #f57f17; }
+.ca-pill.info    { background: #e3f2fd; color: #1565c0; }
+.ca-pill.danger  { background: #fff5f5; color: #c62828; }
+.ca-pill.success { background: #e8f5e9; color: #2e7d32; }
+
+.ca-time-row {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 600; color: var(--ss-primary);
+}
+
+.ca-time-detail {
+  display: flex; gap: 16px;
+  background: var(--ss-surface);
+  border-radius: 6px; padding: 8px 12px;
+}
+.ca-time-item { display: flex; flex-direction: column; gap: 2px; }
+.ca-time-lbl { font-size: 10px; font-weight: 600; color: var(--ss-muted); text-transform: uppercase; }
+.ca-time-val { font-size: 12px; font-weight: 700; color: var(--ss-text); }
+
+.ca-note {
+  font-size: 12px; color: var(--ss-muted);
+  display: flex; align-items: flex-start; gap: 6px;
+  padding-top: 4px; border-top: 1px dashed var(--ss-border);
+}
+</style>
+
+<style scoped>
+.logout-modal .logout-pos-hint { font-size: 12px; line-height: 1.5; color: #718096; }
+.logout-actions button:disabled { opacity: .6; cursor: wait; }
 </style>

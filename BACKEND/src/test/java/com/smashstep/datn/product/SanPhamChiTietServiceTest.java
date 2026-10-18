@@ -19,8 +19,9 @@ class SanPhamChiTietServiceTest {
     private final SanPhamRepository products = mock(SanPhamRepository.class);
     private final MauSacRepository colors = mock(MauSacRepository.class);
     private final KichThuocRepository sizes = mock(KichThuocRepository.class);
-    private final SanPhamChiTietService service = new SanPhamChiTietService(variants, products, colors, sizes,
-            mock(HinhAnhSanPhamRepository.class));
+    private final com.smashstep.datn.common.pricing.CurrentPriceService currentPrices = mock(com.smashstep.datn.common.pricing.CurrentPriceService.class);
+    private final SanPhamChiTietService service = new SanPhamChiTietService(currentPrices, variants, products, colors, sizes,
+            mock(HinhAnhSanPhamRepository.class), mock(KhoaGhiSanPham.class));
     private SanPham product;
 
     @BeforeEach
@@ -75,6 +76,11 @@ class SanPhamChiTietServiceTest {
         assertThrows(AppException.class, () -> service.themSanPhamChiTiet(request("CT1", "SKU1", 1L)));
         color.setTrangThai(1);
         when(variants.save(any())).thenAnswer(i -> { SanPhamChiTiet v = i.getArgument(0); v.setId(10L); return v; });
+        when(currentPrices.getPrice(any(SanPhamChiTiet.class), any(java.time.LocalDateTime.class))).thenAnswer(i -> {
+            SanPhamChiTiet variant = i.getArgument(0);
+            return new com.smashstep.datn.common.pricing.CurrentPrice(variant.getGiaBan(), variant.getGiaBan(),
+                    BigDecimal.ZERO, false, null, null, null);
+        });
         var response = service.themSanPhamChiTiet(request("CT1", "SKU1", 1L));
         assertEquals(10L, response.getId()); assertEquals(1L, response.getSanPhamId());
         assertEquals(new BigDecimal("1200000"), response.getGiaBan());

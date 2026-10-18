@@ -1,6 +1,8 @@
 <script setup>
+import { useProductToast } from '../../product/composables/useProductToast'
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
-import { onMounted, ref } from 'vue'
+import api from '../../../../utils/api'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import DiscountFilter from '../components/DiscountFilter.vue'
@@ -26,6 +28,7 @@ const filters = ref({
 })
 
 const rows = ref([])
+const formSupported = ref(false)
 
 const pageSize = ref(5)
 const page = ref(1)
@@ -34,6 +37,7 @@ const totalElements = ref(0)
 const totalPages = ref(1)
 
 const loading = ref(false)
+let requestId = 0
 
 /* xac nhan */
 
@@ -43,34 +47,11 @@ const saving = ref(false)
 const confirmAction = ref('')
 const selectedVoucher = ref(null)
 
-/* =========================
-  tbao popup*/
+/*tbao popup*/
 
-const toast = ref({
-  visible: false,
-  type: 'success',
-  title: '',
-  message: ''
-})
+const { show: showToast } = useProductToast()
 
-let toastTimer = null
-
-function showLocalToast(type, title, message) {
-  toast.value = {
-    visible: true,
-    type,
-    title,
-    message
-  }
-
-  if (toastTimer) {
-    window.clearTimeout(toastTimer)
-  }
-
-  toastTimer = window.setTimeout(() => {
-    toast.value.visible = false
-  }, 3000)
-}
+function showLocalToast(type, title, message) { showToast(type, message, title) }
 
 /*  bo loc */
 
@@ -97,15 +78,23 @@ function statusToValue(status) {
 
 /*  format  */
 
-function formatDate(value) {
+function formatDateTime(value) {
   if (!value) return '-'
 
-  const date = String(value).substring(0, 10)
-  const [y, m, d] = date.split('-')
+  const [datePart, timePart = ''] =
+    String(value).split('T')
 
-  return y && m && d
-    ? `${d}/${m}/${y}`
-    : date
+  const [y, m, d] =
+    datePart.split('-')
+
+  if (!y || !m || !d) {
+    return value
+  }
+
+  const time =
+    timePart.substring(0, 5)
+
+  return `${d}/${m}/${y} ${time}`
 }
 
 function formatDiscount(item) {
@@ -121,22 +110,21 @@ function formatDiscount(item) {
 function mapRow(item) {
   return {
     ...item,
-
     type: item.formLabel,
-
     value: formatDiscount(item),
 
-    start: formatDate(item.startDate),
+    start: formatDateTime(item.startDate),
+    end: formatDateTime(item.endDate),
 
-    end: formatDate(item.endDate),
-
-    statusLabel: item.statusLabel
+    timeStatus: item.timeStatus,
+    timeStatusLabel: item.timeStatusLabel
   }
 }
 
 /* view du lieu */
 
 async function loadData() {
+  const currentRequest = ++requestId
   loading.value = true
 
   try {
@@ -168,7 +156,8 @@ async function loadData() {
       size: pageSize.value
     })
 
-    const data = response.data.data
+    if (currentRequest !== requestId) return
+    const data = response.data?.data
 
     let content = data?.content || []
 
@@ -193,8 +182,13 @@ async function loadData() {
 
     totalPages.value =
       Math.max(1, data?.totalPages ?? 1)
+    if (page.value > totalPages.value) {
+      page.value = totalPages.value
+      await loadData()
+    }
 
   } catch (error) {
+    if (currentRequest !== requestId) return
     console.error(error)
 
     showLocalToast(
@@ -205,7 +199,7 @@ async function loadData() {
     )
 
   } finally {
-    loading.value = false
+    if (currentRequest === requestId) loading.value = false
   }
 }
 
@@ -268,6 +262,7 @@ function removeVoucher(voucher) {
 /* xac nhan hanh dong*/
 
 async function handleConfirm() {
+  if (saving.value) return
   if (!selectedVoucher.value) {
     return
   }
@@ -404,7 +399,12 @@ function changePage(nextPage) {
   loadData()
 }
 
-onMounted(loadData)
+onMounted(async () => {
+  try { const response = await api.get('/phieu-giam-gia/capabilities'); formSupported.value = response.data?.data?.formSupported === true }
+  catch { showLocalToast('error', 'Không tải được cấu hình phiếu', 'Vui lòng tải lại trang.'); }
+  await loadData()
+})
+onUnmounted(() => { ++requestId })
 </script>
 
 <template>
@@ -415,6 +415,7 @@ onMounted(loadData)
 
       <!-- bo loc -->
       <DiscountFilter
+        :form-supported="formSupported"
         v-model="filters"
         @search="search"
         @reset="reset"
@@ -566,47 +567,7 @@ onMounted(loadData)
 
     <!-- tbao popup -->
 
-    <div
-      v-if="toast.visible"
-      class="ss-toast"
-      :class="`ss-toast-${toast.type}`"
-    >
-
-      <div class="ss-toast-icon">
-
-        <i
-          v-if="toast.type === 'success'"
-          class="bi bi-check-circle-fill"
-        ></i>
-
-        <i
-          v-else
-          class="bi bi-x-circle-fill"
-        ></i>
-
-      </div>
-
-      <div class="ss-toast-content">
-
-        <strong>
-          {{ toast.title }}
-        </strong>
-
-        <span>
-          {{ toast.message }}
-        </span>
-
-      </div>
-
-      <button
-        type="button"
-        class="ss-toast-close"
-        @click="toast.visible = false"
-      >
-        ×
-      </button>
-
-    </div>
+    
 
   </AdminLayout>
 

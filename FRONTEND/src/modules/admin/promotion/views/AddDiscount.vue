@@ -1,11 +1,12 @@
 <script setup>
+import { useProductToast } from '../../product/composables/useProductToast'
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-
 import DiscountForm from '../components/DiscountForm.vue'
 import { createDiscount } from '../services/discountService'
 import ConfirmModal from '../components/ConfirmModal.vue'
+import { validateDiscount } from '../utils/validateDiscount'
 
 const router = useRouter()
 
@@ -25,35 +26,14 @@ const form = ref({
   startDate: '',
   endDate: '',
   status: 1,
-  description: ''
-  
+  description: '',
+  customerIds: []
+
 })
 
-const toast = ref({
-  visible: false,
-  type: 'success',
-  title: '',
-  message: ''
-})
+const { show: showToast } = useProductToast()
 
-let toastTimer = null
-
-function showLocalToast(type, title, message) {
-  toast.value = {
-    visible: true,
-    type,
-    title,
-    message
-  }
-
-  if (toastTimer) {
-    window.clearTimeout(toastTimer)
-  }
-
-  toastTimer = window.setTimeout(() => {
-    toast.value.visible = false
-  }, 3000)
-}
+function showLocalToast(type, title, message) { showToast(type, message, title) }
 
 
 function generateCode() {
@@ -71,74 +51,14 @@ function generateCode() {
 
 generateCode()
 
+
 function validate() {
-
-  if (!form.value.name?.trim()) {
-    return 'Vui lòng nhập tên phiếu!'
-  }
-
-  if (!form.value.code?.trim()) {
-    return 'Mã phiếu chưa được tạo!'
-  }
-
-  if (
-    form.value.discountValue == null ||
-    form.value.discountValue < 0
-  ) {
-    return 'Giá trị giảm không hợp lệ!'
-  }
-
-  if (
-    form.value.discountType === 1 &&
-    form.value.discountValue > 100
-  ) {
-    return 'Phần trăm giảm không được vượt quá 100%!'
-  }
-
-  if (
-    form.value.minOrderValue != null &&
-    form.value.minOrderValue < 0
-  ) {
-    return 'Giá trị đơn tối thiểu không hợp lệ!'
-  }
-
-  if (
-    form.value.maxDiscount != null &&
-    form.value.maxDiscount < 0
-  ) {
-    return 'Giảm tối đa không hợp lệ!'
-  }
-
-  if (!form.value.unlimited) {
-
-    if (
-      !form.value.quantity ||
-      form.value.quantity < 1
-    ) {
-      return 'Số lượng phải lớn hơn 0!'
-    }
-
-  }
-
-  if (
-    !form.value.startDate ||
-    !form.value.endDate
-  ) {
-    return 'Vui lòng nhập đầy đủ ngày bắt đầu và ngày kết thúc!'
-  }
-
-  if (
-    form.value.endDate <
-    form.value.startDate
-  ) {
-    return 'Ngày kết thúc phải sau ngày bắt đầu!'
-  }
-
-  return null
+  return validateDiscount(form.value, true)
 }
 
 
 function save() {
+  if (saving.value) return
   const message = validate()
 
   if (message) {
@@ -154,20 +74,21 @@ function save() {
 }
 
 async function handleConfirm() {
+  if (saving.value) return
   saving.value = true
 
   try {
-    await createDiscount({
+    const response = await createDiscount({
       ...form.value
     })
 
     showConfirm.value = false
 
-    showLocalToast(
-      'success',
-      'Tạo thành công',
-      'Tạo phiếu giảm giá thành công!'
-    )
+    if (response.data?.success !== true) throw new Error(response.data?.message || 'Lưu phiếu thất bại')
+    const email = response.data?.data?.emailResult
+    showLocalToast(email?.failed > 0 ? 'warning' : 'success',
+      email?.failed > 0 ? 'Đã lưu phiếu; email chưa gửi đủ' : 'Thành công',
+      'Tạo phiếu giảm giá thành công!' + (email && email.status !== 'NOT_REQUESTED' ? ' ' + email.message : ''))
 
     setTimeout(() => {
       router.push('/giam-gia')
@@ -178,16 +99,26 @@ async function handleConfirm() {
 
     showConfirm.value = false
 
+    let message = 'Tạo phiếu giảm giá thất bại!'
+    if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+      message = 'Hết thời gian chờ phản hồi từ máy chủ (Backend phản hồi quá lâu hoặc chưa được khởi động)!'
+    } else if (!error.response) {
+      message = 'Không thể kết nối đến máy chủ Backend (vui lòng kiểm tra server port 8080)!'
+    } else if (error.response?.data?.message) {
+      message = error.response.data.message
+    }
+
     showLocalToast(
       'error',
       'Tạo thất bại',
-      error.response?.data?.message ||
-      'Tạo phiếu giảm giá thất bại!'
+      message
     )
   } finally {
     saving.value = false
   }
 }
+
+
 </script>
 
 <template>
@@ -210,6 +141,7 @@ async function handleConfirm() {
       <!-- form them phieu -->
       <DiscountForm
         :form="form"
+        :saving="saving"
         :edit-mode="false"
         @submit="save"
         @cancel="router.back()"
@@ -220,52 +152,6 @@ async function handleConfirm() {
 
     <!-- thong bao popup -->
 
-    <div
-      v-if="toast.visible"
-      class="ss-toast"
-      :class="`ss-toast-${toast.type}`"
-    >
-
-      <!-- Icon -->
-      <div class="ss-toast-icon">
-
-        <i
-          v-if="toast.type === 'success'"
-          class="bi bi-check-circle-fill"
-        ></i>
-
-        <i
-          v-else
-          class="bi bi-x-circle-fill"
-        ></i>
-
-      </div>
-
-      <!-- noi dung -->
-      <div class="ss-toast-content">
-
-        <strong>
-          {{ toast.title }}
-        </strong>
-
-        <span>
-          {{ toast.message }}
-        </span>
-
-      </div>
-
-      <!-- dong -->
-      <button
-        type="button"
-        class="ss-toast-close"
-        @click="toast.visible = false"
-      >
-        ×
-      </button>
-
-      
-    </div>
-    
     <ConfirmModal
             :visible="showConfirm"
             title="Xác nhận thêm"
