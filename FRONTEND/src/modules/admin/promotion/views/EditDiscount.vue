@@ -3,14 +3,10 @@ import { useProductToast } from '../../product/composables/useProductToast'
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-
 import DiscountForm from '../components/DiscountForm.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
-
-import {
-  getDiscountById,
-  updateDiscount
-} from '../services/discountService'
+import { getDiscountById, updateDiscount } from '../services/discountService'
+import { validateDiscount } from '../utils/validateDiscount'
 
 const route = useRoute()
 const router = useRouter()
@@ -90,58 +86,7 @@ async function loadDetail() {
 }
 
 function validate() {
-  if (Number(form.value.discountType) === 1 && Number(form.value.maxDiscount) <= 0) return 'Giảm theo phần trăm phải có mức giảm tối đa lớn hơn 0!'
-  if (Number(form.value.form) === 2 && Number(form.value.quantity) !== new Set(form.value.customerIds || []).size) return 'Số lượng phiếu phải bằng số khách hàng được chọn!'
-
-  if (![1, 2].includes(Number(form.value.form)) || ![1, 2].includes(Number(form.value.discountType))) return 'Hình thức hoặc loại giảm không hợp lệ!'
-  for (const field of ['discountValue', 'minOrderValue', 'maxDiscount']) {
-    const value = form.value[field]
-    if (value == null || value === '' || !Number.isFinite(Number(value)) || Number(value) < 0) return 'Giá trị giảm và các giới hạn phải là số hợp lệ!'
-  }
-  if (!form.value.unlimited && (!Number.isInteger(Number(form.value.quantity)) || Number(form.value.quantity) <= 0)) return 'Số lượng phải là số nguyên lớn hơn 0!'
-  if (form.value.form === 2 && !form.value.customerIds?.length) return 'Vui lòng chọn khách hàng nhận phiếu!'
-  if (!form.value.name.trim()) {
-    return 'Vui lòng nhập tên phiếu!'
-  }
-
-  if (
-    form.value.discountValue == null ||
-    form.value.discountValue <= 0
-  ) {
-    return 'Giá trị giảm không hợp lệ!'
-  }
-
-  if (
-    form.value.discountType === 1 &&
-    form.value.discountValue > 100
-  ) {
-    return 'Phần trăm giảm không được vượt quá 100%!'
-  }
-
-  if (!form.value.unlimited) {
-    if (
-      !form.value.quantity ||
-      form.value.quantity < 1
-    ) {
-      return 'Số lượng phải lớn hơn 0!'
-    }
-  }
-
-  if (
-    !form.value.startDate ||
-    !form.value.endDate
-  ) {
-    return 'Vui lòng nhập đầy đủ ngày bắt đầu và ngày kết thúc!'
-  }
-
-  if (
-    form.value.endDate <=
-    form.value.startDate
-  ) {
-    return 'Ngày kết thúc phải sau ngày bắt đầu!'
-  }
-
-  return null
+  return validateDiscount(form.value, false)
 }
 
 function save() {

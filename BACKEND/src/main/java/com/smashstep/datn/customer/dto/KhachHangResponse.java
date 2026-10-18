@@ -12,36 +12,26 @@ import java.util.List;
 public class KhachHangResponse {
 
     private Long id;
-
     private String code;
-
     private String username;
-
     private String name;
-
     private String email;
-
     private String phone;
-
     private LocalDate dob;
-
     private Integer gender;
-
     private String genderLabel;
-
     private String image;
-
     private Integer status;
-
     private String statusLabel;
-
     private Boolean active;
-
     private LocalDateTime createdAt;
-
     private LocalDateTime updatedAt;
-
     private DiaChiKhachHangResponse defaultAddress;
-
     private List<DiaChiKhachHangResponse> addresses;
+
+    /** Tổng số đơn hàng hoàn thành */
+    private Long totalOrders;
+
+    /** Ngày mua gần nhất (đơn hoàn thành), format dd/MM/yyyy */
+    private String lastPurchase;
 }

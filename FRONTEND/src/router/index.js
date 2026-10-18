@@ -19,6 +19,7 @@ import DetailDiscount from '../modules/admin/promotion/views/DetailDiscount.vue'
 import EditCampaign from '../modules/admin/promotion/views/EditCampaign.vue'
 import CaLamViecList from '../modules/admin/schedule/views/CaLamViecList.vue'
 import AdminLogin from '../modules/auth/views/AdminLogin.vue'
+import AdminForgotPassword from '../modules/auth/views/AdminForgotPassword.vue'
 import CustomerLogin from '../modules/auth/views/CustomerLogin.vue'
 import CustomerHome from '../modules/auth/views/CustomerHome.vue'
 import LoginView from '../modules/auth/views/LoginView.vue'
@@ -33,14 +34,15 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     // ── Auth (public) ───────────────────────────────────
-    { path: '/dang-nhap',                    component: AdminLogin,    meta: { public: true, guestOnly: true } },
-    { path: '/khach-hang/dang-nhap',         component: CustomerLogin, meta: { public: true, guestOnly: true } },
+    { path: '/dang-nhap',                    component: AdminLogin,         meta: { public: true, guestOnly: true } },
+    { path: '/quen-mat-khau-quan-ly',        component: AdminForgotPassword, meta: { public: true, guestOnly: true } },
+    { path: '/khach-hang/dang-nhap',         component: CustomerLogin,      meta: { public: true, guestOnly: true } },
     { path: '/khach-hang/quen-mat-khau',     component: ForgotPassword, meta: { public: true, guestOnly: true } },
     { path: '/khach-hang/dat-lai-mat-khau',  component: ResetPassword,  meta: { public: true } },
     { path: '/khach-hang/trang-chu',         component: CustomerHome,  meta: { requiresAuth: true, userType: 'KHACH_HANG' } },
 
     // ── Admin area (requiresAuth + NHAN_VIEN) ───────────
-    { path: '/', redirect: '/thong-ke' },
+    { path: '/', redirect: '/ban-hang' },
     { path: '/hoa-don',         component: InvoiceList,   meta: { title: 'Quản lý hóa đơn', requiresAuth: true, userType: 'NHAN_VIEN' } },
     { path: '/hoa-don/:code',   component: InvoiceDetail, meta: { title: 'Chi tiết hóa đơn', parent: { label: 'Hóa đơn', to: '/hoa-don' }, requiresAuth: true, userType: 'NHAN_VIEN' } },
 
@@ -55,8 +57,8 @@ const router = createRouter({
     { path: '/dot-giam-gia/sua/:code',    component: EditCampaign,   meta: { title: 'Sửa đợt giảm giá', parent: { label: 'Đợt giảm giá', to: '/dot-giam-gia' }, requiresAuth: true, userType: 'NHAN_VIEN' } },
 
     { path: '/ban-hang',  component: POSSales,       meta: { title: 'Bán hàng tại quầy', requiresAuth: true, userType: 'NHAN_VIEN' } },
-    { path: '/thong-ke-tong-hop', component: () => import('../modules/admin/statistics/view/StatisticsDashboard.vue'), meta: { title: 'Thống kê tổng hợp', requiresAuth: true, userType: 'NHAN_VIEN' } },
-    { path: '/thong-ke',  component: StatisticsView, meta: { title: 'Thống kê', requiresAuth: true, userType: 'NHAN_VIEN' } },
+    { path: '/thong-ke-tong-hop', component: () => import('../modules/admin/statistics/view/StatisticsDashboard.vue'), meta: { title: 'Thống kê tổng hợp', requiresAuth: true, userType: 'NHAN_VIEN', role: 'ADMIN' } },
+    { path: '/thong-ke',  component: StatisticsView, meta: { title: 'Thống kê', requiresAuth: true, userType: 'NHAN_VIEN', role: 'ADMIN' } },
 
     { path: '/san-pham',           component: () => import('../modules/admin/product/views/ProductList.vue'),    meta: { title: 'Sản phẩm', parent: prod, requiresAuth: true, userType: 'NHAN_VIEN' } },
     { path: '/san-pham/them',      component: () => import('../modules/admin/product/views/ProductCreate.vue'),  meta: { title: 'Thêm sản phẩm', parent: productParent, requiresAuth: true, userType: 'NHAN_VIEN' } },
@@ -101,7 +103,7 @@ router.beforeEach((to, _from, next) => {
 
     // Trang chỉ dành cho guest: nếu đã login thì redirect đúng chỗ
     if (to.meta.guestOnly && auth.isAuthenticated) {
-      return next(auth.isCustomer ? '/khach-hang/trang-chu' : '/')
+      return next(auth.isCustomer ? '/khach-hang/trang-chu' : (auth.isAdmin ? '/thong-ke' : '/ban-hang'))
     }
 
     // Route không yêu cầu auth → cho qua
@@ -120,9 +122,9 @@ router.beforeEach((to, _from, next) => {
       return next('/khach-hang/trang-chu')
     }
 
-    // Kiểm tra role (ví dụ: trang nhân viên chỉ ADMIN mới vào được)
+    // Kiểm tra role (trang có role: 'ADMIN' thì STAFF không vào được)
     if (to.meta.role && to.meta.role !== auth.role) {
-      return next('/')
+      return next(auth.isAdmin ? '/thong-ke' : '/ban-hang')
     }
 
     next()

@@ -11,6 +11,7 @@ import com.smashstep.datn.customer.entity.DiaChiKhachHang;
 import com.smashstep.datn.customer.entity.KhachHang;
 import com.smashstep.datn.customer.repository.DiaChiKhachHangRepository;
 import com.smashstep.datn.customer.repository.KhachHangRepository;
+import com.smashstep.datn.invoice.repository.HoaDonRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -20,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -30,8 +32,10 @@ import java.util.Locale;
 public class KhachHangService {
 
     private final KhachHangRepository khachHangRepository;
-
     private final DiaChiKhachHangRepository diaChiRepository;
+    private final HoaDonRepository hoaDonRepository;
+
+    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
     public PageResponse<KhachHangResponse> getAll(
             String tuKhoa,
@@ -680,26 +684,21 @@ public class KhachHangService {
         DiaChiKhachHangResponse defaultAddress =
                 entities
                         .stream()
-                        .filter(
-                                a -> Boolean.TRUE.equals(
-                                        a.getIsMacDinh()
-                                )
-                        )
+                        .filter(a -> Boolean.TRUE.equals(a.getIsMacDinh()))
                         .findFirst()
-                        .map(
-                                this::toAddressResponse
-                        )
+                        .map(this::toAddressResponse)
                         .orElse(null);
 
         List<DiaChiKhachHangResponse> addresses =
                 includeAddresses
-                        ? entities
-                        .stream()
-                        .map(
-                                this::toAddressResponse
-                        )
-                        .toList()
+                        ? entities.stream().map(this::toAddressResponse).toList()
                         : null;
+
+        long totalOrders = hoaDonRepository.countDonHoanThanhByKhachHang(customer.getId());
+        LocalDateTime lastPurchaseDate = hoaDonRepository.findNgayMuaGanNhatByKhachHang(customer.getId());
+        String lastPurchase = lastPurchaseDate != null
+                ? lastPurchaseDate.toLocalDate().format(DATE_FMT)
+                : null;
 
         return KhachHangResponse
                 .builder()
@@ -736,6 +735,8 @@ public class KhachHangService {
                 .updatedAt(customer.getNgayCapNhat())
                 .defaultAddress(defaultAddress)
                 .addresses(addresses)
+                .totalOrders(totalOrders)
+                .lastPurchase(lastPurchase)
                 .build();
     }
 

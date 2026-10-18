@@ -17,7 +17,8 @@ async function handleLogin() {
   loading.value = true
   try {
     await authStore.login(username.value.trim(), password.value, 'NHAN_VIEN')
-    router.push(router.currentRoute.value.query.redirect || '/thong-ke')
+    const redirect = router.currentRoute.value.query.redirect
+    router.push(redirect || (authStore.isAdmin ? '/thong-ke' : '/ban-hang'))
   } catch (e) {
     error.value = e.response?.data?.message || 'Tên đăng nhập hoặc mật khẩu không đúng.'
   } finally {
@@ -80,6 +81,10 @@ async function handleLogin() {
           <span v-if="loading"><i class="bi bi-arrow-repeat spin"></i> Đang đăng nhập…</span>
           <span v-else>Đăng nhập</span>
         </button>
+
+        <p class="forgot-link">
+          <RouterLink to="/quen-mat-khau-quan-ly">Quên mật khẩu?</RouterLink>
+        </p>
       </form>
     </div>
   </div>
@@ -220,4 +225,15 @@ async function handleLogin() {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+.forgot-link {
+  text-align: center;
+  font-size: 13px;
+  margin-top: 12px;
+}
+.forgot-link a {
+  color: #7a8fa6;
+  text-decoration: none;
+}
+.forgot-link a:hover { color: #168dcc; }
 </style>

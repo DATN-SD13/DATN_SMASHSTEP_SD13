@@ -90,19 +90,19 @@ onMounted(async () => {
 
 // Menu theo Figma: Thống kê → Bán hàng → Hóa đơn → Sản phẩm → Khách hàng → Nhân viên → Giảm giá
 const nav = [
-  { label: 'Thống kê', icon: 'bi-grid-1x2', to: '/thong-ke' },
-  { label: 'Thống kê tổng hợp', icon: 'bi-bar-chart-line', to: '/thong-ke-tong-hop' },
+  { label: 'Thống kê', icon: 'bi-grid-1x2', to: '/thong-ke', adminOnly: true },
+  { label: 'Thống kê tổng hợp', icon: 'bi-bar-chart-line', to: '/thong-ke-tong-hop', adminOnly: true },
   { label: 'Bán hàng tại quầy', icon: 'bi-cart3', to: '/ban-hang' },
   { label: 'Quản lý hóa đơn', icon: 'bi-receipt', to: '/hoa-don' },
   {
-    key: 'product', label: 'Quản lý sản phẩm', icon: 'bi-box-seam',
+    key: 'product', label: 'Quản lý sản phẩm', icon: 'bi-box-seam', adminOnly: true,
     children: [
       { label: 'Sản phẩm', to: '/san-pham' },
       { label: 'Biến thể sản phẩm', to: '/bien-the-san-pham' }
     ]
   },
   {
-    key: 'attributes', label: 'Thuộc tính', icon: 'bi-sliders',
+    key: 'attributes', label: 'Thuộc tính', icon: 'bi-sliders', adminOnly: true,
     children: [
       { label: 'Thương hiệu', to: '/thuoc-tinh/thuong-hieu' },
       { label: 'Danh mục', to: '/thuoc-tinh/danh-muc' },
@@ -115,7 +115,7 @@ const nav = [
     ]
   },
   {
-    key: 'promo', label: 'Quản lý giảm giá', icon: 'bi-tags',
+    key: 'promo', label: 'Quản lý giảm giá', icon: 'bi-tags', adminOnly: true,
     children: [
       { label: 'Phiếu giảm giá', to: '/giam-gia' },
       { label: 'Đợt giảm giá', to: '/dot-giam-gia' }
@@ -126,8 +126,8 @@ const nav = [
   {
     key: 'schedule', label: 'Quản lý lịch làm', icon: 'bi-calendar-week', adminOnly: true,
     children: [
-      { label: 'Lịch làm việc',    to: '/lich-lam-viec' },
-      { label: 'Lịch ca làm',      to: '/ca-lam-viec'   },
+      { label: 'Lịch làm việc',     to: '/lich-lam-viec' },
+      { label: 'Lịch ca làm',       to: '/ca-lam-viec'   },
       { label: 'Lịch sử hoạt động', to: '/lich-su-hoat-dong' }
     ]
   }

@@ -320,8 +320,58 @@ function formatMoney(value) {
   return num.toLocaleString('vi-VN')
 }
 
-const minOrderRaw = ref(formatMoney(props.form.minOrderValue))
+const minOrderRaw    = ref(formatMoney(props.form.minOrderValue))
 const maxDiscountRaw = ref(formatMoney(props.form.maxDiscount))
+
+// ── discountValue: % nhập số thường, tiền mặt format dấu chấm ──
+const discountValueRaw = ref(
+  isPercent.value
+    ? String(props.form.discountValue ?? '')
+    : formatMoney(props.form.discountValue)
+)
+
+function onDiscountValueInput(e) {
+  if (isPercent.value) {
+    // % — nhập số thường
+    const val = e.target.value
+    props.form.discountValue = val === '' ? '' : Number(val)
+    discountValueRaw.value = val
+  } else {
+    // Tiền mặt — format dấu chấm giống minOrderValue
+    const digits = e.target.value.replace(/[^\d]/g, '')
+    const num = digits === '' ? '' : Number(digits)
+    props.form.discountValue = num === '' ? '' : num
+    discountValueRaw.value = num === '' ? '' : num.toLocaleString('vi-VN')
+    e.target.value = discountValueRaw.value
+  }
+}
+
+function onDiscountValueBlur() {
+  // không cần xử lý thêm
+}
+
+// Khi đổi loại giảm → reformat + reset maxDiscount nếu chuyển sang tiền mặt
+watch(isPercent, (nowPercent) => {
+  const num = Number(String(props.form.discountValue).replace(/[^\d]/g, ''))
+  if (nowPercent) {
+    // Chuyển sang %: bỏ format, hiển thị số thuần
+    discountValueRaw.value = num > 0 ? String(num) : ''
+  } else {
+    // Chuyển sang tiền mặt: format dấu chấm + reset maxDiscount
+    discountValueRaw.value = num > 0 ? num.toLocaleString('vi-VN') : ''
+    props.form.maxDiscount = 0
+    maxDiscountRaw.value   = ''
+  }
+})
+
+// Đồng bộ khi form load từ bên ngoài
+watch(() => props.form.discountValue, (val) => {
+  if (isPercent.value) {
+    discountValueRaw.value = val != null && val !== '' ? String(val) : ''
+  } else {
+    discountValueRaw.value = formatMoney(val)
+  }
+}, { immediate: true })
 
 function onMinOrderInput(e) {
   const digits = e.target.value.replace(/[^\d]/g, '')
@@ -416,6 +466,23 @@ watch(() => props.form.maxDiscount, (val) => {
 
       <div class="ss-field">
 
+        <label class="ss-label muted">
+          Giá trị đơn tối thiểu (VNĐ)
+        </label>
+
+        <input
+          class="ss-input"
+          type="text"
+          inputmode="numeric"
+          :value="minOrderRaw"
+          @input="onMinOrderInput"
+          placeholder="0"
+        />
+
+      </div>
+
+      <div class="ss-field">
+
         <span class="ss-label">
           Loại giảm
         </span>
@@ -453,29 +520,28 @@ watch(() => props.form.maxDiscount, (val) => {
           <span class="req">*</span>
         </label>
 
+        <!-- % — nhập số thường, tối đa 100 -->
         <input
+          v-if="isPercent"
           class="ss-input"
           type="number"
-          min="0.01"
-          step="0.01"
-          v-model.number="form.discountValue"
+          min="1"
+          max="100"
+          step="1"
+          :value="discountValueRaw"
+          placeholder="1 - 100"
+          @input="onDiscountValueInput"
         />
 
-      </div>
-
-      <div class="ss-field">
-
-        <label class="ss-label muted">
-          Giá trị đơn tối thiểu (VNĐ)
-        </label>
-
+        <!-- Tiền mặt — format dấu chấm -->
         <input
+          v-else
           class="ss-input"
           type="text"
           inputmode="numeric"
-          :value="minOrderRaw"
-          @input="onMinOrderInput"
+          :value="discountValueRaw"
           placeholder="0"
+          @input="onDiscountValueInput"
         />
 
       </div>
@@ -484,20 +550,23 @@ watch(() => props.form.maxDiscount, (val) => {
 
         <label class="ss-label muted">
           Giảm tối đa (VNĐ)
+          <span v-if="!isPercent" class="tag-disabled">Không áp dụng</span>
         </label>
 
         <input
           class="ss-input"
           type="text"
           inputmode="numeric"
-          :value="maxDiscountRaw"
+          :value="isPercent ? maxDiscountRaw : ''"
+          :disabled="!isPercent"
+          :placeholder="isPercent ? '0' : 'Không áp dụng với tiền mặt'"
+          :class="{ 'input-disabled': !isPercent }"
           @input="onMaxDiscountInput"
-          placeholder="0"
         />
 
         <span class="ss-hint warn">
           <i class="bi bi-exclamation-triangle"></i>
-          {{ isPercent ? "Giảm theo phần trăm cần mức giảm tối đa lớn hơn 0." : "Nếu không giới hạn, để trống hoặc 0." }}
+          {{ isPercent ? "Giảm theo phần trăm cần mức giảm tối đa lớn hơn 0." : "Giảm tiền mặt không cần giảm tối đa." }}
         </span>
 
       </div>
@@ -819,6 +888,24 @@ watch(() => props.form.maxDiscount, (val) => {
 </template>
 
 <style scoped>
+.input-disabled {
+  background: #f5f5f5 !important;
+  color: #aaa !important;
+  cursor: not-allowed;
+}
+
+.tag-disabled {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 500;
+  background: #f0f0f0;
+  color: #999;
+  border-radius: 4px;
+  vertical-align: middle;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
