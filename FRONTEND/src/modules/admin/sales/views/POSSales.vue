@@ -1247,7 +1247,7 @@ onBeforeUnmount(() => { unregisterLogoutGuard(); if (typeof window !== 'undefine
         </div>
         <div class="voucher-saving"><span>Bạn tiết kiệm thêm</span><strong>+{{ money(betterVoucherDialog.saving) }}</strong></div>
         <dl class="voucher-totals"><div><dt>Tổng tiền hàng</dt><dd>{{ money(betterVoucherDialog.subtotal) }}</dd></div><div><dt>Giảm giá với phiếu mới</dt><dd>−{{ money(betterVoucherDialog.nextDiscount) }}</dd></div><div v-if="order.delivery.enabled"><dt>Phí vận chuyển</dt><dd>{{ money(betterVoucherDialog.shippingFee) }}</dd></div><div class="voucher-new-total"><dt>Tổng thanh toán với phiếu mới</dt><dd>{{ money(betterVoucherDialog.total) }}</dd></div></dl>
-        
+
         <div class="ss-actions"><button class="ss-btn" @click="chooseCheckoutVoucher(false)">Giữ phiếu cũ</button><button class="ss-btn primary" @click="chooseCheckoutVoucher(true)">Dùng phiếu mới (tiết kiệm hơn)</button></div>
       </section>
     </div>

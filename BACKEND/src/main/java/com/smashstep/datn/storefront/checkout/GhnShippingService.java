@@ -31,6 +31,12 @@ public class GhnShippingService {
         if (r.district() != null && !r.district().isBlank())
             throw AppException.badRequest("Vui lòng chọn lại địa chỉ GHN hai cấp, không dùng quận / huyện cũ");
         if (r.address().length() > 500) throw AppException.badRequest("Địa chỉ nhận hàng tối đa 500 ký tự");
+        boolean provinceMatches = areas("provinces", null).stream()
+                .anyMatch(a -> a.id().equals(r.provinceId().toString()) && a.name().equals(r.province()));
+        boolean wardMatches = areas("wards", r.provinceId()).stream()
+                .anyMatch(a -> a.id().equals(r.wardCode()) && a.name().equals(r.ward()));
+        if (!provinceMatches || !wardMatches)
+            throw AppException.badRequest("Tên tỉnh / thành phố, phường / xã không khớp mã GHN. Vui lòng chọn lại.");
         var delivery = new SalesDelivery(true, null, r.name(), r.phone(), r.address(), null);
         return ghn.tinhPhiKhachHang(delivery, quantity, r.provinceId(), r.wardCode()).phiVanChuyen();
     }
