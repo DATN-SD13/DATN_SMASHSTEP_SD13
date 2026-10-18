@@ -1,4 +1,5 @@
 <script setup>
+import Select2NhanVien from './Select2NhanVien.vue'
 import CccdScanner from './CccdScanner.vue'
 import AvatarCard from '../../../../components/AvatarCard.vue'
 import { persistAvatar } from '../../../../utils/avatar'
@@ -522,10 +523,7 @@ onMounted(() => {
               <span class="req">*</span>
             </label>
 
-            <select
-              class="ss-select"
-              v-model="f.roleId"
-            >
+            <span class="nhan-vien-select-field"><Select2NhanVien :allow-clear="false" aria-label="Vai trò" v-model="f.roleId">
               <option value="">
                 Chọn vai trò
               </option>
@@ -537,7 +535,7 @@ onMounted(() => {
               >
                 {{ role.name }}
               </option>
-            </select>
+            </Select2NhanVien></span>
           </div>
 
           <div class="ss-field">
@@ -546,10 +544,7 @@ onMounted(() => {
               <span class="req">*</span>
             </label>
 
-            <select
-              class="ss-select"
-              v-model="f.gender"
-            >
+            <span class="nhan-vien-select-field"><Select2NhanVien :allow-clear="false" aria-label="Giới tính" v-model="f.gender">
               <option value="1">
                 Nam
               </option>
@@ -561,7 +556,7 @@ onMounted(() => {
               <option value="0">
                 Khác
               </option>
-            </select>
+            </Select2NhanVien></span>
           </div>
 
           <div class="ss-field">
@@ -602,10 +597,10 @@ onMounted(() => {
               <span class="req">*</span>
             </label>
 
-            <select class="ss-select" v-model="f.province" :disabled="loadingProvinces" @change="changeProvince">
+            <span class="nhan-vien-select-field"><Select2NhanVien :allow-clear="false" aria-label="Tỉnh/Thành phố" v-model="f.province" :disabled="loadingProvinces" @change="changeProvince">
               <option value="">Chọn tỉnh/thành</option>
               <option v-for="p in provinces" :key="p.code" :value="p.name">{{ p.name }}</option>
-            </select>
+            </Select2NhanVien></span>
 
           </div>
 
@@ -616,10 +611,10 @@ onMounted(() => {
               <span class="req">*</span>
             </label>
 
-            <select class="ss-select" v-model="f.ward" :disabled="loadingWards || !f.province">
+            <span class="nhan-vien-select-field"><Select2NhanVien :allow-clear="false" aria-label="Phường/Xã" v-model="f.ward" :disabled="loadingWards || !f.province">
               <option value="">Chọn phường/xã</option>
               <option v-for="w in wards" :key="w.code" :value="w.name">{{ w.name }}</option>
-            </select>
+            </Select2NhanVien></span>
 
           </div>
 

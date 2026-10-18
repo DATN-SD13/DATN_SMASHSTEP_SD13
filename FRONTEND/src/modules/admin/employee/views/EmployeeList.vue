@@ -1,16 +1,30 @@
 <script setup>
+import Select2NhanVien from '../components/Select2NhanVien.vue'
 import * as XLSX from 'xlsx'
 import { avatarUrl } from '../../../../utils/avatar'
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import SsPager from '../../../../components/SsPager.vue'
 import { initials } from '../../../../utils/paging'
 import employeeService from '../services/employeeService'
+import NhanVienImportModal from '../components/NhanVienImportModal.vue'
 import { confirmAction, showSuccess, showError } from '../../../../utils/feedback'
 
 import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
+const showImport = ref(false), downloadingTemplate = ref(false)
+async function downloadTemplate() {
+  if (downloadingTemplate.value) return
+  downloadingTemplate.value = true
+  try {
+    const blob = await employeeService.downloadImportTemplate()
+    const url = URL.createObjectURL(blob), link = document.createElement('a')
+    link.href = url; link.download = 'nhan-vien-mau.xlsx'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000)
+  } catch { showError('Không tải được file mẫu. Kiểm tra kết nối và quyền quản lý.') }
+  finally { downloadingTemplate.value = false }
+}
+function importedEmployees() { if (page.value !== 1) page.value = 1; else loadEmployees() }
 
 const rows = ref([])
 const roles = ref([])
@@ -286,11 +300,7 @@ function exportExcel() {
             />
           </div>
 
-          <select
-            class="ss-select"
-            v-model="f.roleId"
-            style="width:180px"
-          >
+          <span class="nhan-vien-select-field" style="width:180px"><Select2NhanVien :allow-clear="false" aria-label="Vai trò" v-model="f.roleId">
             <option value="all">
               Tất cả vai trò
             </option>
@@ -302,13 +312,9 @@ function exportExcel() {
             >
               {{ r.name }}
             </option>
-          </select>
+          </Select2NhanVien></span>
 
-          <select
-            class="ss-select"
-            v-model="f.status"
-            style="width:150px"
-          >
+          <span class="nhan-vien-select-field" style="width:150px"><Select2NhanVien :allow-clear="false" aria-label="Trạng thái" v-model="f.status">
             <option value="all">
               Tất cả
             </option>
@@ -320,7 +326,7 @@ function exportExcel() {
             <option value="0">
               Đã khóa
             </option>
-          </select>
+          </Select2NhanVien></span>
         </div>
 
         <div class="ss-actions">
@@ -331,6 +337,8 @@ function exportExcel() {
             Đặt lại bộ lọc
           </button>
 
+          <button type="button" class="ss-btn" :disabled="downloadingTemplate" @click="downloadTemplate"><i class="bi bi-download"></i> {{ downloadingTemplate ? 'Đang tải…' : 'Tải file mẫu' }}</button>
+          <button type="button" class="ss-btn" @click="showImport = true"><i class="bi bi-upload"></i> Nhập Excel</button>
           <button class="ss-btn" @click="exportExcel" :disabled="loading" title="Xuất dữ liệu trang hiện tại">
             <i class="bi bi-file-earmark-excel"></i>
             Xuất Excel
@@ -538,11 +546,14 @@ function exportExcel() {
           v-model:page="page"
           v-model:size="size"
           :pages="pages"
-        />
+        >
+          <template #page-size><span class="nhan-vien-select-field pager-select-field"><Select2NhanVien :model-value="size" :allow-clear="false" :search="false" aria-label="Số dòng mỗi trang" @change="size = Number($event)"><option :value="5">5</option><option :value="10">10</option><option :value="20">20</option></Select2NhanVien></span></template>
+        </SsPager>
 
       </section>
 
     </main>
+    <NhanVienImportModal v-if="showImport" @close="showImport = false" @imported="importedEmployees" />
   </AdminLayout>
 </template>
 

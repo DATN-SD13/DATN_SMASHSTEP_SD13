@@ -38,6 +38,7 @@ public class NhanVienService {
     private final VaiTroRepository vaiTroRepository;
     private final EmployeeMailService employeeMailService;
     private final PasswordEncoder passwordEncoder;
+    @org.springframework.beans.factory.annotation.Autowired private NhanVienWriteLock employeeWriteLock;
 
     // =========================================================
     // DANH SÁCH + TÌM KIẾM + LỌC + PHÂN TRANG
@@ -94,7 +95,22 @@ public class NhanVienService {
     // =========================================================
     @Transactional
     public NhanVienResponse them(NhanVienRequest request) {
+        lockEmployeeWrites();
+        return createAccount(request, this::sendEmployeeAccountAfterCommit);
+    }
 
+    /** Same creation path, but persist mail jobs in the enclosing import transaction. */
+    @Transactional
+    public NhanVienResponse themTuExcel(NhanVienRequest request, java.util.function.BiConsumer<NhanVien, String> queueMail) {
+        lockEmployeeWrites();
+        return createAccount(request, queueMail);
+    }
+
+    public void validateImportRules(NhanVienRequest request) { validateRequest(request); normalizeImage(request.getImage()); }
+
+    private void lockEmployeeWrites() { if (employeeWriteLock != null) employeeWriteLock.lock(); }
+
+    private NhanVienResponse createAccount(NhanVienRequest request, java.util.function.BiConsumer<NhanVien, String> accountReady) {
         validateRequest(request);
 
         String email = request.getEmail().trim();
@@ -174,7 +190,7 @@ public class NhanVienService {
         saved.setMatKhau(passwordEncoder.encode(temporaryPassword));
         saved.setNgayCapNhat(LocalDateTime.now());
         saved = nhanVienRepository.save(saved);
-        sendEmployeeAccountAfterCommit(saved, temporaryPassword);
+        accountReady.accept(saved, temporaryPassword);
 
         return toResponse(saved);
     }
@@ -188,6 +204,7 @@ public class NhanVienService {
             NhanVienRequest request
     ) {
 
+        lockEmployeeWrites();
         NhanVien nhanVien = findByMa(ma);
 
         validateRequest(request);

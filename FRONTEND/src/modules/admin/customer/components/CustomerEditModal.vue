@@ -1,4 +1,5 @@
 <script setup>
+import Select2KhachHang from './Select2KhachHang.vue'
 import { ref } from 'vue'
 import AvatarCard from '../../../../components/AvatarCard.vue'
 import { persistAvatar } from '../../../../utils/avatar'
@@ -171,10 +172,7 @@ async function save() {
                 Giới tính
               </label>
 
-              <select
-                class="ss-select"
-                v-model="f.gender"
-              >
+              <span class="khach-hang-select-field"><Select2KhachHang :allow-clear="false" aria-label="Giới tính" v-model="f.gender">
                 <option value="">
                   -- Chọn --
                 </option>
@@ -190,7 +188,7 @@ async function save() {
                 <option :value="0">
                   Khác
                 </option>
-              </select>
+              </Select2KhachHang></span>
             </div>
 
             <div class="ss-field">
