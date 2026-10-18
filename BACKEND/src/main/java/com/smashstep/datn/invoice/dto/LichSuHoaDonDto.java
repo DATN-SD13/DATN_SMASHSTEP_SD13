@@ -41,10 +41,10 @@ public class LichSuHoaDonDto {
                 .tenNhanVien(nhanVien != null ? nhanVien.getTenNhanVien() : null)
                 .vaiTro(vaiTro)
                 .maTrangThai(lichSu.getTrangThai())
-                .trangThai(trangThai != null ? trangThai.getNhan() : "Không xác định")
+                .trangThai(com.smashstep.datn.invoice.rules.ReturnedGoodsRules.reserved(lichSu.getGhiChu()) ? "Đã xử lý hàng trả" : trangThai != null ? trangThai.getNhan() : "Không xác định")
                 .ghiChu(
                         com.smashstep.datn.invoice.rules.PosHistoryRules.noiDung(
-                                lichSu.getGhiChu()))
+                                com.smashstep.datn.invoice.rules.ReturnedGoodsRules.note(lichSu.getGhiChu())))
                 .ngayTao(
                         lichSu.getNgayTao() == null
                                 ? null

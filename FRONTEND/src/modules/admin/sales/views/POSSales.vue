@@ -182,7 +182,7 @@ async function loadPaymentOptions() {
   } catch (e) { error.value = message(e) }
 }
 watch([quoteSignature, busy], () => {
-  if (bankAccepted.value) return
+  if (bankAccepted.value || checkoutDialog.value || pendingPayment.value) return
   ++quoteVersion; clearTimeout(quoteTimer)
   if (order.value) { order.value.quote = null; order.value.quotedSignature = '' }
   if (!busy.value) quoteTimer = setTimeout(calculateQuote, 250)
@@ -557,6 +557,20 @@ async function confirmPayment() {
     checkoutDialog.value = null; error.value = 'Thông tin hóa đơn đã thay đổi. Vui lòng mở lại mã QR và kiểm tra số tiền.'; return
   }
   if (dialog.bank > 0) {
+    // Persist a recovery request before sending the hold. A lost response must keep this exact request.
+    dialog.payload.transferConfirmed = true
+    const saved = { employeeId: employeeId.value, invoiceCode: dialog.invoiceCode, payload: JSON.parse(JSON.stringify(dialog.payload)) }
+    try {
+      sessionStorage.setItem(RECOVERY_KEY, JSON.stringify(saved))
+      busy.value = true
+      await salesService.baoVeKhoanThu(saved.payload)
+    } catch (e) {
+      pendingPayment.value = saved
+      checkoutDialog.value = null
+      error.value = 'Khoản chuyển khoản cần kiểm tra: ' + message(e) + '. Không chuyển khoản thêm; dùng Kiểm tra lại thanh toán.'
+      showError(error.value, 'Cần đối soát khoản thu')
+      return
+    } finally { busy.value = false }
     clearTimeout(quoteTimer); ++quoteVersion
     order.value.autoVoucher = false
     bankAccepted.value = { context: dialog.context, total: dialog.total, invoiceCode: dialog.invoiceCode,
@@ -592,7 +606,7 @@ async function performPayment(saved) {
     await Promise.allSettled([reloadOrders(), loadCatalog()])
   } catch (e) {
     checkoutDialog.value = null
-    if (bankAccepted.value && saved.payload.transferConfirmed) {
+    if (saved.payload.transferConfirmed) {
       error.value = 'Đã xác nhận nhận tiền nhưng hóa đơn chưa hoàn tất: ' + message(e) + '. Kiểm tra lại thanh toán bằng yêu cầu đã lưu; không chuyển khoản thêm.'
     } else if (!e.response || e.response.status >= 500) {
       error.value = 'Chưa xác định được kết quả thanh toán. Bấm Kiểm tra lại thanh toán để gửi lại đúng yêu cầu; không tạo yêu cầu mới.'
@@ -663,11 +677,13 @@ async function syncCartStock() {
       }
       return server
     })
+    const expiredCount = orders.value.filter(o => !rows.some(d => d.id === o.id)).length
     if (next.length !== orders.value.length) changed = true
     if (changed) {
       orders.value = next
       if (!next.some(o => o.id === activeId.value)) activeId.value = next[0]?.id ?? null
       checkoutDialog.value = null; bankAccepted.value = null
+      if (expiredCount) showSuccess('Hóa đơn chờ đã qua ngày hoặc được xử lý ở phiên khác đã được dọn khỏi POS. Tồn kho do máy chủ cập nhật.', 'Giỏ chờ đã cập nhật')
       if (removed.length) showSuccess(`Đã tự xóa sản phẩm ngừng kinh doanh khỏi giỏ: ${[...new Set(removed)].join(', ')}. Vui lòng kiểm tra lại đơn hàng.`, 'Giỏ hàng đã cập nhật')
     }
     if (picking.value) await loadCatalog(true)
@@ -734,6 +750,9 @@ async function saveOrder(target = order.value, successMessage = '') {
     return true
   } catch (e) {
     if (alive) { error.value = message(e) + ' Thay đổi chưa được lưu.'; showError(error.value, 'Không thể lưu hóa đơn') }
+    if (e.response?.status === 404 && !pendingPayment.value && !bankAccepted.value) {
+      try { await reloadOrders(); await loadCatalog(true) } catch {}
+    }
     if (e.response?.status === 409 && !pendingPayment.value) await reviewChangedCart(target)
     return false
   } finally { busy.value = false }
@@ -985,7 +1004,7 @@ onMounted(async () => {
     if (me.userType !== 'NHAN_VIEN' || !['ADMIN', 'STAFF'].includes(me.role)) throw new Error('Chỉ nhân viên được sử dụng POS')
     employeeId.value = me.userId
     employeeName.value = auth.user?.id === me.userId ? `${auth.user.code || ''} · ${auth.user.name || me.username}` : me.username
-    await reloadOrders(); restoreCheckout(); ready.value = true
+    restoreCheckout(); await reloadOrders(); ready.value = true
     await Promise.all([loadCatalog(), loadCustomers(), loadPaymentOptions(), productAttributeService.options(['colors', 'sizes', 'categories', 'brands']).then(v => { attributes.value = v })])
     if (typeof window !== 'undefined') {
       window.addEventListener('focus', requestStockSync)

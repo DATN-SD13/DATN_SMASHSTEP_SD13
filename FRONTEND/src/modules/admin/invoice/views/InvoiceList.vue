@@ -36,6 +36,7 @@ const statusCodes = {
   done: 5,
   cancel: 6,
   refund: 7,
+  failed: 9,
   pending: 8
 }
 

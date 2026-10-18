@@ -423,6 +423,33 @@ public class SalesService {
         return h;
     }
 
+    @Transactional
+    public void baoVeKhoanThu(SalesRequest request) {
+        khoaThanhToan();
+        if (request.getIdHoaDon() == null || request.getMaYeuCau() == null
+                || !request.getMaYeuCau().matches("(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"))
+            throw AppException.badRequest("Thiếu hóa đơn hoặc requestId hợp lệ");
+        if (!Boolean.TRUE.equals(request.getDaXacNhanChuyenKhoan()) || request.getDanhSachThanhToan()==null
+                || request.getDanhSachThanhToan().isEmpty() || request.getDanhSachSanPham()==null || request.getDanhSachSanPham().isEmpty())
+            throw AppException.badRequest("Cần xác nhận khoản chuyển khoản và dữ liệu thanh toán đầy đủ");
+        var h = hoaDonThuocNhanVien(request.getIdHoaDon(),true);
+        var holds = entityManager.createQuery("select p from LichSuThanhToan p where p.idHoaDon=:h",LichSuThanhToan.class)
+                .setParameter("h",h).getResultList();
+        String code = "POS-HOLD-" + request.getMaYeuCau().toLowerCase(Locale.ROOT);
+        String hash = CheckoutFingerprint.taoMa(request);
+        if (!holds.isEmpty()) {
+            if (holds.size()==1 && code.equals(holds.get(0).getMaGiaoDich()) && hash.equals(holds.get(0).getMoTa())) return;
+            throw AppException.conflict("Hóa đơn có khoản thanh toán khác cần đối soát");
+        }
+        Long revision = entityManager.createQuery("select max(l.id) from LichSuHoaDon l where l.idHoaDon.id=:id",Long.class)
+                .setParameter("id",h.getId()).getSingleResult();
+        if (!Objects.equals(revision,request.getPhienBan())) throw AppException.conflict("Hóa đơn đã thay đổi; kiểm tra khoản thu trước khi tiếp tục");
+        if (PosDayRules.expired(h,PosDayRules.startToday())) throw AppException.conflict("Hóa đơn chờ đã qua ngày");
+        var row = new LichSuThanhToan(); row.setIdHoaDon(h); row.setMaGiaoDich(code);
+        row.setTrangThai(0); row.setSoTien(BigDecimal.ZERO); row.setMoTa(hash); row.setThoiGian(LocalDateTime.now());
+        entityManager.persist(row);
+    }
+
     private Receipt thanhToanHoaDonCho(SalesRequest yeuCau) {
         yeuCau.setIdNhanVien(PosActor.idNhanVien());
         if (yeuCau.getMaYeuCau() == null
@@ -472,13 +499,13 @@ public class SalesService {
             return ketQuaThanhToanHoaDonCho(h, giaoDichTruoc, yeuCau.getTienKhachDua());
         }
         HoaDon h = hoaDonThuocNhanVien(yeuCau.getIdHoaDon(), true);
-        if (entityManager
-                .createQuery(
-                        "select count(p) from LichSuThanhToan p where p.idHoaDon.id = :id",
-                        Long.class)
-                .setParameter("id", h.getId())
-                .getSingleResult()
-                > 0) throw AppException.conflict("Hóa đơn đã có thanh toán");
+        var holds = entityManager.createQuery("select p from LichSuThanhToan p where p.idHoaDon=:h",LichSuThanhToan.class)
+                .setParameter("h",h).getResultList();
+        boolean ownHold = holds.size()==1 && ("POS-HOLD-"+yeuCau.getMaYeuCau().toLowerCase(Locale.ROOT)).equals(holds.get(0).getMaGiaoDich())
+                && CheckoutFingerprint.taoMa(yeuCau).equals(holds.get(0).getMoTa()) && Integer.valueOf(0).equals(holds.get(0).getTrangThai());
+        if (!holds.isEmpty() && !ownHold) throw AppException.conflict("Hóa đơn có khoản thanh toán cần đối soát");
+        if (!ownHold && PosDayRules.expired(h,PosDayRules.startToday()))
+            throw AppException.conflict("Hóa đơn chờ đã qua ngày; mở lại POS để dọn giỏ và hoàn kho");
         Long phienBan =
                 entityManager
                         .createQuery(
@@ -584,6 +611,7 @@ public class SalesService {
         h.setTrangThai(giaoHang.apDung() ? 0 : 5);
         h.setNgayThanhToan(thoiDiem);
         h.setNgayCapNhat(thoiDiem);
+        if (ownHold) entityManager.remove(holds.get(0));
         List<LichSuThanhToan> danhSachThanhToan = new ArrayList<>();
         int index = 0;
         for (var part : plan.cacKhoanThu()) {

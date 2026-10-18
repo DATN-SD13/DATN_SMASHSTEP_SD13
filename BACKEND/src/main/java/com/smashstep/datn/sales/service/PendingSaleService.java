@@ -31,6 +31,7 @@ public class PendingSaleService {
     private final InvoiceCodeService dichVuMaHoaDon;
     private final CurrentPriceService dichVuGiaHienTai;
     private final SalesService salesService;
+    @org.springframework.beans.factory.annotation.Autowired private ExpiredPosDraftService expiredDrafts;
     private static final BigDecimal SO_KHONG = new BigDecimal("0.00");
     private static final String DIEU_KIEN_HOA_DON_CHO =
             " from HoaDon h where h.idNhanVien.id = :employee and h.loaiHoaDon = 0 and h.trangThai"
@@ -38,7 +39,9 @@ public class PendingSaleService {
                     + " locate(:deliveryMarker, h.ghiChu) = 1) and not exists (select p.id from"
                     + " LichSuThanhToan p where p.idHoaDon = h)";
 
+    @Transactional
     public List<Draft> danhSachHoaDonCho() {
+        expiredDrafts.clean();
         var nhanVien = nhanVien();
         return entityManager
                 .createQuery("select h" + DIEU_KIEN_HOA_DON_CHO + " order by h.id", HoaDon.class)
@@ -54,6 +57,7 @@ public class PendingSaleService {
 
     @Transactional
     public List<Draft> dongBoHoaDonCho() {
+        expiredDrafts.clean();
         var employee = nhanVien();
         dichVuMaHoaDon.lockInvoiceCreation();
         var drafts = entityManager.createQuery("select h" + DIEU_KIEN_HOA_DON_CHO + " order by h.id", HoaDon.class)
@@ -98,6 +102,7 @@ public class PendingSaleService {
 
     @Transactional
     public Draft taoHoaDonCho() {
+        expiredDrafts.clean();
         var nhanVien = nhanVien();
         // Same transaction-scoped SQL Server lock as all existing invoice creation paths.
         // Count happens AFTER acquiring it, so concurrent requests cannot both take the fifth slot.
@@ -122,7 +127,7 @@ public class PendingSaleService {
         h.setThanhTien(SO_KHONG);
         h.setTienGiamGia(SO_KHONG);
         h.setPhiVanChuyen(SO_KHONG);
-        h.setNgayTao(LocalDateTime.now());
+        h.setNgayTao(LocalDateTime.now(PosDayRules.ZONE));
         h.setNgayCapNhat(h.getNgayTao());
         entityManager.persist(h);
         ghiLichSu(h, "Tạo hóa đơn chờ tại quầy (chưa thanh toán)");
@@ -271,6 +276,8 @@ public class PendingSaleService {
                 .getSingleResult()
                 > 0)
             throw AppException.conflict("Hóa đơn không còn là đơn chờ chưa thanh toán");
+        if (PosDayRules.expired(h, PosDayRules.startToday()))
+            throw AppException.conflict("Hóa đơn chờ đã qua ngày; mở lại POS để dọn giỏ và hoàn kho");
         return h;
     }
 

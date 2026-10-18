@@ -12,8 +12,8 @@ const currentDate = today()
 const filters = reactive({ code: '', from: currentDate, to: currentDate, type: 'all', status: 'all' })
 const statusOptions = [
   ['all', 'Tất cả'], ['waiting', 'Chờ xác nhận'], ['confirmed', 'Đã xác nhận'],
-  ['ready', 'Chờ giao hàng'], ['shipping', 'Đang giao hàng'], ['delivered', 'Đã giao hàng'],
-  ['done', 'Đã hoàn thành'], ['cancel', 'Đã hủy'], ['refund', 'Hoàn tiền']
+  ['ready', 'Chờ lấy hàng'], ['shipping', 'Đang giao hàng'], ['delivered', 'Đã giao hàng'],
+  ['failed', 'Giao hàng thất bại'], ['done', 'Đã hoàn thành'], ['cancel', 'Đã hủy'], ['refund', 'Hoàn tiền']
 ].map(([value, label]) => ({ value, label }))
 const typeOptions = [{ value: 'all', label: 'Tất cả' }, { value: 'online', label: 'Trực tuyến' }, { value: 'store', label: 'Tại quầy' }]
 

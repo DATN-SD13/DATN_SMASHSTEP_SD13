@@ -5,13 +5,14 @@ import com.smashstep.datn.common.exception.AppException;
 public enum TrangThaiHoaDon {
     CHO_XAC_NHAN(0, "Chờ xác nhận", "waiting"),
     DA_XAC_NHAN(1, "Đã xác nhận", "confirmed"),
-    CHO_GIAO_HANG(2, "Chờ giao hàng", "ready"),
+    CHO_GIAO_HANG(2, "Chờ lấy hàng", "ready"),
     DANG_GIAO_HANG(3, "Đang giao hàng", "shipping"),
     DA_GIAO_HANG(4, "Đã giao hàng", "delivered"),
     HOAN_THANH(5, "Hoàn thành", "done"),
     DA_HUY(6, "Đã hủy", "cancel"),
     HOAN_TIEN(7, "Hoàn tiền", "refund"),
-    HOA_DON_CHO(8, "Hóa đơn chờ", "pending");
+    HOA_DON_CHO(8, "Hóa đơn chờ", "pending"),
+    GIAO_HANG_THAT_BAI(9, "Giao hàng thất bại", "failed");
 
     private final int ma;
     private final String nhan;
@@ -33,6 +34,7 @@ public enum TrangThaiHoaDon {
 
     public static TrangThaiHoaDon trangThaiTiepTheo(Integer maHienTai, boolean giaoHang) {
         if (maHienTai == null) return null;
+        if (giaoHang && maHienTai == GIAO_HANG_THAT_BAI.ma) return DANG_GIAO_HANG;
 
         // Phiếu tạm giữ của khách lẻ nhận tại quầy: Hóa đơn chờ -> Hoàn thành.
         if (maHienTai == HOA_DON_CHO.ma) return HOAN_THANH;

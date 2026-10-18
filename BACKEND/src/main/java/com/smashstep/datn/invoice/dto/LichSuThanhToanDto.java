@@ -21,7 +21,7 @@ public class LichSuThanhToanDto {
 
     public static LichSuThanhToanDto from(LichSuThanhToan item) {
         Integer status = item.getTrangThai();
-        String statusLabel = status != null && status == 1 ? "Đã thanh toán" : "Chưa thanh toán";
+        String statusLabel = Integer.valueOf(2).equals(status) ? "Đã hoàn tiền" : Integer.valueOf(1).equals(status) ? "Đã thanh toán" : "Chờ đối soát";
         var paymentMethod = item.getIdPhuongThucThanhToan();
         if (paymentMethod == null && item.getIdHoaDon() != null) {
             paymentMethod = item.getIdHoaDon().getIdPhuongThucThanhToan();

@@ -101,9 +101,12 @@ public class ThongKeSanPhamController {
                 JOIN san_pham_chi_tiet ctsp
                     ON ctsp.id = cthd.id_san_pham_chi_tiet
 
-                WHERE hd.trang_thai = 7
-                  AND hd.ngay_cap_nhat >= :tuNgay
-                  AND hd.ngay_cap_nhat < :denNgay
+                WHERE EXISTS (
+                    SELECT 1 FROM lich_su_thanh_toan refund
+                    WHERE refund.id_hoa_don = hd.id AND refund.trang_thai = 2
+                      AND refund.thoi_gian >= :tuNgay
+                      AND refund.thoi_gian < :denNgay
+                )
 
                 GROUP BY ctsp.id_san_pham
             ) hoan
