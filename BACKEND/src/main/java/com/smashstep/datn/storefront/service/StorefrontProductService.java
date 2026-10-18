@@ -164,7 +164,7 @@ public class StorefrontProductService {
                 p.getIdCoGiay() == null ? null : p.getIdCoGiay().getTenCoGiay(), p.getIdXuatXu() == null ? null : p.getIdXuatXu().getTenXuatXu(),
                 p.getMoTaChiTiet(), mainImage(productImages, summary.cheapestVariantId),
                 price.getOriginalPrice(), price.getEffectivePrice(), price.getDiscountPercent(), price.isDiscounted(),
-                summary.stock, summary.ids.size(), p.getNgayTao());
+                summary.stock, summary.ids.size(), p.getNgayTao(), summary.maxDiscount);
     }
 
     private void validate(StorefrontQuery q) {
@@ -194,8 +194,10 @@ public class StorefrontProductService {
         long stock;
         Long cheapestVariantId;
         CurrentPrice price;
+        BigDecimal maxDiscount = BigDecimal.ZERO;
         Summary(SanPham product) { this.product = product; }
         void add(SanPhamChiTiet v, CurrentPrice current) {
+            if (current.isDiscounted()) maxDiscount = maxDiscount.max(current.getDiscountPercent());
             if (ids.add(v.getId())) stock += Math.max(0, Objects.requireNonNullElse(v.getSoLuong(), 0));
             if (price == null || current.getEffectivePrice().compareTo(price.getEffectivePrice()) < 0
                     || (current.getEffectivePrice().compareTo(price.getEffectivePrice()) == 0

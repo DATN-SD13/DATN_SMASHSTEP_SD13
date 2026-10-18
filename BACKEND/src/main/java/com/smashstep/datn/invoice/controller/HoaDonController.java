@@ -22,6 +22,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 @RestController
+@org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('ADMIN','STAFF')")
 @RequestMapping("/api/hoa-don")
 @RequiredArgsConstructor
 public class HoaDonController {

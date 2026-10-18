@@ -69,9 +69,13 @@ public class SecurityConfig {
                 // Upload static resources — public
                 .requestMatchers("/uploads/**").permitAll()
                 // Product images — public
-                .requestMatchers("/api/product-images/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/product-images/**").permitAll()
                 // OPTIONS preflight — public
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                .requestMatchers("/api/customer/**").hasRole("CUSTOMER")
+                .requestMatchers("/api/products/**", "/api/product-details/**", "/api/product-attributes/**",
+                        "/api/hoa-don/**", "/api/ban-hang/**", "/api/thong-ke/**", "/api/thong-ke-tong-hop/**")
+                    .hasAnyRole("ADMIN", "STAFF")
                 // Tất cả API còn lại yêu cầu đăng nhập
                 .anyRequest().authenticated()
             )

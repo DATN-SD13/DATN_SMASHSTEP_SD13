@@ -11,6 +11,10 @@ Object.assign(paths, {
   calendar: 'M4 5h16v16H4Z M4 10h16 M8 3v4 M16 3v4 M8 14h2 M14 14h2',
   home: 'm3 11 9-8 9 8 M5 10v11h14V10 M9 21v-7h6v7',
   office: 'M5 21V3h14v18 M3 21h18 M9 7h1 M14 7h1 M9 11h1 M14 11h1 M10 21v-5h4v5',
+  bell: 'M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9 M10 21h4',
+  cart: 'M2 3h3l3 12h11l3-8H6 M9 21h.01 M19 21h.01',
+  box: 'm3 7 9-4 9 4v10l-9 4-9-4V7Z m0 0 9 4 9-4 M12 11v10',
+  ticket: 'M3 5h18v5a2 2 0 0 0 0 4v5H3v-5a2 2 0 0 0 0-4V5Z M9 5v3 M9 11v2 M9 16v3',
   lock: 'M5 10h14v11H5Z M8 10V7a4 4 0 0 1 8 0v3 M12 15v2'
 })
 </script>

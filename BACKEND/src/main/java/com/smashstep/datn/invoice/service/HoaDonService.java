@@ -202,6 +202,8 @@ public class HoaDonService {
             }
         }
 
+        if (com.smashstep.datn.storefront.checkout.OnlineOrderInventory.managed(entityManager, hoaDon))
+            request.setIdNhanVien(com.smashstep.datn.sales.service.PosActor.employeeId());
         Long idNhanVienThaoTac = request.getIdNhanVien();
         if (idNhanVienThaoTac == null && hoaDon.getIdNhanVien() != null) {
             idNhanVienThaoTac = hoaDon.getIdNhanVien().getId();
@@ -218,6 +220,10 @@ public class HoaDonService {
         }
         if (request.getTrangThai() == 6 && com.smashstep.datn.invoice.rules.PosDraftRules.daTruKho(hoaDon))
             com.smashstep.datn.sales.service.TonKhoHoaDonCho.hoanKhiHuy(entityManager, hoaDon);
+        if (request.getTrangThai() == 6)
+            com.smashstep.datn.storefront.checkout.OnlineOrderInventory.restore(entityManager, hoaDon);
+        if (request.getTrangThai() == 5)
+            com.smashstep.datn.storefront.checkout.OnlineOrderInventory.collectCodOnCompletion(entityManager, hoaDon);
         hoaDon.setTrangThai(request.getTrangThai());
         hoaDon.setNgayCapNhat(LocalDateTime.now());
 

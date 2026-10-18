@@ -1066,6 +1066,7 @@ onUnmounted(() => {
                 </select>
                 <div class="form-text">
                   Chỉ được chuyển sang trạng thái kế tiếp theo đúng quy trình của đơn hàng.
+                  <p v-if="Number(selectedStatus) === 5 && invoice.orderTypeCode === 1 && String(invoice.payment).toUpperCase().includes('COD')" class="mt-2 text-primary fw-semibold">Chỉ lưu Hoàn thành sau khi đã giao hàng và thực thu đủ COD. Thao tác này sẽ ghi nhận số tiền COD đã thu vào lịch sử thanh toán.</p>
                 </div>
 
                 <div v-if="!canUpdateStatus" class="edit-order-note">
