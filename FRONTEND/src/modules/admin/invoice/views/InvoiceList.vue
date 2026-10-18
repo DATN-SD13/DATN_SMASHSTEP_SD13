@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onUnmounted, ref, computed } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import InvoiceFilter from '../components/InvoiceFilter.vue'
 import InvoiceTable from '../components/InvoiceTable.vue'
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
@@ -26,19 +26,6 @@ const exporting = ref(false)
 const exportToast = ref({ visible: false, type: 'success', message: '' })
 let exportToastTimer = null
 let loadVersion = 0
-const stats = ref({ all: 0, waiting: 0, confirmed: 0, ready: 0, shipping: 0, delivered: 0, done: 0, cancel: 0, refund: 0, pending: 0 })
-
-const tabDefs = [
-  ['all', 'Tất cả'],
-  ['waiting', 'Chờ xác nhận'],
-  ['confirmed', 'Đã xác nhận'],
-  ['ready', 'Chờ giao hàng'],
-  ['shipping', 'Đang giao hàng'],
-  ['delivered', 'Đã giao hàng'],
-  ['done', 'Đã hoàn thành'],
-  // ['cancel', 'Đã hủy'],
-]
-const tabs = computed(() => tabDefs.map(([key, label]) => [key, label, Number(stats.value[key] || 0)]))
 
 const statusCodes = {
   waiting: 0,
@@ -49,6 +36,7 @@ const statusCodes = {
   done: 5,
   cancel: 6,
   refund: 7,
+  failed: 9,
   pending: 8
 }
 
@@ -104,22 +92,9 @@ async function fetchPage(params) {
   return response.data
 }
 
-async function fetchStats(base) {
-  const { page, size, ...params } = base
-  const response = await invoiceService.getSummary(params)
-  if (!response?.success || !response?.data) throw new Error(response?.message || 'Không thể tải thống kê hóa đơn.')
-  const next = { all: 0, waiting: 0, confirmed: 0, ready: 0, shipping: 0, delivered: 0, done: 0, cancel: 0, refund: 0, pending: 0 }
-  for (const item of response.data.theoTrangThai || []) {
-    if (Object.hasOwn(next, item.khoa)) next[item.khoa] = Number(item.soLuong || 0)
-  }
-  next.all = Number(response.data.tongHoaDon || 0)
-  return next
-}
-
-async function loadInvoices(page = 1, refreshStats = false) {
+async function loadInvoices(page = 1) {
   const version = ++loadVersion
   const params = buildParams(page)
-  const statsParams = buildParams(1, 'all')
   loading.value = true
   loadError.value = ''
   try {
@@ -129,14 +104,6 @@ async function loadInvoices(page = 1, refreshStats = false) {
     currentPage.value = Number(data.page || page)
     totalPages.value = Math.max(1, Number(data.totalPages || 1))
     totalElements.value = Number(data.totalElements || 0)
-    if (refreshStats) {
-      try {
-        const next = await fetchStats(statsParams)
-        if (version === loadVersion) stats.value = next
-      } catch (error) {
-        if (version === loadVersion) showExportToast('error', error?.response?.data?.message || 'Không thể tải số lượng theo trạng thái.')
-      }
-    }
   } catch (error) {
     if (version !== loadVersion) return
     invoices.value = []
@@ -150,26 +117,21 @@ async function loadInvoices(page = 1, refreshStats = false) {
 
 async function search(filters) {
   query.value = { ...filters }
+  activeStatus.value = filters.status || 'all'
   currentPage.value = 1
-  await loadInvoices(1, true)
+  await loadInvoices(1)
 }
 
 async function reset() {
   query.value = { code: '', from: currentDate, to: currentDate, type: 'all' }
   activeStatus.value = 'all'
   currentPage.value = 1
-  await loadInvoices(1, true)
-}
-
-async function changeStatus(status) {
-  activeStatus.value = status
-  currentPage.value = 1
-  await loadInvoices(1, true)
+  await loadInvoices(1)
 }
 
 async function changePage(page) {
   if (page === currentPage.value || page < 1 || page > totalPages.value) return
-  await loadInvoices(page, false)
+  await loadInvoices(page)
 }
 
 function view(invoice) { router.push(`/hoa-don/${encodeURIComponent(invoice.code)}`) }
@@ -249,7 +211,7 @@ async function exportExcel() {
   }
 }
 
-onMounted(() => loadInvoices(1, true))
+onMounted(() => loadInvoices(1))
 onUnmounted(() => {
   loadVersion += 1
   if (exportToastTimer) window.clearTimeout(exportToastTimer)
@@ -264,15 +226,6 @@ onUnmounted(() => {
       </div>
 
       <InvoiceFilter @search="search" @reset="reset" />
-
-      <section class="status-card card shadow-sm border-0" aria-labelledby="invoice-status-heading">
-        <h2 id="invoice-status-heading">Trạng thái hóa đơn</h2>
-      <div class="status-tabs">
-        <button v-for="tab in tabs" :key="tab[0]" type="button" :class="{ active: activeStatus === tab[0] }" :aria-pressed="activeStatus === tab[0]" @click="changeStatus(tab[0])">
-          {{ tab[1] }} <b v-if="tab[2]">{{ tab[2] }}</b>
-        </button>
-      </div>
-      </section>
 
       <InvoiceTable
         :invoices="invoices"
@@ -300,10 +253,5 @@ onUnmounted(() => {
 .page-heading{margin-bottom:18px}
 .breadcrumb{font-size:11px;color:#8c9ba5;margin-bottom:5px}.breadcrumb b{padding:0 9px;color:#c4d0d7}.breadcrumb strong{color:#536c79;font-weight:600}
 .page-heading h1{margin:0;font-size:23px;letter-spacing:-.3px;color:#203744;font-weight:750}
-.status-card{background:#fff;border:1px solid #e7eef4!important;border-radius:14px;margin-bottom:18px;padding:20px 22px 0}
-.status-card h2{margin:0;color:#203744;font-size:15px;font-weight:700}
-.status-tabs{display:flex;gap:8px;overflow-x:auto;padding:18px 0 15px}.status-tabs::-webkit-scrollbar{height:4px}.status-tabs::-webkit-scrollbar-thumb{background:#dce8ef;border-radius:5px}
-.status-tabs button{flex:0 0 auto;border:1px solid #dfe6eb;background:#fff;color:#697d87;border-radius:9px;padding:8px 13px;white-space:nowrap;font-size:11px;font-weight:600;cursor:pointer;transition:.15s}.status-tabs button b{font-size:10px;margin-left:3px;font-weight:700}.status-tabs button:hover{border-color:#8fc5e7;color:#0878bd;background:#f5fbff}.status-tabs button.active{background:#1689cf;border-color:#1689cf;color:#fff;box-shadow:0 3px 9px rgba(22,137,207,.15)}
-@media(max-width:700px){.status-card{padding:16px 14px 0}.status-tabs{gap:6px}.status-tabs button{font-size:10px;padding:8px 10px}}
 .export-toast{position:fixed;right:24px;top:88px;z-index:1200;display:flex;align-items:center;gap:10px;min-width:280px;max-width:420px;padding:12px 15px;border:1px solid #e4edf2;border-radius:11px;background:#fff;box-shadow:0 12px 30px rgba(32,55,68,.16);font-size:12px;color:#506875}.export-toast i{font-size:17px}.export-toast.success i{color:#168b68}.export-toast.error i{color:#d14958}@media(max-width:850px){.content{padding:16px}.page-heading h1{font-size:20px}.export-toast{left:16px;right:16px;top:78px;min-width:0}}
 </style>

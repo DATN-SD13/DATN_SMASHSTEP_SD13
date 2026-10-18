@@ -1,4 +1,5 @@
 <script setup>
+import GhnLogo from '../../../../components/GhnLogo.vue'
 import { useProductToast } from '../../product/composables/useProductToast'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -15,6 +16,70 @@ const loading = ref(true)
 const invoice = ref(null)
 const loadError = ref('')
 const selectedStatus = ref('')
+const failureReason = ref('')
+const latestDeliveryFailure = computed(() => invoice.value?.history?.find(row => Number(row.maTrangThai) === 9))
+function deliveryFailureReason(note) {
+  return String(note || '').replace(/^Giao hàng thất bại(?: lần \d+\/3)?:\s*/i, '').trim() || 'Chưa ghi nhận lý do.'
+}
+const returnDialog = ref(null)
+const refundReferenceError = ref('')
+const refundReferenceTouched = ref(false)
+function refundReferenceMessage(value) {
+  const raw = String(value ?? '')
+  if (/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(raw)) return 'Không được chứa xuống dòng hoặc ký tự điều khiển.'
+  const normalized = raw.trim()
+  if (!normalized) return 'Nhập mã giao dịch hoặc số chứng từ hoàn tiền.'
+  if (normalized.length > 100) return 'Mã giao dịch/chứng từ tối đa 100 ký tự.'
+  return ''
+}
+function validateRefundReference(normalize = false) {
+  refundReferenceTouched.value = true
+  refundReferenceError.value = refundReferenceMessage(returnDialog.value?.maHoanTien)
+  if (!refundReferenceError.value && normalize && returnDialog.value) returnDialog.value.maHoanTien = returnDialog.value.maHoanTien.trim()
+  return !refundReferenceError.value
+}
+function inputRefundReference() {
+  if (refundReferenceTouched.value) validateRefundReference()
+}
+function pasteRefundReference(event) {
+  const pasted = event.clipboardData?.getData('text')
+  if (pasted == null) return
+  const input = event.target, current = String(returnDialog.value?.maHoanTien || '')
+  const candidate = current.slice(0, input.selectionStart ?? current.length) + pasted + current.slice(input.selectionEnd ?? current.length)
+  const error = refundReferenceMessage(candidate)
+  if (error) { event.preventDefault(); refundReferenceTouched.value = true; refundReferenceError.value = error }
+}
+
+const returnDialogTitle = computed(() => ({ HANG_TRA: 'Xử lý hàng trả', HOAN_TIEN: 'Xác nhận hoàn tiền', HUY: 'Hủy hóa đơn' }[returnDialog.value?.thaoTac] || 'Xử lý đơn hàng'))
+const returnButtonLabel = computed(() => ({ HANG_TRA: 'Lưu xử lý hàng trả', HOAN_TIEN: 'Xác nhận đã hoàn tiền', HUY: 'Xác nhận hủy hóa đơn' }[returnDialog.value?.thaoTac] || 'Xác nhận'))
+const failureCount = computed(() => Number(invoice.value?.failureCount || 0))
+const canRetryDelivery = computed(() => invoice.value?.statusCode === 9 && !invoice.value?.goodsHandled && invoice.value?.paymentStatusCode !== 2 && failureCount.value < 3)
+const canFailDelivery = computed(() => invoice.value?.statusCode === 3 && invoice.value?.receiveMethodCode === 1 && failureCount.value < 3)
+async function resolveFailure() {
+  const form = returnDialog.value
+  if (!form || updatingStatus.value) return
+  if (form.thaoTac === 'HOAN_TIEN' && !validateRefundReference(true)) return
+  if ((form.thaoTac === 'HANG_TRA' && !form.daNhanLaiHang) || !form.ghiChu.trim()) {
+    showLocalToast('error', 'Chưa đủ thông tin', 'Nhập ghi chú xử lý và xác nhận đã nhận hàng nếu đang xử lý hàng trả.'); return
+  }
+  if (form.thaoTac === 'HOAN_TIEN' && Number(invoice.value.refundDue) > 0 && (!form.daHoanTien || !form.maHoanTien.trim())) {
+    showLocalToast('error', 'Chưa xác nhận hoàn tiền', 'Hoàn tiền thực tế và nhập mã/chứng từ hoàn tiền trước khi hủy.'); return
+  }
+  updatingStatus.value = true
+  try {
+    const response = await invoiceService.resolveFailedDelivery(invoice.value.code, { ...form, soTienHoan: invoice.value.refundDue, soLanThatBai: failureCount.value })
+    if (!response?.success) throw new Error(response?.message || 'Chưa xử lý được hoàn/hủy')
+    invoice.value = mapInvoice(response.data)
+    returnDialog.value = null
+    await loadProductImages()
+    showLocalToast('success', 'Đã lưu', { HANG_TRA: 'Đã xử lý hàng trả và chuyển hóa đơn sang bước Hoàn tiền.', HOAN_TIEN: 'Đã ghi nhận khoản hoàn tiền. Bạn có thể hủy hóa đơn.', HUY: 'Đã hủy hóa đơn.' }[form.thaoTac])
+  } catch (e) { showLocalToast('error', 'Chưa xử lý được', e?.response?.data?.message || e.message) }
+  finally { updatingStatus.value = false }
+}
+function openReturnDialog(thaoTac = 'HANG_TRA') {
+  refundReferenceError.value = ''; refundReferenceTouched.value = false
+  returnDialog.value = { thaoTac, daNhanLaiHang: false, nhapLaiKho: false, daHoanTien: false, maHoanTien: '', ghiChu: '' }
+}
 const showEditOrderModal = ref(false)
 const editOrderTab = ref('order')
 const showHistoryModal = ref(false)
@@ -35,7 +100,7 @@ let invoiceLoadVersion = 0
 const deliverySteps = [
   { key: 'waiting', label: 'Chờ xác nhận', icon: 'bi-hourglass-split', value: 0 },
   { key: 'confirmed', label: 'Đã xác nhận', icon: 'bi-check2-circle', value: 1 },
-  { key: 'ready', label: 'Chờ giao hàng', icon: 'bi-box-seam', value: 2 },
+  { key: 'ready', label: 'Chờ lấy hàng', icon: 'bi-box-seam', value: 2 },
   { key: 'shipping', label: 'Đang giao hàng', icon: 'bi-truck', value: 3 },
   { key: 'delivered', label: 'Đã giao hàng', icon: 'bi-bag-check', value: 4 },
   { key: 'done', label: 'Hoàn thành', icon: 'bi-flag', value: 5 }
@@ -72,6 +137,32 @@ const visibleSteps = computed(() => {
   return steps.value.slice(0, Math.min(progress.value + 2, steps.value.length))
 })
 
+// Đơn đã hủy có nhánh kết thúc riêng; không đưa mốc chưa xảy ra vào lịch sử.
+const cancelledSteps = computed(() => {
+  const current = invoice.value
+  if (![6, 7].includes(current?.statusCode)) return []
+  const recorded = new Set((current.history || [])
+    .filter(row => row.maTrangThai != null).map(row => Number(row.maTrangThai)))
+  // Lịch sử kỹ thuật POS được BE ẩn; ngày tạo vẫn là mốc hóa đơn chờ đã có thật.
+  if (current.posManaged) recorded.add(8)
+  if (current.paymentHistory?.some(row => row.statusCode === 2)) recorded.add(7)
+  recorded.add(current.statusCode)
+  return [
+    { key: 'pending', label: 'Hóa đơn chờ', icon: 'bi-hourglass-split', value: 8 },
+    ...deliverySteps.filter(step => step.value <= 3),
+    { key: 'failed', label: 'Giao hàng thất bại', icon: 'bi-exclamation-circle', value: 9 },
+    { key: 'refund', label: 'Hoàn tiền', icon: 'bi-arrow-return-left', value: 7 },
+    { key: 'cancel', label: 'Đã hủy', icon: 'bi-x-circle', value: 6 }
+  ].filter(step => recorded.has(step.value) && (step.value !== 6 || current.statusCode === 6))
+})
+function cancelledStepDate(status) {
+  const recordedDate = stepDate(status)
+  if (recordedDate !== '—') return recordedDate
+  if (status === 7) return invoice.value?.paymentHistory?.find(row => row.statusCode === 2)?.time || '—'
+  if (status === 6) return invoice.value?.updatedDate || '—'
+  return '—'
+}
+
 const nextStatus = computed(() => {
   if (!invoice.value?.nextStatusCode && invoice.value?.nextStatusCode !== 0) return null
   return {
@@ -80,7 +171,7 @@ const nextStatus = computed(() => {
   }
 })
 
-const canUpdateStatus = computed(() => Boolean(nextStatus.value))
+const canUpdateStatus = computed(() => !(invoice.value?.statusCode === 7 || (invoice.value?.statusCode === 9 && (invoice.value?.goodsHandled || invoice.value?.paymentStatusCode === 2))) && (Boolean(nextStatus.value) || canFailDelivery.value || canRetryDelivery.value))
 
 const canCancelOrder = computed(() => {
   if (invoice.value?.posManaged && invoice.value?.paymentStatusCode === 1) return false
@@ -222,6 +313,10 @@ function mapInvoice(data) {
   const status = (statusOptions.value || []).find(item => item.value === statusCode)
 
   return {
+    goodsHandled: data?.daXuLyHangTra === true,
+    failureCount: Number(data?.soLanGiaoThatBai || 0),
+    refundDue: data?.soTienCanHoan == null ? null : Number(data.soTienCanHoan),
+    reconciliationError: data?.loiDoiSoat || '',
     id: data?.id,
     code: data?.maHoaDon || route.params.code,
     employee: data?.tenNhanVien || 'Chưa cập nhật',
@@ -270,7 +365,6 @@ function mapInvoice(data) {
       time: item?.thoiGian || null,
       amount: Number(item?.soTien ?? 0),
       transactionCode: item?.maGiaoDich || null,
-      description: item?.moTa || null
     })),
     address: data?.diaChiGiaoHang || data?.diaChi || 'Chưa cập nhật',
     shippingCarrier: data?.donViVanChuyen || '',
@@ -359,6 +453,7 @@ async function loadInvoice() {
 function openEditOrderModal() {
   if (!invoice.value || updatingStatus.value || confirmSubmitting.value) return
   editOrderTab.value = 'order'
+  failureReason.value = ''
   selectedStatus.value = Number.isInteger(Number(invoice.value.statusCode))
     ? Number(invoice.value.statusCode)
     : ''
@@ -378,6 +473,8 @@ const editableStatusOptions = computed(() => {
   const options = []
   const current = statusOptions.value.find(item => item.value === currentCode)
   if (current) options.push(current)
+  else options.push({ value: currentCode, label: invoice.value.status })
+  if (canFailDelivery.value) options.push({ value: 9, key: 'failed', label: 'Giao hàng thất bại' })
   if (nextStatus.value && nextStatus.value.value !== currentCode) {
     const next = statusOptions.value.find(item => item.value === nextStatus.value.value) || {
       value: nextStatus.value.value,
@@ -450,7 +547,10 @@ async function saveStatus() {
     return
   }
 
-  if (!nextStatus.value || newCode !== Number(nextStatus.value.value)) {
+  if (newCode === 9 && !failureReason.value.trim()) {
+    showLocalToast('error', 'Thiếu lý do', 'Nhập lý do giao hàng thất bại.'); return
+  }
+  if (!(canFailDelivery.value && newCode === 9) && (!nextStatus.value || newCode !== Number(nextStatus.value.value))) {
     showLocalToast(
       'error',
       'Cập nhật thất bại',
@@ -462,7 +562,9 @@ async function saveStatus() {
   updatingStatus.value = true
   try {
     const response = await invoiceService.updateStatus(invoice.value.code, {
-      trangThai: newCode
+      trangThai: newCode,
+      soLanThatBai: failureCount.value,
+      ghiChu: newCode === 9 ? failureReason.value.trim() : undefined
     })
 
     if (!response?.success) {
@@ -509,14 +611,15 @@ async function openHistoryModal() {
       throw new Error(response?.message || 'Không thể tải lịch sử hóa đơn')
     }
 
-    // BE trả theo ngayTao DESC; giữ nguyên thứ tự để item mới nhất ở trên.
+    // Hiển thị theo thời gian tăng dần; id phân định các thao tác trong cùng một giây.
     // Đơn nhận tại quầy không có các trạng thái giao hàng (2/3/4),
     // nên loại các bản ghi giao hàng nếu dữ liệu lịch sử cũ còn tồn tại.
     const rawHistory = Array.isArray(response.data) ? response.data : []
     const isPickupOrder = Number(invoice.value?.receiveMethodCode) === 0
-    historyItems.value = isPickupOrder
+    const filteredHistory = isPickupOrder
       ? rawHistory.filter(item => ![2, 3, 4].includes(Number(item?.maTrangThai)))
       : rawHistory
+    historyItems.value = chronologicalHistory(filteredHistory)
   } catch (error) {
     if (invoice.value?.code !== code) return
     historyItems.value = []
@@ -534,12 +637,33 @@ function closeHistoryModal() {
   showHistoryModal.value = false
 }
 
+function chronologicalHistory(rows) {
+  const timestamp = value => {
+    const match = String(value || '').match(/^(\d{2})\/(\d{2})\/(\d{4}) (\d{2}):(\d{2}):(\d{2})$/)
+    if (!match) return null
+    return Date.UTC(Number(match[3]), Number(match[2]) - 1, Number(match[1]), Number(match[4]), Number(match[5]), Number(match[6]))
+  }
+  return [...rows].sort((a, b) => {
+    const first = timestamp(a.ngayTao), second = timestamp(b.ngayTao)
+    if (first != null && second != null && first !== second) return first - second
+    return Number(a.id || 0) - Number(b.id || 0)
+  })
+}
+function historyStatusLabel(item) {
+  if (Number(item?.maTrangThai) === 7) {
+    const note = String(item?.ghiChu || '')
+    if (note.startsWith('Đã xử lý hàng trả;')) return 'Chuyển sang bước Hoàn tiền'
+    if (note.startsWith('Đã xác nhận hoàn tiền thực tế:')) return 'Đã hoàn tiền thực tế'
+  }
+  return item?.trangThai || '—'
+}
+
 function historyActor(item) {
   return item?.tenNhanVien || (item?.idNhanVien != null ? `Nhân viên #${item.idNhanVien}` : 'Hệ thống / chưa xác định')
 }
 
 function historyAction(item) {
-  if (item?.ghiChu) return item.ghiChu
+  if (item?.ghiChu) return String(item.ghiChu).replace(/(Đã xác nhận hoàn tiền thực tế: )([0-9]+(?:\.[0-9]+)?) đ/, (_, label, amount) => label + money(amount))
   return item?.trangThai ? `Chuyển sang trạng thái: ${item.trangThai}` : 'Cập nhật hóa đơn'
 }
 
@@ -620,11 +744,22 @@ onUnmounted(() => {
           <section class="panel card shadow-sm timeline-panel">
             <h2><i class="bi bi-clipboard2-check"></i> Trạng thái đơn hàng</h2>
 
+            <div v-if="[6, 7].includes(invoice.statusCode)" class="cancelled-timeline-scroll invoice-timeline-scroll" role="region" aria-label="Tiến trình xử lý hoàn và hủy hóa đơn" tabindex="0">
+              <div class="timeline timeline-cancelled" :style="{ '--cancel-step-count': cancelledSteps.length, '--timeline-step-count': cancelledSteps.length }">
+                <div v-for="step in cancelledSteps" :key="step.key" class="timeline-step reached"
+                  :class="[{ current: step.value === invoice.statusCode }, 'cancelled-step-' + step.key]">
+                  <div class="timeline-node"><i :class="['bi', step.icon]"></i></div>
+                  <div class="step-label">{{ step.label }}</div>
+                  <small>{{ cancelledStepDate(step.value) }}</small>
+                </div>
+              </div>
+            </div>
+
+            <div v-else-if="progress >= 0" class="invoice-timeline-scroll" role="region" aria-label="Tiến trình hóa đơn" tabindex="0">
             <div
-              v-if="progress >= 0"
               class="timeline"
               :class="{ 'timeline-pickup': invoice.receiveMethodCode === 0 }"
-              :style="{ gridTemplateColumns: `repeat(${visibleSteps.length}, minmax(0, 1fr))` }"
+              :style="{ '--timeline-step-count': visibleSteps.length }"
             >
               <div
                 v-for="(step, index) in visibleSteps"
@@ -640,15 +775,26 @@ onUnmounted(() => {
               </div>
             </div>
 
+            </div>
+
             <div v-else class="cancel-state">
               <span class="cancel-icon"><i class="bi bi-x-circle"></i></span>
               <div>
                 <strong>{{ invoice.status }}</strong>
-                <p>Đơn hàng đã dừng ở trạng thái này.</p>
+                <p v-if="invoice.statusCode === 9">{{ failureCount >= 3 ? 'Đã thất bại 3 lần. Xử lý hàng trả, hoàn tiền nếu có khoản thu rồi hủy hóa đơn.' : invoice.goodsHandled ? 'Đã xử lý hàng trả. Hoàn tiền nếu có khoản thu rồi hủy hóa đơn.' : 'Có thể giao lại hoặc xử lý hàng trả để kết thúc đơn hàng.' }}</p>
+                <div v-if="invoice.statusCode === 9" class="delivery-failure-reason">
+                  <span class="failure-reason-label"><i class="bi bi-chat-left-text"></i> Lý do giao hàng thất bại</span>
+                  <p>{{ deliveryFailureReason(latestDeliveryFailure?.ghiChu) }}</p>
+                  <span v-if="latestDeliveryFailure?.ngayTao" class="failure-reason-date"><i class="bi bi-clock"></i> {{ latestDeliveryFailure.ngayTao }}</span>
+                </div>
+                <p v-else>Đơn hàng đã dừng ở trạng thái này.</p>
               </div>
             </div>
 
             <div class="timeline-actions">
+              <span v-if="invoice.statusCode === 7 && invoice.goodsHandled" class="goods-handled-tag"><i class="bi bi-check-circle"></i> Đã xử lý hàng trả</span>
+              <button v-if="invoice.statusCode === 9 && !invoice.goodsHandled" type="button" class="invoice-flow-action invoice-flow-action--return" :disabled="updatingStatus" @click="openReturnDialog('HANG_TRA')"><i class="bi bi-box-seam" aria-hidden="true"></i><span>Xử lý hàng trả</span></button>
+              <button v-if="invoice.statusCode === 7 && invoice.goodsHandled && invoice.refundDue === 0 && !invoice.reconciliationError" type="button" class="invoice-flow-action invoice-flow-action--cancel" :disabled="updatingStatus || invoice.refundDue !== 0 || !!invoice.reconciliationError" @click="openReturnDialog('HUY')"><i class="bi bi-x-circle" aria-hidden="true"></i><span>Hủy hóa đơn</span></button>
               <!-- <button v-if="canCancelOrder" type="button" class="btn btn-outline-danger btn-sm cancel-order-button"
                 :disabled="confirmSubmitting || updatingStatus" @click="openCancelModal">
                 <i class="bi bi-x-circle"></i> Hủy đơn hàng
@@ -679,9 +825,9 @@ onUnmounted(() => {
               <div class="info-row address-row">
                 <span>Địa chỉ giao hàng</span><strong>{{ invoice.shippingAddress || '—' }}</strong>
               </div>
-              <div class="info-row">
+              <!-- <div class="info-row">
                 <span>Đơn vị vận chuyển</span><strong>{{ invoice.shippingCarrier || '—' }}</strong>
-              </div>
+              </div> -->
               <div class="info-row">
                 <span>Ghi chú</span><strong>{{ invoice.shippingNote || '—' }}</strong>
               </div>
@@ -699,11 +845,10 @@ onUnmounted(() => {
               <strong class="discount voucher-summary-value"><template v-if="voucherLabel">{{ voucherLabel }} </template>(− {{ money(invoice.discount) }})</strong>
             </div>
             <div v-if="isDeliveryOrder" class="amount-row">
-              <span>Phí vận chuyển</span>
+              <span class="shipping-provider-label"><GhnLogo v-if="isGHN" /> Phí vận chuyển</span>
               <strong class="shipping-fee-value">
                 + {{ money(invoice.shippingFee) }}
-                <span v-if="isGHN" class="ghn-badge" title="Giao Hàng Nhanh"><i class="bi bi-box-seam-fill"></i> GHN</span>
-                <span v-else-if="invoice.shippingCarrier" class="carrier-badge">{{ invoice.shippingCarrier }}</span>
+                <span v-if="!isGHN && invoice.shippingCarrier" class="carrier-badge">{{ invoice.shippingCarrier }}</span>
               </strong>
             </div>
             <div class="grand-total"><span>TỔNG TIỀN</span><strong>{{ money(invoice.total) }}</strong></div>
@@ -731,7 +876,6 @@ onUnmounted(() => {
                 <div class="payment-history-amount">
                   <span>Số tiền</span><strong>{{ money(payment.amount) }}</strong>
                 </div>
-                <p v-if="payment.description">{{ payment.description }}</p>
               </div>
             </div>
             <div v-else class="payment-history-empty">
@@ -739,6 +883,16 @@ onUnmounted(() => {
               <span>Chưa có lịch sử thanh toán.</span>
             </div>
 
+            <div v-if="invoice.statusCode === 7" class="refund-workflow">
+              <div class="refund-workflow-heading"><strong>Hoàn tiền</strong><span>{{ invoice.reconciliationError ? 'Cần đối soát' : invoice.refundDue > 0 ? 'Chờ hoàn tiền' : invoice.paymentStatusCode === 2 ? 'Đã hoàn tiền' : 'Không cần hoàn tiền' }}</span></div>
+              <p v-if="invoice.reconciliationError">{{ invoice.reconciliationError }}</p>
+              <template v-else-if="invoice.refundDue > 0">
+                <div class="refund-workflow-amount"><span>Cần hoàn cho khách</span><strong>{{ money(invoice.refundDue) }}</strong></div>
+                <p>{{ invoice.goodsHandled ? 'Hoàn tiền thực tế rồi xác nhận và lưu chứng từ tại đây.' : 'Hoàn tất xử lý hàng trả trước khi xác nhận hoàn tiền.' }}</p>
+                <button class="ss-refund-button" :disabled="updatingStatus || !invoice.goodsHandled" @click="openReturnDialog('HOAN_TIEN')"><i class="bi bi-arrow-return-left"></i> Hoàn tiền</button>
+              </template>
+              <p v-else>{{ invoice.paymentStatusCode === 2 ? 'Khoản hoàn đã được ghi nhận riêng. Bạn có thể hủy hóa đơn sau khi xử lý hàng trả.' : 'Đơn không có khoản tiền đã thu còn phải hoàn.' }}</p>
+            </div>
             <div class="payment-history-actions" :class="{ 'single-action': !canPrintInvoice }">
               <button
                 v-if="canPrintInvoice"
@@ -749,6 +903,7 @@ onUnmounted(() => {
                 <i class="bi bi-printer"></i> In hóa đơn
               </button>
               <button
+                v-if="canUpdateStatus"
                 class="payment-action-button edit-order-button btn btn-primary"
                 type="button"
                 :disabled="updatingStatus || confirmSubmitting"
@@ -928,7 +1083,7 @@ onUnmounted(() => {
               <small v-if="hasVoucher">({{ invoice.voucherCode }}<template v-if="voucherLabel"> · {{ voucherLabel }}</template>)</small>
             </strong>
           </div>
-          <div><span>Phí vận chuyển</span><strong>{{ money(invoice.shippingFee) }}<small v-if="isGHN"> · GHN</small></strong></div>
+          <div v-if="isDeliveryOrder"><span class="shipping-provider-label"><GhnLogo v-if="isGHN" /> Phí vận chuyển</span><strong>{{ money(invoice.shippingFee) }}</strong></div>
           <div class="print-grand-total"><span>TỔNG THANH TOÁN</span><strong>{{ money(invoice.total) }}</strong></div>
         </div>
 
@@ -938,12 +1093,12 @@ onUnmounted(() => {
           <div v-for="payment in paymentHistory" :key="payment.id"><span>{{ payment.method }}:</span> {{ money(payment.amount) }} <small>{{ payment.transactionCode }}</small></div>
         </div>
 
-        <div v-if="hasShippingInfo" class="print-shipping">
+        <div v-if="isDeliveryOrder && hasShippingInfo" class="print-shipping">
           <h3>THÔNG TIN GIAO HÀNG</h3>
-          <div v-if="invoice.shippingCarrier"><span>Đơn vị vận chuyển:</span> {{ invoice.shippingCarrier }}</div>
-          <div><span>Phí vận chuyển:</span> {{ money(invoice.shippingFee) }}</div>
-          <div v-if="invoice.shippingRecipient"><span>Người nhận:</span> {{ invoice.shippingRecipient }}</div>
-          <div v-if="invoice.shippingRecipientPhone"><span>Số điện thoại:</span> {{ invoice.shippingRecipientPhone }}</div>
+          <div v-if="invoice.shippingCarrier" class="print-carrier"><span>Đơn vị vận chuyển:</span><GhnLogo v-if="isGHN" /><template v-else>{{ invoice.shippingCarrier }}</template></div>
+          <!-- <div><span>Phí vận chuyển:</span> {{ money(invoice.shippingFee) }}</div> -->
+          <!-- <div v-if="invoice.shippingRecipient"><span>Người nhận:</span> {{ invoice.shippingRecipient }}</div> -->
+          <!-- <div v-if="invoice.shippingRecipientPhone"><span>Số điện thoại:</span> {{ invoice.shippingRecipientPhone }}</div> -->
           <div v-if="invoice.shippingAddress"><span>Địa chỉ giao hàng:</span> {{ invoice.shippingAddress }}</div>
           <div v-if="invoice.shippingNote"><span>Ghi chú:</span> {{ invoice.shippingNote }}</div>
         </div>
@@ -1000,6 +1155,77 @@ onUnmounted(() => {
       </div> -->
 
       <!-- Modal chỉnh sửa đơn hàng -->
+      <div v-if="returnDialog" class="modal fade show return-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="return-modal-title" aria-describedby="return-modal-description">
+        <div class="modal-dialog modal-dialog-centered return-modal-dialog">
+          <div class="modal-content return-modal">
+            <div class="modal-header">
+              <div class="return-modal-heading">
+                <span class="return-heading-icon"><i class="bi bi-arrow-return-left"></i></span>
+                <div><h5 id="return-modal-title">{{ returnDialogTitle }}</h5><p>Hóa đơn <strong>{{ invoice.code }}</strong></p></div>
+              </div>
+              <button type="button" class="return-close" aria-label="Đóng" :disabled="updatingStatus" @click="returnDialog = null"><i class="bi bi-x-lg"></i></button>
+            </div>
+            <div class="modal-body">
+              <div class="return-summary" id="return-modal-description">
+                <span class="return-attempt"><i class="bi bi-exclamation-circle"></i> Giao thất bại {{ failureCount }}/3</span>
+                <p>{{ returnDialog.thaoTac === 'HANG_TRA' ? 'Lưu kết quả nhận và kiểm tra hàng, sau đó chuyển hóa đơn sang bước Hoàn tiền. Chưa ghi nhận tiền hoàn ở bước này.' : returnDialog.thaoTac === 'HOAN_TIEN' ? 'Ghi nhận khoản đã hoàn thực tế cho khách. Sau khi hoàn đủ tiền, bạn có thể hủy hóa đơn.' : 'Hàng trả và khoản thu đã được xử lý. Xác nhận để kết thúc hóa đơn.' }}</p>
+              </div>
+              <p v-if="invoice.reconciliationError" class="alert alert-warning" role="alert">{{ invoice.reconciliationError }}</p>
+
+              <section v-if="returnDialog.thaoTac === 'HANG_TRA'" class="return-section">
+                <h6><span class="return-step">1</span> Nhận hàng và kiểm tra tồn kho</h6>
+                <label class="return-check" :class="{ checked: returnDialog.daNhanLaiHang }">
+                  <input v-model="returnDialog.daNhanLaiHang" type="checkbox" :disabled="updatingStatus" />
+                  <span><strong>Đã nhận lại đầy đủ hàng</strong><small>Hàng đã được đơn vị vận chuyển bàn giao lại.</small></span>
+                </label>
+                <label class="return-check" :class="{ checked: returnDialog.nhapLaiKho }">
+                  <input v-model="returnDialog.nhapLaiKho" type="checkbox" :disabled="updatingStatus" />
+                  <span><strong>Nhập lại toàn bộ hàng vào kho</strong><small>Chỉ chọn khi đã kiểm tra và toàn bộ hàng đủ điều kiện bán.</small></span>
+                </label>
+                <p class="return-hint"><i class="bi bi-info-circle"></i> Bỏ chọn nhập lại kho nếu hàng trả không đủ điều kiện.</p>
+              </section>
+
+              <section v-if="returnDialog.thaoTac === 'HOAN_TIEN'" class="return-section">
+                <h6><span class="return-step">2</span> Xác nhận hoàn tiền</h6>
+                <template v-if="invoice.refundDue > 0">
+                  <div class="return-refund-amount"><span>Số tiền cần hoàn cho khách</span><strong>{{ money(invoice.refundDue) }}</strong></div>
+                  <label class="return-check" :class="{ checked: returnDialog.daHoanTien }">
+                    <input v-model="returnDialog.daHoanTien" type="checkbox" :disabled="updatingStatus" />
+                    <span><strong>Đã hoàn đủ tiền thực tế cho khách</strong><small>Kiểm tra giao dịch trước khi xác nhận.</small></span>
+                  </label>
+                  <label class="return-field">Mã giao dịch / chứng từ hoàn tiền <span>*</span>
+                    <input v-model="returnDialog.maHoanTien" id="refund-reference" maxlength="100" class="form-control"
+                      :class="{ 'refund-reference-invalid': refundReferenceError }" :aria-invalid="!!refundReferenceError"
+                      aria-describedby="refund-reference-error refund-reference-hint" :disabled="updatingStatus" autocomplete="off"
+                      placeholder="VD: FT26101812345678 hoặc PC-20261018-001"
+                      @blur="validateRefundReference(true)" @input="inputRefundReference" @paste="pasteRefundReference" />
+                    <small v-if="refundReferenceError" id="refund-reference-error" class="refund-reference-error" role="alert">{{ refundReferenceError }}</small>
+                    <small id="refund-reference-hint" class="refund-reference-hint">Nhập mã giao dịch ngân hàng hoặc số phiếu chi thực tế, tối đa 100 ký tự.</small>
+                  </label>
+                  <p class="return-hint"><i class="bi bi-info-circle"></i> Hệ thống ghi nhận khoản đã hoàn, không tự chuyển tiền ngân hàng.</p>
+                </template>
+                <div v-else-if="invoice.refundDue === 0" class="return-no-refund"><i class="bi bi-check-circle"></i> Không có khoản tiền đã thu cần hoàn.</div>
+              </section>
+
+              <section class="return-section return-note-section">
+                <h6><span class="return-step">3</span> Ghi chú xử lý</h6>
+                <label class="return-field">Nội dung xử lý <span>*</span>
+                  <textarea v-model="returnDialog.ghiChu" class="form-control" maxlength="700" rows="3" :disabled="updatingStatus" placeholder="Ghi rõ tình trạng hàng trả và kết quả xử lý..." />
+                </label>
+                <div class="return-note-count">{{ returnDialog.ghiChu.length }}/700 ký tự</div>
+              </section>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="return-secondary" :disabled="updatingStatus" @click="returnDialog = null">Đóng</button>
+              <button type="button" class="return-submit" :disabled="updatingStatus || (returnDialog.thaoTac !== 'HANG_TRA' && !!invoice.reconciliationError) || (returnDialog.thaoTac === 'HANG_TRA' && !returnDialog.daNhanLaiHang)" @click="resolveFailure">
+                <i :class="updatingStatus ? 'bi bi-hourglass-split' : 'bi bi-check2-circle'"></i>
+                {{ updatingStatus ? 'Đang xử lý...' : returnButtonLabel }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div
         v-if="showEditOrderModal"
         class="modal fade show d-block status-modal-backdrop"
@@ -1064,6 +1290,10 @@ onUnmounted(() => {
                     {{ option.label }}{{ option.value === Number(invoice.statusCode) ? ' (hiện tại)' : '' }}
                   </option>
                 </select>
+                <label v-if="Number(selectedStatus) === 9" class="d-block mt-3">
+                  Lý do giao hàng thất bại <span class="text-danger">*</span>
+                  <textarea v-model="failureReason" class="form-control mt-2" maxlength="800" rows="3" :disabled="updatingStatus" placeholder="Ví dụ: khách không nghe máy, hẹn giao lại..." />
+                </label>
                 <div class="form-text">
                   Chỉ được chuyển sang trạng thái kế tiếp theo đúng quy trình của đơn hàng.
                 </div>
@@ -1146,7 +1376,7 @@ onUnmounted(() => {
             <div class="modal-header">
               <div>
                 <h5 class="modal-title">Lịch sử thao tác</h5>
-                <small class="text-muted">Đơn hàng {{ invoice.code }}</small>
+                <small class="text-muted">Đơn hàng {{ invoice.code }} · Thứ tự từ cũ đến mới</small>
               </div>
               <button
                 type="button"
@@ -1172,9 +1402,10 @@ onUnmounted(() => {
                   v-for="item in historyItems"
                   :key="item.id"
                   class="history-item"
+                  :class="{ 'history-failure': Number(item.maTrangThai) === 9, 'history-refund': Number(item.maTrangThai) === 7 }"
                 >
                   <div class="history-dot">
-                    <i class="bi bi-check2"></i>
+                    <i :class="Number(item.maTrangThai) === 9 ? 'bi bi-exclamation-lg' : Number(item.maTrangThai) === 7 ? 'bi bi-arrow-return-left' : 'bi bi-check2'"></i>
                   </div>
                   <div class="history-card">
                     <div class="history-card-top">
@@ -1183,9 +1414,12 @@ onUnmounted(() => {
                     </div>
                     <div class="history-meta">
                       <span><i class="bi bi-person-badge"></i> Vai trò: {{ item.vaiTro || 'Chưa có dữ liệu' }}</span>
-                      <span><i class="bi bi-arrow-right-circle"></i> Trạng thái: {{ item.trangThai || '—' }}</span>
+                      <span class="history-status"><i class="bi bi-arrow-right-circle"></i> {{ historyStatusLabel(item) }}</span>
                     </div>
-                    <p>{{ historyAction(item) }}</p>
+                    <div v-if="Number(item.maTrangThai) === 9" class="history-failure-reason">
+                      <span>Lý do giao thất bại</span><p>{{ deliveryFailureReason(item.ghiChu) }}</p>
+                    </div>
+                    <p v-else>{{ historyAction(item) }}</p>
                   </div>
                 </div>
               </div>
@@ -1498,4 +1732,128 @@ onUnmounted(() => {
   .product-reset-button{width:100%}
 }
 
+</style>
+
+<style scoped>
+.shipping-provider-label { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+</style>
+
+<style scoped>
+.print-carrier { display: flex; align-items: center; gap: 6px; }
+.print-invoice :deep(.ghn-logo) { width: 46px; height: 14px; }
+</style>
+
+<style scoped>
+/* Return handling uses the same blue palette as the invoice, with a distinct final action. */
+.return-modal-backdrop{display:block;background:rgba(20,35,52,.5);z-index:1070;padding:16px;overflow-y:auto}
+.return-modal-dialog{max-width:640px;margin:16px auto;min-height:calc(100% - 32px)}
+.return-modal{border:0;border-radius:18px;overflow:hidden;box-shadow:0 24px 80px rgba(15,33,55,.24);max-height:calc(100dvh - 64px);color:#263d52}
+.return-modal .modal-header{padding:20px 24px;border-bottom:1px solid #e4ebf3;align-items:flex-start;background:#fff}
+.return-modal-heading{display:flex;align-items:center;gap:12px}
+.return-heading-icon{display:grid;place-items:center;width:44px;height:44px;border-radius:12px;background:#eaf3ff;color:#2476de;font-size:21px;flex-shrink:0}
+.return-modal h5{margin:0;font-size:20px;font-weight:750;color:#193650;line-height:1.4}
+.return-modal-heading p{margin:3px 0 0;font-size:13px;color:#52677c}.return-modal-heading p strong{color:#2466ac}
+.return-close{display:grid;place-items:center;width:32px;height:32px;border:0;border-radius:8px;background:#f3f6fa;color:#53697b;font-size:14px;cursor:pointer}
+.return-close:hover{background:#e6edf5;color:#18364c}
+.return-modal .modal-body{padding:20px 24px;overflow-y:auto;min-height:0;overscroll-behavior:contain}
+.return-summary{padding:12px 14px;border:1px solid #f3d5c6;border-radius:11px;background:#fff8f3;margin-bottom:18px}
+.return-attempt{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:750;color:#a14319}
+.return-summary p{font-size:13px;line-height:1.55;color:#6b4b3b;margin:5px 0 0}
+.return-section{padding:0 0 18px;margin-bottom:18px;border-bottom:1px solid #e6edf4}
+.return-section h6{display:flex;align-items:center;gap:9px;margin:0 0 12px;font-size:14px;font-weight:750;color:#243e56}
+.return-step{display:grid;place-items:center;width:24px;height:24px;border-radius:7px;background:#edf4fd;color:#246ec2;font-size:12px}
+.return-check{display:flex;align-items:flex-start;gap:11px;padding:12px;margin:0 0 9px;border:1px solid #dce5ef;border-radius:10px;background:#fff;cursor:pointer;transition:background .15s,border-color .15s}
+.return-check.checked{background:#f2f7ff;border-color:#8bb7f0}.return-check input{width:18px;height:18px;flex:0 0 18px;margin:2px 0 0;accent-color:#2878dc;cursor:pointer}
+.return-check span{min-width:0}.return-check strong{display:block;color:#243c52;font-size:13px;font-weight:650;line-height:1.5}
+.return-check small{display:block;margin-top:3px;color:#536b80;font-size:12px;line-height:1.5}
+.return-hint{display:flex;gap:7px;margin:9px 0 0;color:#566d80;font-size:12px;line-height:1.6}.return-hint i{flex-shrink:0;color:#3978b9}
+.return-refund-amount{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:13px 14px;border-radius:10px;background:#eef8f4;margin-bottom:12px}
+.return-refund-amount span{font-size:13px;color:#365b50}.return-refund-amount strong{font-size:20px;color:#087957;white-space:nowrap}
+.return-field{display:block;font-size:13px;font-weight:650;color:#314a60;margin-top:12px}.return-field>span{color:#c73d4b}
+.return-field .form-control{margin-top:7px;border:1px solid #cddbe8;border-radius:9px;padding:10px 12px;font-size:13px;color:#243d53;background:#fff;line-height:1.6;box-shadow:none}
+.return-field .form-control::placeholder{color:#6d8091;font-weight:400}.return-field .form-control:focus{border-color:#4e94e7;box-shadow:0 0 0 3px rgba(49,125,220,.12)}
+.return-field textarea{min-height:86px;resize:vertical}.return-note-section{padding:0;margin:0;border:0}.return-note-count{text-align:right;margin-top:5px;font-size:11px;color:#5c7084}
+.return-no-refund{display:flex;gap:8px;padding:12px;border-radius:9px;background:#f0f8f4;color:#27654d;font-size:13px}
+.return-modal .modal-footer{padding:16px 24px;gap:10px;background:#f8fafc;border-top:1px solid #e4ebf3;flex-shrink:0}
+.return-modal .modal-footer>button{margin:0;min-height:40px;padding:10px 16px;border-radius:9px;font-size:13px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;gap:8px;cursor:pointer}
+.return-secondary{border:1px solid #cbd8e5;background:#fff;color:#425d74}.return-submit{border:1px solid #cb3d4c;background:#d94151;color:#fff}.return-submit:hover:not(:disabled){background:#bf3040}
+.return-modal button:disabled{opacity:.55;cursor:not-allowed}.return-modal :is(button,input):focus-visible{outline:3px solid #80b5f5;outline-offset:3px}
+.cancel-state{align-items:flex-start}.cancel-state>div{min-width:0;flex:1}.cancel-state strong{font-size:15px;line-height:1.5;color:#b63845}.cancel-state>div>p{font-size:13px;line-height:1.65;color:#4f6578;margin-top:6px}.cancel-icon{flex-shrink:0;margin-top:2px}
+.delivery-failure-reason{background:#fff5f4;border:1px solid #f0cbc8;border-left:3px solid #d64f55;border-radius:9px;padding:12px 14px;margin-top:13px;overflow-wrap:anywhere}
+.failure-reason-label{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:750;color:#a83740}
+.cancel-state .delivery-failure-reason p{font-size:15px;font-weight:600;line-height:1.65;color:#593338;margin:7px 0 0;white-space:pre-wrap}
+.failure-reason-date{display:block;color:#765e63;font-size:11px;margin-top:8px}
+.history-modal .modal-title{font-size:18px;color:#20384d}.history-modal .modal-header small{color:#52677a!important;font-size:13px}
+.history-card{padding:16px 18px;border-color:#d6e2ed;background:#fff}.history-card-top strong{font-size:14px;font-weight:750;color:#203b51}.history-card-top span{font-size:12px;color:#52677b}
+.history-meta{align-items:center;margin-top:9px;gap:8px 14px}.history-meta span{font-size:12px;color:#4a6277}.history-meta .history-status{padding:4px 8px;border-radius:6px;background:#ecf4ff;color:#215f9f;font-weight:650}.history-meta i{color:inherit}
+.history-card p{margin-top:10px;font-size:14px;color:#304b61;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere}
+.history-failure .history-dot{color:#bd3c46;background:#fff0ee;border-color:#efc5c5}.history-failure .history-card{border-left:3px solid #d65b62}.history-failure .history-status{color:#a52f3b;background:#fff0ef}
+.history-refund .history-dot{color:#7353af;background:#f4efff;border-color:#dcd0ef}.history-refund .history-status{color:#67439c;background:#f2ecfb}
+.history-failure-reason{padding:10px 12px;background:#fff6f5;border-radius:8px;margin-top:12px}.history-failure-reason>span{font-size:11px;font-weight:750;color:#a33741}.history-card .history-failure-reason p{margin:4px 0 0;color:#593338;font-weight:600}
+@media(max-width:600px){.return-modal-backdrop{padding:8px}.return-modal-dialog{margin:8px auto;min-height:calc(100% - 16px)}.return-modal{max-height:calc(100dvh - 32px);border-radius:14px}.return-modal .modal-header,.return-modal .modal-body{padding:16px}.return-modal h5{font-size:18px}.return-modal .modal-footer{padding:12px 16px}.return-refund-amount{align-items:flex-start;flex-direction:column;gap:5px}.history-card{padding:13px}.history-card-top{align-items:flex-start;flex-direction:column;gap:5px}.history-timeline{padding-left:34px}.history-dot{left:-34px}.history-timeline:before{left:13px}.history-meta{gap:7px}.delivery-failure-reason{padding:10px 12px}}
+</style>
+
+<style scoped>
+.cancelled-timeline-scroll{overflow-x:auto;padding:8px 6px 12px;scrollbar-width:thin;scrollbar-color:#bbd5e7 transparent}
+.timeline.timeline-cancelled{grid-template-columns:repeat(var(--cancel-step-count),minmax(112px,1fr));min-width:calc(var(--cancel-step-count) * 112px);padding-top:7px;gap:0}
+.timeline.timeline-cancelled:before{display:block;left:calc(50% / var(--cancel-step-count));right:calc(50% / var(--cancel-step-count));top:24px;background:#cce3f3}
+.timeline-cancelled .step-label{font-size:12px;line-height:1.5;padding:0 5px}
+.timeline-cancelled .timeline-step small{font-size:10px;color:#526b7e;line-height:1.5;white-space:nowrap}
+.timeline-cancelled .cancelled-step-failed .timeline-node{background:#c66a23;border-color:#c66a23;box-shadow:0 0 0 4px #fff0e3}
+.timeline-cancelled .cancelled-step-failed .step-label{color:#a34f18}
+.timeline-cancelled .cancelled-step-refund .timeline-node{background:#7853b3;border-color:#7853b3;box-shadow:0 0 0 4px #f0e9fb}
+.timeline-cancelled .cancelled-step-refund .step-label{color:#6b449f}
+.timeline-cancelled .cancelled-step-cancel.current .timeline-node{background:#d44756;border-color:#d44756;box-shadow:0 0 0 4px #ffe9ed,0 0 0 6px #d44756}
+.timeline-cancelled .cancelled-step-cancel .step-label{color:#bc3343;font-weight:750}
+.cancelled-timeline-scroll:focus-visible{outline:2px solid #76aee5;outline-offset:3px;border-radius:8px}
+</style>
+
+<style scoped>
+.goods-handled-tag{display:inline-flex;align-items:center;gap:6px;color:#167755;font-size:12px;font-weight:650;margin-right:auto}
+.refund-workflow{border:1px solid #dbe7f3;background:#f6faff;border-radius:11px;padding:14px;margin:14px 0}
+.refund-workflow-heading,.refund-workflow-amount{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.refund-workflow-heading strong{font-size:14px;color:#263f54}.refund-workflow-heading>span{font-size:11px;font-weight:700;color:#71529f;background:#f0eafb;padding:4px 7px;border-radius:6px}
+.refund-workflow p{font-size:12px;color:#50687c;line-height:1.6;margin:10px 0 0}.refund-workflow-amount{margin-top:12px;font-size:12px;color:#476278}.refund-workflow-amount strong{font-size:17px;color:#137d60}
+.ss-refund-button{display:flex;justify-content:center;align-items:center;gap:7px;border:1px solid #337cd5;border-radius:8px;color:#fff;background:#337cd5;width:100%;padding:10px;margin-top:12px;font-weight:700;font-size:13px}
+.ss-refund-button:disabled{opacity:.5;cursor:not-allowed}
+</style>
+
+<style scoped>
+/* One row at every zoom level; overflow belongs to the timeline, not the page. */
+.timeline-panel .invoice-timeline-scroll{container-type:normal;min-width:0;max-width:100%;overflow-x:auto;overflow-y:hidden;padding:10px 8px 14px;scrollbar-width:thin;scrollbar-color:#9fbfd5 #f0f5f9;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
+.timeline-panel .invoice-timeline-scroll::-webkit-scrollbar{height:8px}
+.timeline-panel .invoice-timeline-scroll::-webkit-scrollbar-track{background:#f0f5f9;border-radius:8px}
+.timeline-panel .invoice-timeline-scroll::-webkit-scrollbar-thumb{background:#9fbfd5;border-radius:8px}
+.timeline-panel .invoice-timeline-scroll>.timeline{display:grid;grid-template-columns:repeat(var(--timeline-step-count),minmax(124px,1fr));min-width:calc(var(--timeline-step-count) * 124px);width:100%;padding-top:7px;gap:0;row-gap:0}
+.timeline-panel .invoice-timeline-scroll>.timeline:before{display:block;left:calc(50% / var(--timeline-step-count));right:calc(50% / var(--timeline-step-count));top:24px}
+.timeline-panel .invoice-timeline-scroll .timeline-step{min-width:0;padding:0 4px}
+.timeline-panel .invoice-timeline-scroll .timeline-step small{white-space:nowrap;text-align:center;font-size:10px;color:#526b7e;line-height:1.5}
+.timeline-panel .invoice-timeline-scroll .step-label{font-size:12px;line-height:1.5}
+.timeline-cancelled .cancelled-step-refund.current .timeline-node{box-shadow:0 0 0 4px #f0e9fb,0 0 0 6px #7853b3}
+.return-modal>.modal-header{display:flex;flex-direction:row;justify-content:space-between;align-items:flex-start;gap:16px}
+.return-modal>.modal-header>.return-modal-heading{flex:1 1 auto;min-width:0}
+.return-modal>.modal-header>.return-close{flex:0 0 32px;margin-left:auto;align-self:flex-start}
+</style>
+
+<style scoped>
+.timeline-actions{gap:10px;flex-wrap:wrap;align-items:center}
+.timeline-actions .invoice-flow-action{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:38px;box-sizing:border-box;padding:9px 14px;border:1px solid transparent;border-radius:9px;font-family:inherit;font-size:12px;font-weight:700;line-height:18px;white-space:nowrap;cursor:pointer;transition:background-color .15s,border-color .15s,box-shadow .15s}
+.invoice-flow-action i{font-size:15px;line-height:1;flex-shrink:0}
+.timeline-actions .invoice-flow-action--return{background:#2f7bea;border-color:#2f7bea;color:#fff;box-shadow:0 2px 5px rgba(47,123,234,.12)}
+.timeline-actions .invoice-flow-action--return:hover:not(:disabled){background:#2268ce;border-color:#2268ce;box-shadow:0 3px 9px rgba(47,123,234,.2)}
+.timeline-actions .invoice-flow-action--cancel{background:#fff1f3;border-color:#efbcc4;color:#bb3345}
+.timeline-actions .invoice-flow-action--cancel:hover:not(:disabled){background:#ffe4e9;border-color:#db7e8e;color:#a42536}
+.timeline-actions .invoice-flow-action:focus-visible{outline:3px solid #9fc7ff;outline-offset:3px}
+.timeline-actions .invoice-flow-action--cancel:focus-visible{outline-color:#efabb7}
+.timeline-actions .invoice-flow-action:disabled{opacity:.55;cursor:not-allowed;box-shadow:none}
+.timeline-actions .soft-button{height:38px;min-height:38px;padding:9px 13px;border-radius:9px;font-size:12px;line-height:18px}
+@media(max-width:540px){.timeline-actions{gap:8px}.timeline-actions .invoice-flow-action,.timeline-actions .soft-button{flex:1 1 auto}.timeline-actions .goods-handled-tag{flex-basis:100%;margin-bottom:3px}}
+@media(prefers-reduced-motion:reduce){.timeline-actions .invoice-flow-action{transition:none}}
+</style>
+
+<style scoped>
+.return-field .form-control.refund-reference-invalid{border-color:#d43c50;background:#fffafb}
+.return-field .form-control.refund-reference-invalid:focus{box-shadow:0 0 0 3px rgba(212,60,80,.12)}
+.refund-reference-error{display:block;margin-top:6px;color:#b52d41;font-size:12px;font-weight:600;line-height:1.5}
+.refund-reference-hint{display:block;margin-top:6px;color:#52697d;font-size:11px;font-weight:400;line-height:1.6}
 </style>

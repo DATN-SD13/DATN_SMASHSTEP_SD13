@@ -1,8 +1,9 @@
 <script setup>
-import { computed, reactive, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import api from '../utils/api'
+import { showError } from '../utils/feedback'
 
 const route     = useRoute()
 const authStore = useAuthStore()
@@ -23,8 +24,10 @@ function confirmLogout() {
 }
 
 async function doLogout() {
-  showLogoutConfirm.value = false
-  await authStore.logout()
+  if (authStore.loggingOut) return
+  try {
+    if (await authStore.logout()) showLogoutConfirm.value = false
+  } catch { showError('Chưa lưu được trạng thái trước khi đăng xuất. Phiên đăng nhập vẫn được giữ.', 'Chưa thể đăng xuất') }
 }
 
 // ── Panel ca làm việc ─────────────────────────────────────
@@ -90,8 +93,10 @@ onMounted(async () => {
 
 // Menu theo Figma: Thống kê → Bán hàng → Hóa đơn → Sản phẩm → Khách hàng → Nhân viên → Giảm giá
 const nav = [
-  { label: 'Thống kê', icon: 'bi-grid-1x2', to: '/thong-ke', adminOnly: true },
-  { label: 'Thống kê tổng hợp', icon: 'bi-bar-chart-line', to: '/thong-ke-tong-hop', adminOnly: true },
+
+  { label: 'Thống kê', icon: 'bi-grid-1x2', to: '/thong-ke' },
+  // { label: 'Thống kê tổng hợp', icon: 'bi-bar-chart-line', to: '/thong-ke-tong-hop' },
+
   { label: 'Bán hàng tại quầy', icon: 'bi-cart3', to: '/ban-hang' },
   { label: 'Quản lý hóa đơn', icon: 'bi-receipt', to: '/hoa-don' },
   {
@@ -135,7 +140,15 @@ const nav = [
 
 const isOn = (to) => route.path === to || route.path.startsWith(to + '/')
 const groupActive = (item) => item.children ? item.children.some(c => isOn(c.to)) : isOn(item.to)
-const open = reactive({ product: true, attributes: true, promo: true, schedule: true })
+const openGroup = ref(null)
+
+watch(() => route.path, () => {
+  openGroup.value = nav.find(item => item.children && groupActive(item))?.key ?? null
+}, { immediate: true })
+
+function toggleGroup(key) {
+  openGroup.value = openGroup.value === key ? null : key
+}
 
 // Chỉ hiện menu có adminOnly khi role là ADMIN
 const visibleNav = computed(() =>
@@ -158,12 +171,12 @@ const crumbs = computed(() => ({
         <template v-for="item in visibleNav" :key="item.label">
           <!-- Mục có menu con -->
           <div v-if="item.children" class="nav-group">
-            <button type="button" class="nav-item" :class="{ active: groupActive(item) }" :title="item.label" @click="open[item.key] = !open[item.key]">
+            <button type="button" class="nav-item" :class="{ active: groupActive(item) }" :title="item.label" :aria-expanded="openGroup === item.key && !collapsed" @click="toggleGroup(item.key)">
               <i class="bi nav-icon" :class="item.icon"></i>
               <span class="nav-text">{{ item.label }}</span>
-              <i class="bi bi-chevron-down chev" :class="{ up: open[item.key] }"></i>
+              <i class="bi bi-chevron-down chev" :class="{ up: openGroup === item.key }"></i>
             </button>
-            <div v-show="open[item.key] && !collapsed" class="sub">
+            <div v-show="openGroup === item.key && !collapsed" class="sub">
               <RouterLink v-for="c in item.children" :key="c.to" :to="c.to" class="sub-item" :class="{ on: isOn(c.to) }">
                 <span class="bullet"></span><span>{{ c.label }}</span>
               </RouterLink>
@@ -277,15 +290,16 @@ const crumbs = computed(() => ({
 
   <!-- Modal xác nhận đăng xuất -->
   <Teleport to="body">
-    <div v-if="showLogoutConfirm" class="logout-overlay" @click.self="showLogoutConfirm = false">      <div class="logout-modal" role="dialog" aria-modal="true" aria-labelledby="logout-title">
+    <div v-if="showLogoutConfirm" class="logout-overlay" @click.self="!authStore.loggingOut && (showLogoutConfirm = false)">      <div class="logout-modal" role="dialog" aria-modal="true" aria-labelledby="logout-title">
         <div class="logout-icon">
           <i class="bi bi-box-arrow-right"></i>
         </div>
         <h3 id="logout-title">Xác nhận đăng xuất</h3>
         <p>Bạn có chắc chắn muốn đăng xuất khỏi hệ thống?</p>
+        <p v-if="route.path === '/ban-hang'" class="logout-pos-hint">Giỏ hàng đã lưu vẫn được giữ. Thông tin giao hàng chưa hoàn tất sẽ không được lưu vào đơn.</p>
         <div class="logout-actions">
-          <button class="btn-cancel" @click="showLogoutConfirm = false">Hủy</button>
-          <button class="btn-confirm" @click="doLogout">Đăng xuất</button>
+          <button class="btn-cancel" :disabled="authStore.loggingOut" @click="showLogoutConfirm = false">Hủy</button>
+          <button class="btn-confirm" :disabled="authStore.loggingOut" @click="doLogout">{{ authStore.loggingOut ? 'Đang đăng xuất…' : 'Đăng xuất' }}</button>
         </div>
       </div>
     </div>
@@ -616,4 +630,9 @@ const crumbs = computed(() => ({
   display: flex; align-items: flex-start; gap: 6px;
   padding-top: 4px; border-top: 1px dashed var(--ss-border);
 }
+</style>
+
+<style scoped>
+.logout-modal .logout-pos-hint { font-size: 12px; line-height: 1.5; color: #718096; }
+.logout-actions button:disabled { opacity: .6; cursor: wait; }
 </style>

@@ -53,6 +53,9 @@ public final class TonKhoHoaDonCho {
         var rows = em.createQuery("select d from HoaDonChiTiet d where d.idHoaDon.id = :id", HoaDonChiTiet.class)
                 .setParameter("id", h.getId()).getResultList();
         var cu = soLuong(rows);
-        capNhat(h, cu, Map.of(), khoaBienThe(em, cu.keySet()));
+        var variants = khoaBienThe(em, cu.keySet());
+        if (variants.size()!=cu.size() || cu.values().stream().anyMatch(q -> q<=0))
+            throw AppException.conflict("Không đủ thông tin biến thể để hoàn tồn; cần kiểm tra giỏ chờ");
+        capNhat(h, cu, Map.of(), variants);
     }
 }

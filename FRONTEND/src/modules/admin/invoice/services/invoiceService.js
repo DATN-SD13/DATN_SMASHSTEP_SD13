@@ -17,6 +17,10 @@ export const invoiceService = {
     const response = await api.put(`/hoa-don/${encodeURIComponent(ma)}/trang-thai`, payload)
     return response.data
   },
+  async resolveFailedDelivery(ma, payload) {
+    const response = await api.put(`/hoa-don/${encodeURIComponent(ma)}/xu-ly-giao-that-bai`, payload)
+    return response.data
+  },
   async getSummary(params = {}) {
     const response = await api.get('/thong-ke', { params })
     return response.data
