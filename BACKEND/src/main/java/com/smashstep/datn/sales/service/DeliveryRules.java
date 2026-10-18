@@ -84,7 +84,7 @@ public final class DeliveryRules {
                         + (daTruKho ? PosDraftRules.TON_KHO_THUC : "") + Objects.toString(ghiChu, ""));
         if (h.getGhiChu().length() > 1000) throw AppException.badRequest("Ghi chú quá dài; vui lòng nhập tối đa 960 ký tự");
         h.setPhiVanChuyen(giaoHang.phiVanChuyen());
-        h.setDonViVanChuyen(null);
+        h.setDonViVanChuyen(giaoHang.apDung() ? "GHN" : null);
         h.setDiaChiGiaoHang(giaoHang.apDung() ? giaoHang.diaChi() : null);
         if (giaoHang.apDung()) {
             h.setHoTenNguoiNhan(giaoHang.tenNguoiNhan());

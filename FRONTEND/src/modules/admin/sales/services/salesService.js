@@ -47,7 +47,7 @@ function taoYeuCau(duLieu) {
   return yeuCau
 }
 function docKetQua(duLieu) {
-  const { danhSachSanPham, giaoHang, danhSachThanhToan, danhSachPhieuGiamGia, phieuChuaDuDieuKien, ...thongTin } = duLieu
+  const { danhSachSanPham, giaoHang, danhSachThanhToan, danhSachPhieuGiamGia, phieuChuaDuDieuKien, goiYMuaThem, ...thongTin } = duLieu
   const ketQua = doiTenTruong(thongTin, daoBangTen(tenKetQua))
   if (danhSachSanPham !== undefined) ketQua.items = danhSachSanPham.map(docSanPham)
   if (giaoHang !== undefined) ketQua.delivery = doiTenTruong(giaoHang, daoBangTen(tenGiaoHang))
@@ -59,10 +59,24 @@ function docKetQua(duLieu) {
   if (phieuChuaDuDieuKien !== undefined) ketQua.ineligibleVouchers = phieuChuaDuDieuKien.map(p => doiTenTruong(p, {
     maPhieuGiamGia: 'code', tenPhieuGiamGia: 'name', tienGiam: 'discount', hinhThucPhieu: 'form', lyDoKhongApDung: 'reason'
   }))
+  if (goiYMuaThem !== undefined) ketQua.buyMoreSuggestions = goiYMuaThem.map(p => doiTenTruong(p, {
+    maPhieuGiamGia: 'code', loaiGiamGia: 'type', giaTriGiam: 'value',
+    canMuaThem: 'amountNeeded', tienGiamDuKien: 'projectedDiscount'
+  }))
   return ketQua
 }
 
 export default {
+  async tinhThanhGhn() { return layDuLieu(await api.get('/ban-hang/van-chuyen/tinh-thanh')) },
+  async phuongXaGhn(idTinhThanh) { return layDuLieu(await api.get('/ban-hang/van-chuyen/phuong-xa', { params: { idTinhThanh } })) },
+  async tinhPhiGhn(o, destination = {}) {
+    return layDuLieu(await api.post('/ban-hang/van-chuyen/tinh-phi', {
+      giaoHang: doiTenTruong({ ...o.delivery, shippingFee: o.delivery.shippingFee ?? 0 }, tenGiaoHang),
+      idKhachHang: o.customerId || null, soLuong: o.items.reduce((sum, i) => sum + i.qty, 0),
+      idTinhThanh: destination.province ? Number(destination.province) : null,
+      maPhuongXa: destination.ward || null
+    }, { timeout: 60000 }))
+  },
   async dongBoHoaDonCho() { return layDuLieu(await api.post('/ban-hang/hoa-don-cho/dong-bo')).map(docKetQua) },
   async danhSachHoaDonCho() { return layDuLieu(await api.get('/ban-hang/hoa-don-cho')).map(docKetQua) },
   async chiTietHoaDonCho(id) { return docKetQua(layDuLieu(await api.get(`/ban-hang/hoa-don-cho/${id}`))) },
@@ -88,5 +102,6 @@ export default {
     }))
   },
   async tinhTien(duLieu) { return docKetQua(layDuLieu(await api.post('/ban-hang/tinh-tien', taoYeuCau(duLieu)))) },
+  async baoVeKhoanThu(duLieu) { return layDuLieu(await api.post('/ban-hang/thanh-toan/cho-doi-soat', taoYeuCau(duLieu))) },
   async thanhToan(duLieu) { return docKetQua(layDuLieu(await api.post('/ban-hang/thanh-toan', taoYeuCau(duLieu)))) }
 }

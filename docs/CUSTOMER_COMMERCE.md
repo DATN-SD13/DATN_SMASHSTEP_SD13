@@ -19,26 +19,19 @@ GHN fee lookup is server-side. Set these environment variables on the process la
 | --- | --- |
 | `GHN_TOKEN` | Token issued to the store by GHN. Keep outside Git. |
 | `GHN_SHOP_ID` | Shop belonging to that token; its registered pickup address is used. |
-| `GHN_ITEM_WEIGHT_GRAMS` | Actual packed weight per pair, in grams. Required; no invented weight default. |
-| `GHN_SANDBOX` | `true` for GHN staging; default `false` for production fee lookup. |
+| `GHN_GRAMS_PER_PAIR` | Actual packed weight per pair, in grams. Uses the same setting as POS. |
+| `GHN_BASE_URL` | Carrier environment URL, shared with POS. Default is the production GHN gateway. |
 
 Restart the backend after configuring its environment. No database migration is required.
-The fee request uses the carrier's district/ward codes, fetched through the authenticated backend.
-This integration uses GHN's documented district-based fee API. Saved two-level addresses must be
-reselected in GHN's address selector; codes from the general province API are never guessed or mixed.
-Packages at or above 20kg require the shop's separate shipping arrangement.
+Customer checkout now reuses the team's `GhnPhiVanChuyenService` two-level province/ward catalogue
+and shipping preview. POS keeps its employee-scoped quote cache; customers do not call POS controllers
+or establish a POS identity. Prices are calculated again on order submission.
 
-Without valid configuration, the page shows a clear message and disables order placement.
-It does not invent a shipping fee. Fee lookup does not create a shipment, buy a label or arrange pickup.
-No carrier token is sent to the browser. Only locality identifiers and declared parcel value/weight
-are needed for the fee request; recipient names, phone numbers, emails and street addresses are not sent.
-
-Official API references:
-
-- https://developer.ghn.vn/vi/docs/order/calculate-fee
-- https://developer.ghn.vn/vi/docs/master-data/get-province
-- https://developer.ghn.vn/vi/docs/master-data/get-district
-- https://developer.ghn.vn/vi/docs/master-data/get-ward
+Choose the province and ward from GHN's current two-level selectors; saved legacy addresses must
+be reselected. Packages above the carrier's 50kg limit must be split. Fee lookup is a preview:
+it does not create a shipment, buy a label or arrange pickup. There is no invented free-shipping fallback.
+Recipient name, phone and delivery address are sent to GHN for the preview; the form states this.
+Carrier tokens stay on the backend. Configure GHN_TOKEN outside Git; no token is hardcoded in source.
 
 ## Order lifecycle
 

@@ -24,12 +24,18 @@ public final class OnlineOrderInventory {
             throw AppException.conflict("Đơn đã được hủy/hoàn tiền");
         var rows=em.createQuery("select d from HoaDonChiTiet d where d.idHoaDon.id=:id order by d.idSanPhamChiTiet.id",HoaDonChiTiet.class)
                 .setParameter("id",h.getId()).getResultList();
+        var locked=com.smashstep.datn.sales.service.TonKhoHoaDonCho.khoaBienThe(em,
+                rows.stream().map(row->row.getIdSanPhamChiTiet().getId()).toList());
         for(var row:rows) {
-            var v=em.find(SanPhamChiTiet.class,row.getIdSanPhamChiTiet().getId(),LockModeType.PESSIMISTIC_WRITE);
+            var v=locked.get(row.getIdSanPhamChiTiet().getId());
             if(v==null || row.getSoLuong()==null || row.getSoLuong()<1) throw AppException.conflict("Không thể hoàn kho của đơn hàng");
             try { v.setSoLuong(Math.addExact(Objects.requireNonNullElse(v.getSoLuong(),0),row.getSoLuong())); }
             catch(ArithmeticException e) { throw AppException.conflict("Tồn kho vượt giới hạn"); }
         }
+        releaseVoucher(em,h);
+    }
+    public static void releaseVoucher(EntityManager em,HoaDon h) {
+        if(!managed(em,h)) return;
         if(h.getIdPhieuGiamGia()!=null) {
             var voucher=em.find(PhieuGiamGia.class,h.getIdPhieuGiamGia().getId(),LockModeType.PESSIMISTIC_WRITE);
             voucher.setSoLuongDaDung(Math.max(0,Objects.requireNonNullElse(voucher.getSoLuongDaDung(),0)-1));

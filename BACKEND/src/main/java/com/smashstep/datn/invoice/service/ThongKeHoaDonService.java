@@ -38,6 +38,7 @@ public class ThongKeHoaDonService {
                 cb.coalesce(invoice.<BigDecimal>get("thanhTien"), BigDecimal.ZERO)).otherwise(BigDecimal.ZERO);
         var paidCount = cb.<Long>selectCase().when(paidCompleted, 1L).otherwise(0L);
         List<Predicate> filters = new ArrayList<>();
+        filters.add(com.smashstep.datn.invoice.rules.HoaDonHienThiRules.daPhatHanh(invoice, cb));
         if (tuNgay != null) filters.add(cb.greaterThanOrEqualTo(invoice.get("ngayTao"), tuNgay.atStartOfDay()));
         if (denNgay != null) filters.add(cb.lessThan(invoice.get("ngayTao"), denNgay.plusDays(1).atStartOfDay()));
         if (ma != null && !ma.isBlank()) {

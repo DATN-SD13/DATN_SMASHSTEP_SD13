@@ -8,9 +8,10 @@ if (!$.fn.select2) installSelect2(window, $)
 const props = defineProps({
   modelValue: { default: '' }, options: { type: Array, default: () => [] },
   placeholder: String, disabled: Boolean, multiple: Boolean,
+  dropdownParentSelector: { type: String, default: '' },
   allowClear: { type: Boolean, default: true }, search: { type: Boolean, default: true }
 })
-const emit = defineEmits(['update:modelValue', 'change'])
+const emit = defineEmits(['update:modelValue', 'change', 'blur'])
 const select = ref(null)
 let control, signature = '', disposed = false, lastValue, keyTargets = []
 function closeDropdownOnEscape(event) {
@@ -43,7 +44,8 @@ function initialize() {
   if (disposed || !select.value) return
   destroy()
   control = $(select.value)
-  const parent = select.value.closest('.p-dialog') || select.value.closest('.product-page')
+  const parent = (props.dropdownParentSelector ? select.value.closest(props.dropdownParentSelector) : null)
+    || select.value.closest('.p-dialog') || select.value.closest('.product-page')
   const placeholder = props.placeholder ?? (!props.multiple ? select.value.options[0]?.value === '' ? select.value.options[0].text : undefined : undefined)
   control.select2({ width: '100%', placeholder, allowClear: props.allowClear && Boolean(placeholder),
     minimumResultsForSearch: props.search ? 0 : Infinity, dropdownParent: parent ? $(parent) : $(document.body),
@@ -60,18 +62,19 @@ function initialize() {
     emit('update:modelValue', value)
     emit('change', value)
   })
+  control.on('select2:close.productSelect2', () => emit('blur'))
   sync()
 }
 function refresh() {
   if (!select.value || disposed) return
-  const current = JSON.stringify([...select.value.options].map(option => [option.value, option.text, option.disabled])) + JSON.stringify([props.multiple, props.placeholder, props.search, props.allowClear])
+  const current = JSON.stringify([...select.value.options].map(option => [option.value, option.text, option.disabled])) + JSON.stringify([props.multiple, props.placeholder, props.search, props.allowClear, props.dropdownParentSelector])
   if (current !== signature || !control) { signature = current; initialize() }
   else sync()
 }
 onMounted(refresh)
 onUpdated(refresh)
 watch(() => props.modelValue, async () => { await nextTick(); if (!disposed) sync() }, { deep: true })
-watch(() => [props.options, props.disabled, props.multiple, props.placeholder, props.search, props.allowClear], async () => {
+watch(() => [props.options, props.disabled, props.multiple, props.placeholder, props.search, props.allowClear, props.dropdownParentSelector], async () => {
   await nextTick(); refresh()
 }, { deep: true })
 onBeforeUnmount(() => { disposed = true; destroy() })

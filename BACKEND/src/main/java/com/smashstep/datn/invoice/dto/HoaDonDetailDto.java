@@ -20,6 +20,26 @@ import java.util.List;
 @Builder
 public class HoaDonDetailDto {
 
+    private boolean daXuLyHangTra;
+    public void returnedGoods(boolean handled) {
+        daXuLyHangTra=handled;
+        if(handled && Integer.valueOf(9).equals(maTrangThai)) { maTrangThaiTiepTheo=null; trangThaiTiepTheo=null; }
+    }
+    private long soLanGiaoThatBai;
+    private BigDecimal soTienCanHoan;
+    private String loiDoiSoat;
+    public void deliveryFailure(long count) {
+        soLanGiaoThatBai=count;
+        if(Integer.valueOf(9).equals(maTrangThai)) {
+            trangThai="Giao hàng thất bại — lần "+count+"/3";
+            if(count>=3) { maTrangThaiTiepTheo=null; trangThaiTiepTheo=null; }
+        }
+    }
+    public void refundDue(BigDecimal due) {
+        soTienCanHoan=due;
+        if(Integer.valueOf(7).equals(maTrangThai) && due.signum()>0) trangThaiThanhToan="Chờ hoàn tiền";
+    }
+    public void refundBlocked(String error) { loiDoiSoat=error; }
     private Long id;
     private String maHoaDon;
     private String ngayTao;
@@ -267,14 +287,12 @@ public class HoaDonDetailDto {
                 .loaiGiamGia(hoaDon.getIdPhieuGiamGia() == null ? null : hoaDon.getIdPhieuGiamGia().getLoaiGiamGia())
                 .giaTriGiam(hoaDon.getIdPhieuGiamGia() == null ? null : hoaDon.getIdPhieuGiamGia().getGiaTriGiam())
                 .trangThaiThanhToan(
-                        hoaDon.getNgayThanhToan() != null
-                                ? "Đã thanh toán"
-                                : "Chưa thanh toán"
+                        java.util.Objects.requireNonNullElse(lichSuThanhToan, java.util.List.<LichSuThanhToanDto>of()).stream().anyMatch(p -> Integer.valueOf(2).equals(p.getMaTrangThai()))
+                                ? "Đã hoàn tiền" : hoaDon.getNgayThanhToan()!=null ? "Đã thanh toán" : "Chưa thanh toán"
                 )
                 .maTrangThaiThanhToan(
-                        hoaDon.getNgayThanhToan() != null
-                                ? 1
-                                : 0
+                        java.util.Objects.requireNonNullElse(lichSuThanhToan, java.util.List.<LichSuThanhToanDto>of()).stream().anyMatch(p -> Integer.valueOf(2).equals(p.getMaTrangThai()))
+                                ? 2 : hoaDon.getNgayThanhToan()!=null ? 1 : 0
                 )
                 .ngayThanhToan(
                         formatDateTime(

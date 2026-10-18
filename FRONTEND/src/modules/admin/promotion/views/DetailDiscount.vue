@@ -1,4 +1,5 @@
 <script setup>
+import { voucherRemaining } from '../services/voucherUsage'
 import { showError } from '../../../../utils/feedback'
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import { onMounted, ref } from 'vue'
@@ -188,7 +189,7 @@ onMounted(loadDetail)
           </div>
 
           <div class="detail-item">
-            <span>Số lượng</span>
+            <span>Tổng lượt phát hành</span>
             <strong>
               {{ voucher.unlimited ? 'Không giới hạn' : (voucher.quantity ?? '—') }}
             </strong>
@@ -199,6 +200,11 @@ onMounted(loadDetail)
             <strong>
               {{ voucher.usedQuantity ?? 0 }}
             </strong>
+          </div>
+
+          <div class="detail-item">
+            <span>Còn lại</span>
+            <strong class="voucher-remaining">{{ voucherRemaining(voucher) }}</strong>
           </div>
 
           <div class="detail-item">
@@ -322,4 +328,8 @@ onMounted(loadDetail)
 
 }
 
+</style>
+
+<style scoped>
+.voucher-remaining { color: #208969; }
 </style>

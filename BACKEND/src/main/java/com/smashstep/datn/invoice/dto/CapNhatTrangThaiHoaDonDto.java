@@ -11,6 +11,7 @@ import lombok.Setter;
 @Setter
 public class CapNhatTrangThaiHoaDonDto {
     @Positive private Long idNhanVien;
+    private Integer soLanThatBai;
 
     @NotNull(message = "Trạng thái không được để trống")
     private Integer trangThai;

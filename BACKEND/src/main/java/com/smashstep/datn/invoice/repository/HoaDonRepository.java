@@ -28,4 +28,12 @@ public interface HoaDonRepository extends JpaRepository<HoaDon, Long>, JpaSpecif
     @EntityGraph(attributePaths = {"idKhachHang", "idNhanVien", "idPhuongThucThanhToan"})
     @Query("select h from HoaDon h where h.maHoaDon = :maHoaDon")
     Optional<HoaDon> findByMaHoaDonForUpdate(@Param("maHoaDon") String maHoaDon);
+
+    /** Tổng số đơn hoàn thành (trangThai = 5) của khách hàng */
+    @Query("SELECT COUNT(h) FROM HoaDon h WHERE h.idKhachHang.id = :khachHangId AND h.trangThai = 5")
+    long countDonHoanThanhByKhachHang(@Param("khachHangId") Long khachHangId);
+
+    /** Ngày thanh toán gần nhất của khách hàng (đơn hoàn thành) */
+    @Query("SELECT MAX(h.ngayThanhToan) FROM HoaDon h WHERE h.idKhachHang.id = :khachHangId AND h.trangThai = 5")
+    java.time.LocalDateTime findNgayMuaGanNhatByKhachHang(@Param("khachHangId") Long khachHangId);
 }

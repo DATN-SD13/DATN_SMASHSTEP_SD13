@@ -85,6 +85,13 @@ public class SalesController {
         return ApiResponse.ok(salesService.tinhTien(yeuCau));
     }
 
+    @PostMapping("/thanh-toan/cho-doi-soat")
+    public ApiResponse<Void> baoVeKhoanThu(@Valid @RequestBody SalesRequest request) {
+        request.setIdNhanVien(PosActor.idNhanVien());
+        salesService.baoVeKhoanThu(request);
+        return ApiResponse.ok("Đã giữ hóa đơn để đối soát khoản thu", null);
+    }
+
     @PostMapping("/thanh-toan")
     public ApiResponse<Receipt> thanhToan(@Valid @RequestBody SalesRequest yeuCau) {
         yeuCau.setIdNhanVien(PosActor.idNhanVien());

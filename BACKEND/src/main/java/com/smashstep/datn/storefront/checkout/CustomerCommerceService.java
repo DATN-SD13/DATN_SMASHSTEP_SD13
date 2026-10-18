@@ -115,7 +115,8 @@ public class CustomerCommerceService {
         if(r.receiver()==null || r.receiver().address().length()>500) throw AppException.badRequest("Cần thông tin nhận hàng đầy đủ, địa chỉ tối đa 500 ký tự");
         productLock.khoa("variants");
         var ids=r.items().stream().map(Item::variantId).sorted().toList();
-        for(Long id:ids) { var v=em.find(SanPhamChiTiet.class,id,LockModeType.PESSIMISTIC_WRITE); if(v!=null) em.refresh(v,LockModeType.PESSIMISTIC_WRITE); }
+        var locked=com.smashstep.datn.sales.service.TonKhoHoaDonCho.khoaBienThe(em,ids);
+        if(locked.size()!=ids.size()) throw AppException.conflict("Một biến thể không còn tồn tại. Vui lòng kiểm tra giỏ hàng.");
         var q=quote(customerId,r);
         if(!q.canCheckout()) throw AppException.badRequest(q.message());
         // The carrier request can span a campaign boundary. Reprice again after the network call.
