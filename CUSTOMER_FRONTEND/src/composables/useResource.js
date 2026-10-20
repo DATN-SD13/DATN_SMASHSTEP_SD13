@@ -12,7 +12,7 @@ export function useResource(loader, refreshMs = 30000) {
     finally { if (!disposed && current === version) loading.value = false }
   }
   function onVisible() { if (document.visibilityState === 'visible') reload() }
-  onMounted(() => { if (refreshMs) { timer = setInterval(() => { if (!document.hidden) reload() }, refreshMs); document.addEventListener('visibilitychange', onVisible) } })
-  onBeforeUnmount(() => { disposed = true; ++version; controller?.abort(); clearInterval(timer); document.removeEventListener('visibilitychange', onVisible) })
+  onMounted(() => { if (refreshMs) { timer = setInterval(() => { if (!document.hidden) reload() }, refreshMs); document.addEventListener('visibilitychange', onVisible); window.addEventListener('focus', onVisible) } })
+  onBeforeUnmount(() => { disposed = true; ++version; controller?.abort(); clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); window.removeEventListener('focus', onVisible) })
   return { data, loading, error, reload }
 }

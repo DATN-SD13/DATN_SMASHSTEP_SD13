@@ -133,6 +133,9 @@ public class HoaDonService {
                 hoaDonRepository
                         .findByMaHoaDonForUpdate(ma.trim())
                         .orElseThrow(() -> AppException.notFound("Không tìm thấy hóa đơn: " + ma));
+        if (com.smashstep.datn.storefront.checkout.OnlineBankPayment.bankOrder(entityManager, hoaDon)
+                && request.getTrangThai() != 6 && hoaDon.getNgayThanhToan() == null)
+            throw AppException.conflict("Cần đối soát và xác nhận đã nhận đủ tiền QR trước khi xử lý đơn hàng");
         if (com.smashstep.datn.invoice.rules.PosDraftRules.managed(hoaDon)) {
             checkDraftOwner(hoaDon);
             if ("POS".equals(request.getNguonThaoTac())
@@ -232,6 +235,8 @@ public class HoaDonService {
             }
         }
 
+        if (com.smashstep.datn.storefront.checkout.OnlineOrderInventory.managed(entityManager, hoaDon))
+            request.setIdNhanVien(com.smashstep.datn.sales.service.PosActor.employeeId());
         Long idNhanVienThaoTac = request.getIdNhanVien();
         if (idNhanVienThaoTac == null && hoaDon.getIdNhanVien() != null) {
             idNhanVienThaoTac = hoaDon.getIdNhanVien().getId();
@@ -248,6 +253,10 @@ public class HoaDonService {
         }
         if (request.getTrangThai() == 6 && com.smashstep.datn.invoice.rules.PosDraftRules.daTruKho(hoaDon))
             com.smashstep.datn.sales.service.TonKhoHoaDonCho.hoanKhiHuy(entityManager, hoaDon);
+        if (request.getTrangThai() == 6)
+            com.smashstep.datn.storefront.checkout.OnlineOrderInventory.restore(entityManager, hoaDon);
+        if (request.getTrangThai() == 5)
+            com.smashstep.datn.storefront.checkout.OnlineOrderInventory.collectCodOnCompletion(entityManager, hoaDon);
         hoaDon.setTrangThai(request.getTrangThai());
         hoaDon.setNgayCapNhat(LocalDateTime.now());
 
@@ -325,6 +334,7 @@ public class HoaDonService {
 
             } else {
                 if(due.signum()>0) throw AppException.conflict("Chưa hoàn đủ tiền; hoàn tiền trước khi hủy hóa đơn");
+                com.smashstep.datn.storefront.checkout.OnlineOrderInventory.releaseVoucher(entityManager,h);
                 h.setTrangThai(6);
                 ghiXuLy(h,actor,6,"Hủy sau khi đã xử lý hàng trả và đối soát tiền; "+request.getGhiChu().trim());
             }
@@ -390,6 +400,8 @@ public class HoaDonService {
                         .findByMaHoaDon(ma.trim())
                         .orElseThrow(() -> AppException.notFound("Không tìm thấy hóa đơn: " + ma));
         checkDraftOwner(found);
+        if (com.smashstep.datn.invoice.rules.HoaDonHienThiRules.choThanhToanOnline(found))
+            throw AppException.notFound("Đơn online chưa thanh toán thành công nên chưa hiển thị ở quản lý");
         return found;
     }
 

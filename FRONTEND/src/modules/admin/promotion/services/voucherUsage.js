@@ -4,4 +4,3 @@ export function voucherRemaining(voucher) {
     if (voucher?.quantity === undefined || !Number.isFinite(Number(voucher.quantity))) return '—'
     return Math.max(0, Number(voucher.quantity) - Number(voucher.usedQuantity || 0))
   }
-  

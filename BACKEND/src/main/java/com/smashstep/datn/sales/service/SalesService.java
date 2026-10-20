@@ -816,9 +816,19 @@ public class SalesService {
 
     public record DraftVoucher(PhieuGiamGia phieuGiamGia, BigDecimal tienGiam) {}
 
+    @Transactional(readOnly = true, noRollbackFor = AppException.class)
     public DraftVoucher tinhThuPhieu(KhachHang khachHang, BigDecimal tongTienHang, String ma) {
         var ketQua = kiemTraPhieu(ma, khachHang, tongTienHang, false, LocalDateTime.now());
         return new DraftVoucher(ketQua.phieuGiamGia(), ketQua.tienGiam());
+    }
+
+    /** Shared voucher rules for authenticated online checkout; caller owns the write transaction. */
+    public record CheckoutVoucher(PhieuGiamGia voucher, PhieuGiamGiaKhachHang assignment, BigDecimal discount) {}
+
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public CheckoutVoucher kiemTraPhieuDatHang(KhachHang customer, BigDecimal subtotal, String code) {
+        var evaluated = kiemTraPhieu(code, customer, subtotal, true, LocalDateTime.now());
+        return new CheckoutVoucher(evaluated.phieuGiamGia(), evaluated.phieuKhachHang(), evaluated.tienGiam());
     }
 
     private VoucherEvaluation kiemTraPhieu(

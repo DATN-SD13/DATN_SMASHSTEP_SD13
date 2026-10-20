@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { enforceAccountRequest } from '../utils/accountValidation'
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api',
@@ -16,6 +17,7 @@ const api = axios.create({
 
 // ── Request: đính kèm Bearer token ──────────────────────
 api.interceptors.request.use(config => {
+  enforceAccountRequest(config)
   const token = localStorage.getItem('ss_token')
   if (token) config.headers['Authorization'] = `Bearer ${token}`
   return config
@@ -29,7 +31,9 @@ api.interceptors.response.use(
     return response.data?.data ?? response.data
   },
   error => {
-    if (error.response?.status === 401) {
+    const validation = error.response?.data?.errors
+    if (validation && typeof validation === 'object') error.response.data.message = Object.values(validation).join(' · ')
+    if (error.response?.status === 401 && !String(error.config?.url || '').startsWith('/auth/')) {
       // Lazy import tránh circular dep
       import('../stores/auth').then(({ useAuthStore }) => {
         useAuthStore().forceLogout()

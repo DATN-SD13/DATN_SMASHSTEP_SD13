@@ -29,6 +29,23 @@ const router = createRouter({
       meta: { title: 'Đăng ký | SmashStep', public: true, guestOnly: true }
     },
 
+    {
+      path: '/tai-khoan',
+      name: 'account',
+      component: () => import('../views/AccountView.vue'),
+      meta: { title: 'Tài khoản của tôi | SmashStep', requiresAuth: true, customerOnly: true }
+    },
+
+    { path: '/gio-hang', component: () => import('../views/CartView.vue'), meta: { title: 'Giỏ hàng | SmashStep' } },
+    { path: '/thanh-toan', component: () => import('../views/CheckoutView.vue'), meta: { title: 'Thanh toán | SmashStep', requiresAuth: true, customerOnly: true } },
+    { path: '/thanh-toan-thu', component: () => import('../views/PaymentDemoView.vue'), meta: { title: 'Thanh toán thử | SmashStep', public: true } },
+    { path: '/thanh-toan-thu/:code', component: () => import('../views/PaymentDemoView.vue'), meta: { title: 'Thanh toán thẻ giả lập | SmashStep', requiresAuth: true, customerOnly: true } },
+    { path: '/don-hang', component: () => import('../views/OrderListView.vue'), meta: { title: 'Đơn hàng của bạn | SmashStep', requiresAuth: true, customerOnly: true } },
+    { path: '/don-hang/:ma', component: () => import('../views/OrderDetailView.vue'), meta: { title: 'Chi tiết đơn hàng | SmashStep', requiresAuth: true, customerOnly: true } },
+    { path: '/goi-y-giay', component: () => import('../views/RecommendationView.vue'), meta: { title: 'Gợi ý giày | SmashStep' } },
+
+    { path: '/ve-chung-toi', name: 'about', component: () => import('../views/AboutView.vue'), meta: { title: 'Về chúng tôi | SmashStep' } },
+
     // ── Public pages ─────────────────────────────────────
     {
       path: '/',
@@ -60,6 +77,7 @@ const router = createRouter({
 router.beforeEach((to, _from, next) => {
   import('../stores/auth').then(({ useAuthStore }) => {
     const auth = useAuthStore()
+    auth.syncSession()
 
     // Trang chỉ dành cho guest: nếu đã đăng nhập thì về trang chủ
     if (to.meta.guestOnly && auth.isAuthenticated) {
@@ -69,6 +87,10 @@ router.beforeEach((to, _from, next) => {
     // Route yêu cầu đăng nhập
     if (to.meta.requiresAuth && !auth.isAuthenticated) {
       return next({ path: '/dang-nhap', query: { redirect: to.fullPath } })
+    }
+
+    if (to.meta.customerOnly && !auth.isCustomer) {
+      return next('/')
     }
 
     next()

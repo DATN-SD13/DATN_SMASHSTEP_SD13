@@ -989,7 +989,7 @@ function number(value) {
         <div>
           <div class="dashboard-eyebrow">Báo cáo kinh doanh</div>
 
-          <h1>Thống kê tổng quan</h1>
+          <h1>Thống kê tổng hợp</h1>
 
           <p>Theo dõi doanh thu, hiệu suất bán hàng và hoạt động kinh doanh.</p>
         </div>

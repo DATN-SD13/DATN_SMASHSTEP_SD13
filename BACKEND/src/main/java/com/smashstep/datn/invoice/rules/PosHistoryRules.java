@@ -15,10 +15,12 @@ public final class PosHistoryRules {
         return note != null
                 && (note.startsWith(KY_THUAT)
                         || note.startsWith(HOAN_TAT)
-                        || note.startsWith(THAO_TAC_POS));
+                        || note.startsWith(THAO_TAC_POS)
+                        || note.startsWith(com.smashstep.datn.storefront.checkout.OnlineOrderInventory.PREFIX));
     }
 
     public static boolean hienThi(HoaDon invoice, LichSuHoaDon row) {
+        if (row.getGhiChu() != null && row.getGhiChu().startsWith(com.smashstep.datn.storefront.checkout.OnlineOrderInventory.PREFIX)) return false;
         if (!PosDraftRules.managed(invoice)) return true;
         String note = row.getGhiChu();
         if (PosPriceSnapshot.metadata(note)) return false;

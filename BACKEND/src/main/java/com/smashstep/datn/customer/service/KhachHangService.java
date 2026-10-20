@@ -31,6 +31,8 @@ import java.util.Locale;
 @Transactional(readOnly = true)
 public class KhachHangService {
 
+    @jakarta.persistence.PersistenceContext
+    private jakarta.persistence.EntityManager entityManager;
     private final KhachHangRepository khachHangRepository;
     private final DiaChiKhachHangRepository diaChiRepository;
     private final HoaDonRepository hoaDonRepository;
@@ -302,7 +304,17 @@ public class KhachHangService {
             DiaChiKhachHangRequest request
     ) {
         KhachHang customer =
-                findCustomer(code);
+                lockAddressOwner(code);
+
+        var duplicate = diaChiRepository.findByIdKhachHang_IdAndTrangThaiOrderByIsMacDinhDescIdDesc(customer.getId(),1)
+                .stream().filter(a -> sameAddress(a,request)).findFirst();
+        if(duplicate.isPresent()) {
+            var existing=duplicate.get();
+            if(Boolean.TRUE.equals(request.getIsDefault())) {
+                clearDefaultAddress(customer.getId()); existing.setIsMacDinh(true); diaChiRepository.save(existing);
+            }
+            return toAddressResponse(existing);
+        }
 
         boolean hasActive =
                 !diaChiRepository
@@ -332,7 +344,7 @@ public class KhachHangService {
             DiaChiKhachHangRequest request
     ) {
         KhachHang customer =
-                findCustomer(code);
+                lockAddressOwner(code);
 
         DiaChiKhachHang address =
                 findAddress(
@@ -365,7 +377,7 @@ public class KhachHangService {
             Long addressId
     ) {
         KhachHang customer =
-                findCustomer(code);
+                lockAddressOwner(code);
 
         DiaChiKhachHang target =
                 findAddress(
@@ -400,7 +412,7 @@ public class KhachHangService {
             Long addressId
     ) {
         KhachHang customer =
-                findCustomer(code);
+                lockAddressOwner(code);
 
         DiaChiKhachHang address =
                 findAddress(
@@ -440,6 +452,24 @@ public class KhachHangService {
                         diaChiRepository.save(next);
                     });
         }
+    }
+
+    private KhachHang lockAddressOwner(String code) {
+        var customer=findCustomer(code);
+        entityManager.refresh(customer,jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+        return customer;
+    }
+    private boolean sameAddress(DiaChiKhachHang a,DiaChiKhachHangRequest r) {
+        return addressPart(a.getTenNguoiNhan()).equals(addressPart(r.getReceiverName()))
+                && addressPart(a.getSdtNguoiNhan()).equals(addressPart(r.getReceiverPhone()))
+                && addressPart(a.getTinhThanh()).equals(addressPart(r.getProvince()))
+                && addressPart(a.getQuanHuyen()).equals(addressPart(r.getDistrict()))
+                && addressPart(a.getPhuongXa()).equals(addressPart(r.getWard()))
+                && addressPart(a.getDiaChiCuThe()).equals(addressPart(r.getStreet()))
+                && java.util.Objects.equals(a.getLoaiDiaChi(),r.getAddressType()==null?1:r.getAddressType());
+    }
+    private String addressPart(String value) {
+        return java.util.Objects.toString(value,"").trim().toLowerCase(java.util.Locale.ROOT).replaceAll("\\s+"," ");
     }
 
     private KhachHang findCustomer(

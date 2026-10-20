@@ -1,4 +1,5 @@
 <script setup>
+import { loginError } from '../utils/accountValidation'
 import { ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
@@ -11,9 +12,12 @@ const username = ref('')
 const password = ref('')
 const showPass = ref(false)
 const loading  = ref(false)
-const error    = ref('')
+const error    = ref(route.query.reason === 'expired' ? 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.' : '')
 
 async function handleLogin() {
+  if (loading.value) return
+  const invalid = loginError(username.value, password.value)
+  if (invalid) { error.value = invalid; return }
   error.value   = ''
   loading.value = true
   try {
@@ -40,7 +44,7 @@ async function handleLogin() {
       <form @submit.prevent="handleLogin" novalidate>
         <div class="field">
           <label>Tên tài khoản hoặc Email</label>
-          <input
+          <input maxlength="254"
             v-model="username"
             type="text"
             placeholder="Nhập tên tài khoản hoặc email"
@@ -53,7 +57,7 @@ async function handleLogin() {
         <div class="field">
           <label>Mật khẩu</label>
           <div class="pass-wrap">
-            <input
+            <input maxlength="100"
               v-model="password"
               :type="showPass ? 'text' : 'password'"
               placeholder="Nhập mật khẩu"

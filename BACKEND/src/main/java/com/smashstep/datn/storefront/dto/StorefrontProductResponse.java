@@ -9,4 +9,5 @@ public record StorefrontProductResponse(
         Long categoryId, String tenDanhMuc, String tenChatLieu, String tenKieuDang,
         String tenCoGiay, String tenXuatXu, String moTaChiTiet, String anhChinh,
         BigDecimal giaGoc, BigDecimal giaSauGiam, BigDecimal phanTramGiam,
-        boolean dangGiamGia, long soLuong, int soBienThe, LocalDateTime ngayTao) {}
+        boolean dangGiamGia, long soLuong, int soBienThe, LocalDateTime ngayTao,
+        BigDecimal phanTramGiamCaoNhat) {}

@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
+@org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('ADMIN','STAFF')")
 @RestController
 @RequestMapping("/api/khach-hang")
 @RequiredArgsConstructor

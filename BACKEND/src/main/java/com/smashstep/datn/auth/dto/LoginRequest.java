@@ -1,5 +1,7 @@
 package com.smashstep.datn.auth.dto;
 
+import com.smashstep.datn.common.validation.*;
+
 import jakarta.validation.constraints.NotBlank;
 import lombok.Getter;
 import lombok.Setter;
@@ -9,9 +11,12 @@ import lombok.Setter;
 public class LoginRequest {
 
     @NotBlank(message = "Tên đăng nhập không được để trống")
+    @AccountText(AccountRules.Kind.LOGIN)
+    @jakarta.validation.constraints.Size(max = 254)
     private String username;
 
     @NotBlank(message = "Mật khẩu không được để trống")
+    @jakarta.validation.constraints.Size(max = 100, message = "Mật khẩu đăng nhập tối đa 100 ký tự")
     private String password;
 
     /**

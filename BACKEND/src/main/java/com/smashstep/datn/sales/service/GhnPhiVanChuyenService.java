@@ -79,6 +79,17 @@ public class GhnPhiVanChuyenService {
         throw new AppException(HttpStatus.BAD_GATEWAY, "Danh mục địa chỉ GHN vượt giới hạn. Vui lòng thử lại.");
     }
     public Fee tinhPhi(SalesDelivery delivery, int quantity, Integer provinceId, String wardCode) {
+        var fee = tinhPhiKhachHang(delivery, quantity, provinceId, wardCode);
+        String address = delivery.diaChi();
+        long employee = PosActor.idNhanVien();
+        fees.entrySet().removeIf(e -> !e.getValue().fee().hetHan().isAfter(Instant.now()));
+        if (fees.size() >= 5000) throw new AppException(HttpStatus.SERVICE_UNAVAILABLE, "Hệ thống tính phí đang bận, vui lòng thử lại");
+        fees.put(key(employee, address, quantity), new CachedFee(fee, employee, address.trim()));
+        return fee;
+    }
+
+    /** Shared fee preview without POS identity/cache; safe for the authenticated customer flow. */
+    public Fee tinhPhiKhachHang(SalesDelivery delivery, int quantity, Integer provinceId, String wardCode) {
         kiemTraCauHinh();
         if (delivery == null || !delivery.apDung() || quantity < 1 || quantity > 500000)
             throw AppException.badRequest("Cần địa chỉ giao hàng và sản phẩm để tính phí GHN");
@@ -113,10 +124,6 @@ public class GhnPhiVanChuyenService {
         BigDecimal customerFee = total.decimalValue().setScale(-3, RoundingMode.HALF_UP).setScale(0);
         Fee fee = new Fee(customerFee, Instant.now().plus(Duration.ofMinutes(15)), quantity, weight,
                 new KhuVuc(province.id(), province.ten(), null, null, ward.id(), ward.ten()));
-        long employee = PosActor.idNhanVien();
-        fees.entrySet().removeIf(e -> !e.getValue().fee().hetHan().isAfter(Instant.now()));
-        if (fees.size() >= 5000) throw new AppException(HttpStatus.SERVICE_UNAVAILABLE, "Hệ thống tính phí đang bận, vui lòng thử lại");
-        fees.put(key(employee, address, quantity), new CachedFee(fee, employee, address.trim()));
         return fee;
     }
     public void xacThuc(SalesDelivery delivery, int quantity) {

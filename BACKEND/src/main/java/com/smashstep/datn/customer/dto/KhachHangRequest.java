@@ -1,5 +1,7 @@
 package com.smashstep.datn.customer.dto;
 
+import com.smashstep.datn.common.validation.*;
+
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.Max;
@@ -19,17 +21,20 @@ public class KhachHangRequest {
 
     @NotBlank(message = "Họ tên không được để trống")
     @Size(max = 255, message = "Họ tên tối đa 255 ký tự")
+    @AccountText(AccountRules.Kind.NAME)
     private String name;
 
     @NotBlank(message = "Email không được để trống")
     @Email(message = "Email không hợp lệ")
     @Size(max = 255)
+    @AccountText(AccountRules.Kind.EMAIL)
     private String email;
 
     @Pattern(
             regexp = "^$|^0\\d{9}$",
             message = "Số điện thoại phải gồm 10 số và bắt đầu bằng 0"
     )
+    @AccountText(AccountRules.Kind.PHONE)
     private String phone;
 
     @Min(value = 0, message = "Giới tính không hợp lệ")
@@ -37,6 +42,7 @@ public class KhachHangRequest {
     private Integer gender;
 
     @PastOrPresent(message = "Ngày sinh không được lớn hơn ngày hiện tại")
+    @AccountBirthDate(minAge = 15)
     private LocalDate dob;
 
     @Size(max = 1000) private String image;

@@ -158,7 +158,22 @@ public class SanPhamChiTietService {
             throw AppException.badRequest("Không thể chuyển biến thể sang sản phẩm khác");
         }
         khoaSanPham(yeuCau.getSanPhamId());
-        capNhatDuLieu(chiTiet, yeuCau);
+        if (!Objects.equals(chiTiet.getMaChiTietSanPham(),
+                QuyTacSanPham.boKhoangTrang(yeuCau.getMaChiTietSanPham()))) {
+            throw AppException.badRequest("Mã chi tiết sản phẩm không được thay đổi sau khi tạo");
+        }
+        if (!Objects.equals(chiTiet.getSku(), QuyTacSanPham.boKhoangTrang(yeuCau.getSku()))) {
+            throw AppException.badRequest("SKU không được thay đổi sau khi tạo");
+        }
+        if (!Objects.equals(chiTiet.getIdMauSac() == null ? null : chiTiet.getIdMauSac().getId(),
+                yeuCau.getMauSacId())) {
+            throw AppException.badRequest("Màu sắc của biến thể không được thay đổi sau khi tạo");
+        }
+        if (!Objects.equals(chiTiet.getIdKichThuoc() == null ? null : chiTiet.getIdKichThuoc().getId(),
+                yeuCau.getKichThuocId())) {
+            throw AppException.badRequest("Kích thước của biến thể không được thay đổi sau khi tạo");
+        }
+        capNhatThongTinKinhDoanh(chiTiet, yeuCau);
         chiTiet.setNgayCapNhat(LocalDateTime.now());
         sanPhamChiTietRepository.save(chiTiet);
         return chuyenSangResponse(chiTiet, null, currentPrices.getPrice(chiTiet, LocalDateTime.now()));
@@ -202,6 +217,10 @@ public class SanPhamChiTietService {
         chiTiet.setSku(sku);
         chiTiet.setIdMauSac(mauSac);
         chiTiet.setIdKichThuoc(kichThuoc);
+        capNhatThongTinKinhDoanh(chiTiet, yeuCau);
+    }
+
+    private void capNhatThongTinKinhDoanh(SanPhamChiTiet chiTiet, SanPhamChiTietThemRequest yeuCau) {
         chiTiet.setSoLuong(yeuCau.getSoLuong());
         chiTiet.setGiaBan(yeuCau.getGiaBan());
         chiTiet.setKichHoat(yeuCau.getKichHoat());

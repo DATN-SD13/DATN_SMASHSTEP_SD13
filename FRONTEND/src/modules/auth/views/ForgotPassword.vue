@@ -1,4 +1,5 @@
 <script setup>
+import { emailError } from '../../../utils/accountValidation'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../../../utils/api'
@@ -11,6 +12,9 @@ const error    = ref('')
 const success  = ref(false)
 
 async function handleSubmit() {
+  if (loading.value) return
+  const invalid = emailError(email.value)
+  if (invalid) { error.value = invalid; return }
   error.value   = ''
   loading.value = true
   try {
@@ -53,7 +57,7 @@ async function handleSubmit() {
         <form @submit.prevent="handleSubmit" novalidate>
           <div class="field">
             <label>Email</label>
-            <input
+            <input maxlength="254"
               v-model="email"
               type="email"
               placeholder="Nhập email đã đăng ký"

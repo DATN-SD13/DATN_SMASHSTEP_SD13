@@ -1,4 +1,5 @@
 <script setup>
+import { passwordError } from '../utils/accountValidation'
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '../services/api'
@@ -6,7 +7,7 @@ import api from '../services/api'
 const route  = useRoute()
 const router = useRouter()
 
-const token       = route.query.token || ''
+const token       = typeof route.query.token === 'string' ? route.query.token : ''
 const newPassword = ref('')
 const confirmPass = ref('')
 const showPass    = ref(false)
@@ -23,7 +24,7 @@ onMounted(async () => {
     return
   }
   try {
-    const res = await api.get(`/auth/kiem-tra-token?token=${token}`)
+    const res = await api.get(`/auth/kiem-tra-token?token=${encodeURIComponent(token)}`)
     // api.js interceptor unwraps data, res có thể là true/false trực tiếp
     tokenStatus.value = (res === true || res?.data === true) ? 'valid' : 'invalid'
   } catch {
@@ -32,6 +33,8 @@ onMounted(async () => {
 })
 
 function validate() {
+  const invalid = passwordError(newPassword.value)
+  if (invalid) { error.value = invalid; return false }
   if (!newPassword.value || newPassword.value.length < 6) {
     error.value = 'Mật khẩu phải có ít nhất 6 ký tự.'
     return false
@@ -44,6 +47,7 @@ function validate() {
 }
 
 async function handleSubmit() {
+  if (loading.value) return
   error.value = ''
   if (!validate()) return
 
@@ -116,10 +120,10 @@ async function handleSubmit() {
           <div class="field">
             <label>Mật khẩu mới</label>
             <div class="pass-wrap">
-              <input
+              <input maxlength="72"
                 v-model="newPassword"
                 :type="showPass ? 'text' : 'password'"
-                placeholder="Ít nhất 6 ký tự"
+                placeholder="Ít nhất 6 ký tự, gồm chữ và số"
                 autocomplete="new-password"
                 :disabled="loading"
                 required
@@ -139,7 +143,7 @@ async function handleSubmit() {
           <div class="field">
             <label>Xác nhận mật khẩu</label>
             <div class="pass-wrap">
-              <input
+              <input maxlength="72"
                 v-model="confirmPass"
                 :type="showConfirm ? 'text' : 'password'"
                 placeholder="Nhập lại mật khẩu mới"

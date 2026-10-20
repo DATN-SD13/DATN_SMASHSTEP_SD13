@@ -58,8 +58,8 @@ const router = createRouter({
 
     { path: '/ban-hang',  component: POSSales,       meta: { title: 'Bán hàng tại quầy', requiresAuth: true, userType: 'NHAN_VIEN' } },
 
-    // { path: '/thong-ke-tong-hop', component: () => import('../modules/admin/statistics/view/StatisticsDashboard.vue'), meta: { title: 'Thống kê tổng hợp', requiresAuth: true, userType: 'NHAN_VIEN' } },
-    { path: '/thong-ke',  component: StatisticsView, meta: { title: 'Thống kê', requiresAuth: true, userType: 'NHAN_VIEN', role: 'ADMIN' } },
+    { path: '/thong-ke-tong-hop', component: StatisticsView, meta: { title: 'Thống kê tổng hợp', requiresAuth: true, userType: 'NHAN_VIEN', role: 'ADMIN' } },
+    { path: '/thong-ke', redirect: '/thong-ke-tong-hop' },
 
     { path: '/san-pham',           component: () => import('../modules/admin/product/views/ProductList.vue'),    meta: { title: 'Sản phẩm', parent: prod, requiresAuth: true, userType: 'NHAN_VIEN' } },
     { path: '/san-pham/them',      component: () => import('../modules/admin/product/views/ProductCreate.vue'),  meta: { title: 'Thêm sản phẩm', parent: productParent, requiresAuth: true, userType: 'NHAN_VIEN' } },
@@ -104,7 +104,7 @@ router.beforeEach((to, _from, next) => {
 
     // Trang chỉ dành cho guest: nếu đã login thì redirect đúng chỗ
     if (to.meta.guestOnly && auth.isAuthenticated) {
-      return next(auth.isCustomer ? '/khach-hang/trang-chu' : (auth.isAdmin ? '/thong-ke' : '/ban-hang'))
+      return next(auth.isCustomer ? '/khach-hang/trang-chu' : (auth.isAdmin ? '/thong-ke-tong-hop' : '/ban-hang'))
     }
 
     // Route không yêu cầu auth → cho qua
@@ -125,7 +125,7 @@ router.beforeEach((to, _from, next) => {
 
     // Kiểm tra role (trang có role: 'ADMIN' thì STAFF không vào được)
     if (to.meta.role && to.meta.role !== auth.role) {
-      return next(auth.isAdmin ? '/thong-ke' : '/ban-hang')
+      return next(auth.isAdmin ? '/thong-ke-tong-hop' : '/ban-hang')
     }
 
     next()
