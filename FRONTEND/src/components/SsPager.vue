@@ -5,9 +5,11 @@ const emit = defineEmits(['update:page', 'update:size'])
 
 <template>
   <div class="ss-foot">
+    <slot name="page-size">
     <select class="ss-select" :value="size" @change="emit('update:size', Number($event.target.value))">
       <option :value="5">5</option><option :value="10">10</option><option :value="20">20</option>
     </select>
+    </slot>
     <div class="ss-pages">
       <button :disabled="page === 1" @click="emit('update:page', page - 1)"><i class="bi bi-chevron-left"></i></button>
       <button v-for="n in pages" :key="n" :class="{ active: n === page }" @click="emit('update:page', n)">{{ n }}</button>

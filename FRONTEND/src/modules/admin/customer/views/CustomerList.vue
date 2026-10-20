@@ -1,4 +1,5 @@
 <script setup>
+import Select2KhachHang from '../components/Select2KhachHang.vue'
 import * as XLSX from 'xlsx'
 import { avatarUrl } from '../../../../utils/avatar'
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
@@ -407,11 +408,7 @@ function exportExcel() {
 
           </div>
 
-          <select
-            class="ss-select"
-            v-model="status"
-            style="width:150px"
-          >
+          <span class="khach-hang-select-field" style="width:150px"><Select2KhachHang :allow-clear="false" aria-label="Trạng thái" v-model="status">
 
             <option value="">
               Tất cả
@@ -425,7 +422,7 @@ function exportExcel() {
               Đã khóa
             </option>
 
-          </select>
+          </Select2KhachHang></span>
 
           <button
             class="ss-btn"
@@ -728,7 +725,9 @@ function exportExcel() {
           v-model:page="page"
           v-model:size="size"
           :pages="pages"
-        />
+        >
+          <template #page-size><span class="khach-hang-select-field pager-select-field"><Select2KhachHang :model-value="size" :allow-clear="false" :search="false" aria-label="Số dòng mỗi trang" @change="size = Number($event)"><option :value="5">5</option><option :value="10">10</option><option :value="20">20</option></Select2KhachHang></span></template>
+        </SsPager>
 
       </section>
 

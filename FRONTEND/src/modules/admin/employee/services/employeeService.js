@@ -3,6 +3,13 @@ import api from '../../../../utils/api'
 const unwrap = (response) => response?.data?.data
 
 const employeeService = {
+  async downloadImportTemplate() { return (await api.get('/nhan-vien/excel/mau', { responseType: 'blob' })).data },
+  async previewImport(file) { const data = new FormData(); data.append('file', file); return unwrap(await api.post('/nhan-vien/excel/xem-truoc', data, { headers: { 'Content-Type': undefined }, timeout: 60000 })) },
+  async confirmImport(payload) { return unwrap(await api.post('/nhan-vien/excel/xac-nhan', payload, { timeout: 120000 })) },
+  async getImportResult(id) { return unwrap(await api.get(`/nhan-vien/excel/${encodeURIComponent(id)}`, { timeout: 60000 })) },
+  async getImportHistory() { return unwrap(await api.get('/nhan-vien/excel')) },
+  async retryImportEmails(id) { return unwrap(await api.post(`/nhan-vien/excel/${encodeURIComponent(id)}/gui-lai-email`, {}, { timeout: 60000 })) },
+
   async getEmployees(params = {}) {
     const response = await api.get('/nhan-vien', { params })
     return unwrap(response)

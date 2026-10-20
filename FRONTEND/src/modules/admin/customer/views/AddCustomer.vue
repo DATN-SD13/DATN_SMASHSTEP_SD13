@@ -1,4 +1,5 @@
 <script setup>
+import Select2KhachHang from '../components/Select2KhachHang.vue'
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import AvatarCard from '../../../../components/AvatarCard.vue'
 import { persistAvatar } from '../../../../utils/avatar'
@@ -337,10 +338,7 @@ async function save() {
                   Giới tính
                 </label>
 
-                <select
-                  class="ss-select"
-                  v-model="f.gender"
-                >
+                <span class="khach-hang-select-field"><Select2KhachHang :allow-clear="false" aria-label="Giới tính" v-model="f.gender">
                   <option value="">
                     -- Chọn giới tính --
                   </option>
@@ -357,7 +355,7 @@ async function save() {
                     Khác
                   </option>
 
-                </select>
+                </Select2KhachHang></span>
 
               </div>
 
@@ -439,10 +437,10 @@ async function save() {
                   <span class="req">*</span>
                 </label>
 
-                <select class="ss-select" v-model="f.province" :disabled="loadingProvinces" @change="changeProvince">
+                <span class="khach-hang-select-field"><Select2KhachHang :allow-clear="false" aria-label="Tỉnh/Thành phố" v-model="f.province" :disabled="loadingProvinces" @change="changeProvince">
               <option value="">Chọn tỉnh/thành</option>
               <option v-for="p in provinces" :key="p.code" :value="p.name">{{ p.name }}</option>
-            </select>
+            </Select2KhachHang></span>
 
               </div>
 
@@ -453,10 +451,10 @@ async function save() {
                   <span class="req">*</span>
                 </label>
 
-                <select class="ss-select" v-model="f.ward" :disabled="loadingWards || !f.province">
+                <span class="khach-hang-select-field"><Select2KhachHang :allow-clear="false" aria-label="Phường/Xã" v-model="f.ward" :disabled="loadingWards || !f.province">
               <option value="">Chọn phường/xã</option>
               <option v-for="w in wards" :key="w.code" :value="w.name">{{ w.name }}</option>
-            </select>
+            </Select2KhachHang></span>
 
               </div>
 
@@ -466,10 +464,7 @@ async function save() {
                   Loại địa chỉ
                 </label>
 
-                <select
-                  class="ss-select"
-                  v-model="f.addressType"
-                >
+                <span class="khach-hang-select-field"><Select2KhachHang :allow-clear="false" aria-label="Loại địa chỉ" v-model="f.addressType">
 
                   <option :value="1">
                     Nhà riêng
@@ -479,7 +474,7 @@ async function save() {
                     Văn phòng
                   </option>
 
-                </select>
+                </Select2KhachHang></span>
 
               </div>
 
