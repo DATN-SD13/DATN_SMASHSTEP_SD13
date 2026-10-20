@@ -354,6 +354,7 @@ function mapInvoice(data) {
     nextStatusCode: data?.maTrangThaiTiepTheo,
     nextStatusLabel: data?.trangThaiTiepTheo,
     payment: data?.phuongThucThanhToan || 'Chưa cập nhật',
+    paymentMethodCode: data?.maPhuongThucThanhToan || '',
     paymentStatus: data?.trangThaiThanhToan || 'Chưa cập nhật',
     paymentStatusCode: Number.isFinite(Number(data?.maTrangThaiThanhToan)) ? Number(data?.maTrangThaiThanhToan) : null,
     paymentDate: data?.ngayThanhToan || null,

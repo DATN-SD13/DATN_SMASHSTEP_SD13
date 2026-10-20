@@ -1,6 +1,15 @@
 import api from '../../../../utils/api'
 
 export const invoiceService = {
+  async paidDemoOrders() {
+    return (await api.get('/hoa-don/paid-demo-orders')).data
+  },
+  async qrPayment(ma) {
+    return (await api.get(`/hoa-don/${encodeURIComponent(ma)}/thanh-toan-qr`)).data
+  },
+  async confirmQrPayment(ma, payload) {
+    return (await api.post(`/hoa-don/${encodeURIComponent(ma)}/thanh-toan-qr`, payload)).data
+  },
   async getAll(params = {}) {
     const response = await api.get('/hoa-don', { params })
     return response.data

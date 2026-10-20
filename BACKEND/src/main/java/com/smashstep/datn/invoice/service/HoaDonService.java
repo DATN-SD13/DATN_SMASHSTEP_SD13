@@ -133,6 +133,9 @@ public class HoaDonService {
                 hoaDonRepository
                         .findByMaHoaDonForUpdate(ma.trim())
                         .orElseThrow(() -> AppException.notFound("Không tìm thấy hóa đơn: " + ma));
+        if (com.smashstep.datn.storefront.checkout.OnlineBankPayment.bankOrder(entityManager, hoaDon)
+                && request.getTrangThai() != 6 && hoaDon.getNgayThanhToan() == null)
+            throw AppException.conflict("Cần đối soát và xác nhận đã nhận đủ tiền QR trước khi xử lý đơn hàng");
         if (com.smashstep.datn.invoice.rules.PosDraftRules.managed(hoaDon)) {
             checkDraftOwner(hoaDon);
             if ("POS".equals(request.getNguonThaoTac())
@@ -397,6 +400,8 @@ public class HoaDonService {
                         .findByMaHoaDon(ma.trim())
                         .orElseThrow(() -> AppException.notFound("Không tìm thấy hóa đơn: " + ma));
         checkDraftOwner(found);
+        if (com.smashstep.datn.invoice.rules.HoaDonHienThiRules.choThanhToanOnline(found))
+            throw AppException.notFound("Đơn online chưa thanh toán thành công nên chưa hiển thị ở quản lý");
         return found;
     }
 

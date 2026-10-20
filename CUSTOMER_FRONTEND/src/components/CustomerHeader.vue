@@ -9,7 +9,7 @@ import { useLiveRefresh } from '../composables/useLiveRefresh'
 import logo from '../assets/logo3D.png'
 const route=useRoute(), router=useRouter(), auth=useAuthStore(), cart=useCartStore()
 const menuOpen=ref(false), searchOpen=ref(false), userOpen=ref(false), keyword=ref(''), searchInput=ref(null), accountRoot=ref(null)
-const links=[{to:'/',label:'Trang chủ'},{to:'/san-pham',label:'Sản phẩm'},{to:'/#noi-bat',label:'Nổi bật'},{to:'/don-hang',label:'Theo dõi đơn hàng'},{to:'/goi-y-giay',label:'Gợi ý giày'}]
+const links=[{to:'/',label:'Trang chủ'},{to:'/san-pham',label:'Sản phẩm'},{to:'/#noi-bat',label:'Nổi bật'},{to:'/don-hang',label:'Theo dõi đơn hàng'},{to:'/goi-y-giay',label:'Gợi ý giày'},{to:'/ve-chung-toi',label:'Về chúng tôi'}]
 function active(to) { return to.includes('#') ? route.fullPath===to : to==='/' ? route.path==='/'&&!route.hash : route.path===to || route.path.startsWith(to+'/') }
 watch(()=>route.fullPath,()=>{menuOpen.value=false;searchOpen.value=false;userOpen.value=false;keyword.value=typeof route.query.keyword==='string'?route.query.keyword:''})
 async function openSearch(){menuOpen.value=false;userOpen.value=false;searchOpen.value=!searchOpen.value;if(searchOpen.value){await nextTick();searchInput.value?.focus()}}

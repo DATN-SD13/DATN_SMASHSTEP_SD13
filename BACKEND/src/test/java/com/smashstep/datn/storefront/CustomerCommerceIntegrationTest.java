@@ -145,4 +145,69 @@ class CustomerCommerceIntegrationTest {
         var r=new com.smashstep.datn.invoice.dto.CapNhatTrangThaiHoaDonDto();r.setTrangThai(6);invoices.capNhatTrangThai(o.code(),r);
         assertEquals(100,variant.getSoLuong());assertEquals(6,shop.order(customerId,o.code()).status());
     }
+    @Test void customerProfileReturnsSavedAddressBook() throws Exception {
+        var mvc=MockMvcBuilders.webAppContextSetup(context).build();
+        var auth=new UsernamePasswordAuthenticationToken("fixture",null,List.of(new SimpleGrantedAuthority("ROLE_CUSTOMER")));
+        auth.setDetails(new AuthDetails(customerId,"CUSTOMER","KHACH_HANG"));
+        SecurityContextHolder.getContext().setAuthentication(auth);
+        mvc.perform(get("/api/customer/account").principal(auth))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(customerId))
+                .andExpect(jsonPath("$.data.addresses").isArray());
+    }
+
+    @Test void realLoginCanReadOwnProfileAndAddressesAndInvalidSessionGets401() throws Exception {
+        var customer=em.find(KhachHang.class,customerId);
+        String username="audit"+UUID.randomUUID().toString().replace("-","").substring(0,20);
+        customer.setTenTaiKhoan(username);
+        customer.setMatKhau(context.getBean(org.springframework.security.crypto.password.PasswordEncoder.class).encode("AuditOnly42"));
+        em.flush();
+        var mvc=MockMvcBuilders.webAppContextSetup(context)
+                .addFilters(context.getBean("springSecurityFilterChain",jakarta.servlet.Filter.class)).build();
+        SecurityContextHolder.clearContext();
+        mvc.perform(get("/api/customer/account").header("Authorization","Bearer invalid"))
+                .andExpect(status().isUnauthorized());
+        var mapper=context.getBean(tools.jackson.databind.ObjectMapper.class);
+        var login=mvc.perform(post("/api/auth/login").contentType("application/json")
+                .content(mapper.writeValueAsString(Map.of("username",username,"password","AuditOnly42","userType","KHACH_HANG"))))
+                .andExpect(status().isOk()).andReturn();
+        String token=mapper.readTree(login.getResponse().getContentAsString()).path("data").path("accessToken").asText();
+        assertFalse(token.isBlank());
+        mvc.perform(get("/api/customer/account").header("Authorization","Bearer "+token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.id").value(customerId))
+                .andExpect(jsonPath("$.data.addresses").isArray());
+        mvc.perform(get("/api/customer/account/addresses").header("Authorization","Bearer "+token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data").isArray());
+    }
+    @Test void successfulCheckoutCanSaveFirstAddressAndRetryDoesNotDuplicateIt() {
+        em.createQuery("update DiaChiKhachHang a set a.trangThai=0 where a.idKhachHang.id=:c").setParameter("c",customerId).executeUpdate();
+        em.clear(); variant=em.find(SanPhamChiTiet.class,variant.getId());
+        var base=ready(1,null);
+        var r=new Request(base.items(),base.voucherCode(),base.paymentMethodId(),base.receiver(),base.note(),base.requestId(),base.expectedTotal(),true,true);
+        var first=shop.checkout(customerId,r); shop.checkout(customerId,r);
+        var saved=em.createQuery("select a from DiaChiKhachHang a where a.idKhachHang.id=:c and a.trangThai=1",com.smashstep.datn.customer.entity.DiaChiKhachHang.class)
+                .setParameter("c",customerId).getResultList();
+        assertEquals(1,saved.size()); assertTrue(saved.get(0).getIsMacDinh());
+        assertEquals(r.receiver().name(),saved.get(0).getTenNguoiNhan());
+        assertEquals(r.receiver().street(),saved.get(0).getDiaChiCuThe());
+        assertEquals(99,variant.getSoLuong()); assertEquals(first.code(),shop.order(customerId,first.code()).code());
+    }
+    @Test void failedCheckoutDoesNotSaveAddressAndRepeatedAddressSaveReusesExistingRow() {
+        em.createQuery("update DiaChiKhachHang a set a.trangThai=0 where a.idKhachHang.id=:c").setParameter("c",customerId).executeUpdate();
+        em.clear(); variant=em.find(SanPhamChiTiet.class,variant.getId());
+        var base=ready(1,null);
+        var wrong=new Request(base.items(),null,base.paymentMethodId(),base.receiver(),base.note(),base.requestId(),base.expectedTotal().add(BigDecimal.ONE),true,true);
+        assertThrows(AppException.class,()->shop.checkout(customerId,wrong));
+        var book=context.getBean(com.smashstep.datn.customer.service.KhachHangService.class);
+        var customer=em.find(KhachHang.class,customerId);
+        assertTrue(book.getAddresses(customer.getMaKhachHang()).isEmpty());
+        var r=new com.smashstep.datn.customer.dto.DiaChiKhachHangRequest();
+        r.setReceiverName("Nguyễn Văn An");r.setReceiverPhone("0901234567");r.setProvince("Thành phố Hà Nội");
+        r.setWard("Phường Đống Đa");r.setStreet("12 Nguyễn Lương Bằng");r.setIsDefault(true);
+        var a=book.createAddress(customer.getMaKhachHang(),r);
+        var b=book.createAddress(customer.getMaKhachHang(),r);
+        assertEquals(a.getId(),b.getId());assertEquals(1,book.getAddresses(customer.getMaKhachHang()).size());
+        assertEquals(100,variant.getSoLuong());
+    }
+
 }

@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import CheckoutReceiverForm from './CheckoutReceiverForm.vue'
 import { accountService } from '../services/accountService'
 import { commerceService, commerceError } from '../services/commerceService'
-import { nameError, phoneError, emailError } from '../utils/accountValidation'
+import { nameError, phoneError } from '../utils/accountValidation'
 const props = defineProps({ order: Object }), emit = defineEmits(['close', 'saved'])
 const profile = ref(null), saving = ref(false), error = ref(''), selected = ref(null), note = ref(props.order.note || ''), dialog = ref(null)
 const receiver = ref({ name: props.order.receiverName || '', phone: props.order.phone || '', email: '', street: '', province: '', district: '', ward: '', provinceId: null, districtId: null, wardCode: '' })
@@ -12,10 +12,10 @@ function choose(a) { selected.value = a?.id || null; receiver.value = { name: a?
 async function save() {
   if (saving.value) return
   const r = receiver.value
-  error.value = nameError(r.name) || phoneError(r.phone) || (r.email ? emailError(r.email) : '') || (!r.street.trim() || !r.province || !r.ward ? 'Vui lòng chọn đầy đủ địa chỉ nhận hàng.' : '')
+  error.value = nameError(r.name) || phoneError(r.phone) || (!r.street.trim() || !r.province || !r.ward ? 'Vui lòng chọn đầy đủ địa chỉ nhận hàng.' : '')
   if (error.value) return
   saving.value = true
-  try { emit('saved', await commerceService.shipping(props.order.code, { receiver: { ...r }, note: note.value.trim() })) }
+  try { emit('saved', await commerceService.shipping(props.order.code, { receiver: { ...r, email: null }, note: note.value.trim() })) }
   catch (e) { error.value = commerceError(e) }
   finally { saving.value = false }
 }

@@ -25,6 +25,30 @@ public class GhnShippingService {
         };
         return rows.stream().map(a -> new Area(a.id(), a.ten())).toList();
     }
+    public CommerceDtos.Location resolve(CommerceDtos.LocationRequest address) {
+        var provinces = ghn.tinhThanh().stream().filter(p -> matches(p,address.province(),true)).toList();
+        if (provinces.size()!=1) return unresolved("Địa chỉ đã lưu chưa khớp tỉnh / thành phố GHN. Vui lòng chọn lại.");
+        var province = provinces.get(0);
+        var wards = ghn.phuongXa(Integer.parseInt(province.id())).stream()
+                .filter(w -> matches(w,address.ward(),false)).toList();
+        if (wards.size()!=1) return unresolved("Phường / xã đã lưu chưa khớp duy nhất với địa bàn GHN hiện tại. Vui lòng chọn lại.");
+        var ward = wards.get(0);
+        return new CommerceDtos.Location(Integer.valueOf(province.id()),province.ten(),ward.id(),ward.ten(),true,
+                "Đã lấy địa chỉ đã lưu và đối chiếu với GHN. Vui lòng kiểm tra thông tin nhận hàng.");
+    }
+    private CommerceDtos.Location unresolved(String message) {
+        return new CommerceDtos.Location(null,null,null,null,false,message);
+    }
+    private boolean matches(GhnPhiVanChuyenService.Location location,String name,boolean province) {
+        String key = normalize(name,province);
+        return normalize(location.ten(),province).equals(key)
+                || location.tenKhac().stream().anyMatch(alias -> normalize(alias,province).equals(key));
+    }
+    private String normalize(String name,boolean province) {
+        String value = java.text.Normalizer.normalize(java.util.Objects.toString(name,"").trim().toLowerCase(java.util.Locale.ROOT),
+                java.text.Normalizer.Form.NFD).replaceAll("\\p{M}","").replace('đ','d').replaceAll("\\s+"," ");
+        return province ? value.replaceFirst("^(thanh pho|tinh|tp[.]?)\\s+","") : value;
+    }
     public BigDecimal fee(CommerceDtos.Receiver r, int quantity, BigDecimal goods) {
         if (r == null || r.provinceId() == null || r.wardCode() == null || r.wardCode().isBlank())
             throw AppException.badRequest("Chọn tỉnh / thành phố và phường / xã theo GHN để tính phí giao hàng");

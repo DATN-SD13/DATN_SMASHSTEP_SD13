@@ -22,10 +22,10 @@ public final class CommerceDtos {
             @NotBlank @AccountText(AccountRules.Kind.NAME) String name,
             @NotBlank @AccountText(AccountRules.Kind.PHONE) String phone,
             @AccountText(AccountRules.Kind.EMAIL) String email,
-            @NotBlank @Size(max=100) String province,
-            @Size(max=100) String district,
-            @NotBlank @Size(max=100) String ward,
-            @NotBlank @Size(max=200) String street,
+            @NotBlank @Size(max=100) @AccountText(AccountRules.Kind.ADDRESS) String province,
+            @Size(max=100) @AccountText(AccountRules.Kind.ADDRESS) String district,
+            @NotBlank @Size(max=100) @AccountText(AccountRules.Kind.ADDRESS) String ward,
+            @NotBlank @Size(max=500) @AccountText(AccountRules.Kind.ADDRESS) String street,
             @Positive Integer provinceId, @Positive Integer districtId, @Size(max=20) String wardCode) {
         public String address() {
             return java.util.stream.Stream.of(street, ward, district, province)
@@ -38,7 +38,17 @@ public final class CommerceDtos {
             @Size(max=50) String voucherCode, @Positive Long paymentMethodId,
             @Valid Receiver receiver, @Size(max=900) String note,
             @Pattern(regexp="[0-9a-fA-F-]{36}") String requestId,
-            @DecimalMin("0") @Digits(integer=16,fraction=2) BigDecimal expectedTotal) {}
+            @DecimalMin("0") @Digits(integer=16,fraction=2) BigDecimal expectedTotal,
+            Boolean saveAddress, Boolean makeDefaultAddress) {
+        public Request(List<Item> items, String voucherCode, Long paymentMethodId, Receiver receiver,
+                String note, String requestId, BigDecimal expectedTotal) {
+            this(items,voucherCode,paymentMethodId,receiver,note,requestId,expectedTotal,false,false);
+        }
+    }
+    public record LocationRequest(@NotBlank @Size(max=100) String province, @Size(max=100) String district,
+            @NotBlank @Size(max=100) String ward) {}
+    public record Location(Integer provinceId, String province, String wardCode, String ward,
+            boolean resolved, String message) {}
     public record Shipping(@NotNull @Valid Receiver receiver, @Size(max=900) String note) {}
     public record Variant(Long variantId, Long productId, String name, String sku, String color,
             String size, String image, int stock, BigDecimal giaGoc, BigDecimal giaSauGiam,
@@ -58,6 +68,7 @@ public final class CommerceDtos {
             String paymentMethod, String note, BigDecimal subtotal, BigDecimal discount,
             BigDecimal shipping,
             @com.fasterxml.jackson.annotation.JsonFormat(shape=com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
-            BigDecimal total, boolean editable, List<OrderItem> items, List<Event> history) {}
+            BigDecimal total, boolean editable, List<OrderItem> items, List<Event> history,
+            String paymentMethodCode, boolean shippingEditable) {}
     public record Notice(String id, String title, String message, String href, LocalDateTime at) {}
 }

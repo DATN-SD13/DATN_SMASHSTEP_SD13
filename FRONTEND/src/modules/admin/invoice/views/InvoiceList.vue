@@ -2,6 +2,7 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 import InvoiceFilter from '../components/InvoiceFilter.vue'
 import InvoiceTable from '../components/InvoiceTable.vue'
+import PaidDemoOrders from '../components/PaidDemoOrders.vue'
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import { useRouter } from 'vue-router'
 import { invoiceService } from '../services/invoiceService'
@@ -240,6 +241,7 @@ onUnmounted(() => {
         :exporting="exporting"
         @export="exportExcel"
       />
+      <PaidDemoOrders />
       <div v-if="exportToast.visible" class="export-toast" :class="exportToast.type" role="status">
         <i :class="exportToast.type === 'success' ? 'bi bi-check-circle-fill' : 'bi bi-exclamation-circle-fill'"></i>
         <span>{{ exportToast.message }}</span>

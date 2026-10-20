@@ -19,11 +19,13 @@ import static com.smashstep.datn.storefront.checkout.CommerceDtos.*;
 public class CustomerCommerceController {
     private final CustomerCommerceService commerce;
     private final GhnShippingService shipping;
+    @PostMapping("/shipping/resolve") public ApiResponse<Location> resolve(Authentication a,@Valid @RequestBody LocationRequest r) {commerce.customer(id(a));return ApiResponse.ok(shipping.resolve(r));}
     @PostMapping("/quote") public ApiResponse<Quote> quote(Authentication a,@Valid @RequestBody Request r) {return ApiResponse.ok(commerce.quote(id(a),r));}
     @PostMapping("/checkout") public ApiResponse<Order> checkout(Authentication a,@Valid @RequestBody Request r) {return ApiResponse.ok(commerce.checkout(id(a),r));}
     @GetMapping("/vouchers") public ApiResponse<List<Voucher>> vouchers(Authentication a,@RequestParam BigDecimal subtotal) {return ApiResponse.ok(commerce.vouchers(id(a),subtotal));}
     @GetMapping("/orders") public ApiResponse<List<Order>> orders(Authentication a,@RequestParam(defaultValue="0") int page) {return ApiResponse.ok(commerce.orders(id(a),page));}
     @GetMapping("/orders/{code}") public ApiResponse<Order> order(Authentication a,@PathVariable String code) {return ApiResponse.ok(commerce.order(id(a),code));}
+    @GetMapping("/orders/{code}/payment") public ApiResponse<OnlineBankPayment.Payment> payment(Authentication a,@PathVariable String code) {return ApiResponse.ok(commerce.payment(id(a),code));}
     @PutMapping("/orders/{code}/shipping") public ApiResponse<Order> edit(Authentication a,@PathVariable String code,@Valid @RequestBody Shipping r) {return ApiResponse.ok(commerce.editShipping(id(a),code,r));}
     @PostMapping("/orders/{code}/cancel") public ApiResponse<Order> cancel(Authentication a,@PathVariable String code) {return ApiResponse.ok(commerce.cancel(id(a),code));}
     @GetMapping("/notifications") public ApiResponse<List<Notice>> notices(Authentication a) {return ApiResponse.ok(commerce.notices(id(a)));}

@@ -16,7 +16,7 @@ const quantity=ref(1), adding=ref(false), feedback=ref(''), cartError=ref('')
 async function addToCart(buyNow=false) {
   if(adding.value || !selected.value || selected.value.soLuong < quantity.value) return
   adding.value=true; feedback.value=''; cartError.value=''
-  try { await cart.add(selected.value.id, quantity.value); feedback.value='Đã thêm sản phẩm vào giỏ hàng.'; if(buyNow) await router.push('/thanh-toan') }
+  try { const variantId=selected.value.id; await cart.add(variantId, quantity.value); feedback.value='Đã thêm sản phẩm vào giỏ hàng.'; if(buyNow) { cart.selectAll(false); cart.setSelected(variantId,true); await router.push('/thanh-toan') } }
   catch(e) { cartError.value=e.response?.data?.message || e.message || 'Chưa thêm được sản phẩm. Vui lòng thử lại.' }
   finally { adding.value=false }
 }

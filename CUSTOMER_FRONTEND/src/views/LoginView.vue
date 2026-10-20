@@ -12,7 +12,7 @@ const username = ref('')
 const password = ref('')
 const showPass = ref(false)
 const loading  = ref(false)
-const error    = ref('')
+const error    = ref(route.query.reason === 'expired' ? 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.' : '')
 
 async function handleLogin() {
   if (loading.value) return

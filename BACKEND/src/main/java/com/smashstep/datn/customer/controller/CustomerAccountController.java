@@ -25,6 +25,11 @@ public class CustomerAccountController {
         return ApiResponse.ok(account.profile(customerId(auth)));
     }
 
+    @GetMapping("/addresses")
+    public ApiResponse<java.util.List<DiaChiKhachHangResponse>> addresses(Authentication auth) {
+        return ApiResponse.ok(customers.getAddresses(account.ownCode(customerId(auth))));
+    }
+
     @PutMapping
     public ApiResponse<KhachHangResponse> update(Authentication auth, @Valid @RequestBody CustomerProfileRequest request) {
         return ApiResponse.ok("Đã cập nhật hồ sơ", account.update(customerId(auth), request));

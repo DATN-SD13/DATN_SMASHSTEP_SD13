@@ -22,7 +22,7 @@ test('cart fetches authoritative price; enforces available stock and persists no
   const cart = useCartStore()
   await cart.add(1, 2)
   assert.equal(cart.count, 2); assert.equal(cart.subtotal, 1600000)
-  assert.deepEqual(JSON.parse(storage.get('smashstep_cart_v1')), [{ variantId: 1, quantity: 2 }])
+  assert.deepEqual(JSON.parse(storage.get('smashstep_cart_v2:guest')), [{ variantId: 1, quantity: 2 }])
   await assert.rejects(() => cart.add(1, 2), /tồn kho/)
   cart.setQuantity(1, 1.5); assert.equal(cart.count, 2)
   price = 900000; stock = 1; await cart.refresh()
@@ -31,7 +31,7 @@ test('cart fetches authoritative price; enforces available stock and persists no
   cart.purchased([{ variantId: 1, quantity: 1 }]); assert.equal(cart.count, 0)
 })
 test('price refresh failure blocks checkout and does not discard cart items', async () => {
-  setActivePinia(createPinia()); storage.set('smashstep_cart_v1', '[{"variantId":1,"quantity":1}]')
+  setActivePinia(createPinia()); storage.set('smashstep_cart_v2:guest', '[{"variantId":1,"quantity":1}]')
   api.defaults.adapter = async () => { throw new Error('offline') }
   const cart = useCartStore(); await cart.refresh()
   assert.equal(cart.items.length, 1); assert.equal(cart.invalid, true); assert.equal(cart.verified, false)
@@ -44,4 +44,49 @@ test('recommendation filters map to existing query fields and reject reversed bu
 test('server total strings do not lose precision through JavaScript Number', () => {
   assert.equal(money('9999999999999999.00'), '9.999.999.999.999.999\u00a0₫')
   assert.equal(money('1000.50'), '1.001\u00a0₫')
+})
+
+test('customer session restores valid identity and clears expired or malformed state', async () => {
+  const { readCustomerSession } = await import('../src/utils/customerSession.js')
+  const jwt = claims => 'header.' + Buffer.from(JSON.stringify(claims)).toString('base64url') + '.signature'
+  const now = Date.now()
+  storage.clear(); storage.set('ss_token',jwt({ userId: 4, userType: 'KHACH_HANG', exp: Math.floor(now/1000)+60 }))
+  storage.set('ss_user',JSON.stringify({ id: 4, userType: 'KHACH_HANG' }))
+  assert.equal(readCustomerSession(localStorage,now).user.id,4)
+  assert.equal(readCustomerSession(localStorage,now+120000).token,null)
+  assert.equal(storage.has('ss_token'),false)
+  storage.set('ss_user','not-json'); storage.set('ss_token','undefined')
+  assert.equal(readCustomerSession(localStorage,now).user,null)
+  assert.equal(storage.has('ss_user'),false)
+  storage.set('ss_token',jwt({ userId: 99, userType: 'KHACH_HANG', exp: Math.floor(now/1000)+60 }))
+  storage.set('ss_user',JSON.stringify({ id: 4, userType: 'KHACH_HANG' }))
+  assert.equal(readCustomerSession(localStorage,now).token,null)
+})
+
+
+test('cart selection checks out only chosen variants and keeps other products after purchase', async () => {
+  setActivePinia(createPinia()); storage.clear()
+  api.defaults.adapter = async config => ({ data: { success: true, data: [
+    { variantId: 1, productId: 10, name: 'Nike Air Force 1', stock: 10, giaSauGiam: 1000000, available: true },
+    { variantId: 2, productId: 11, name: 'Adidas Samba', stock: 10, giaSauGiam: 1500000, available: true }
+  ] }, status: 200, statusText: 'OK', headers: {}, config })
+  const cart = useCartStore(); await cart.add(1, 2); await cart.add(2, 1)
+  assert.equal(cart.allSelected, true); cart.setSelected(2, false)
+  assert.equal(cart.partlySelected, true); assert.equal(cart.selectedCount, 2)
+  assert.equal(cart.selectedSubtotal, 2000000); assert.deepEqual(cart.selectedItems, [{ variantId: 1, quantity: 2 }])
+  cart.purchased(cart.selectedItems.map(i => ({ ...i })))
+  assert.deepEqual(cart.items, [{ variantId: 2, quantity: 1 }]); assert.equal(cart.selectedCount, 0)
+  assert.equal(cart.selectedInvalid, true); assert.deepEqual(JSON.parse(storage.get('smashstep_cart_v2:guest:selected')), [])
+})
+
+test('explicitly clearing selection survives reload and unselected unavailable items do not block payment', async () => {
+  storage.clear(); storage.set('smashstep_cart_v2:guest', '[{"variantId":1,"quantity":1},{"variantId":2,"quantity":1}]')
+  storage.set('smashstep_cart_v2:guest:selected', '[]'); setActivePinia(createPinia())
+  api.defaults.adapter = async config => ({ data: { success: true, data: [
+    { variantId: 1, stock: 10, giaSauGiam: 1000000, available: true }, { variantId: 2, stock: 0, giaSauGiam: 1500000, available: false }
+  ] }, status: 200, statusText: 'OK', headers: {}, config })
+  const cart = useCartStore(); await cart.refresh(); assert.equal(cart.selectedCount, 0)
+  cart.setSelected(1, true); assert.equal(cart.selectedInvalid, false); assert.equal(cart.invalid, true)
+  cart.selectAll(true); assert.equal(cart.selectedInvalid, true)
+  cart.selectAll(false); assert.equal(cart.selectedInvalid, true)
 })

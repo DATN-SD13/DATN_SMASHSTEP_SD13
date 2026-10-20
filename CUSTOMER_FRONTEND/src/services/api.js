@@ -33,7 +33,7 @@ api.interceptors.response.use(
   error => {
     const validation = error.response?.data?.errors
     if (validation && typeof validation === 'object') error.response.data.message = Object.values(validation).join(' · ')
-    if (error.response?.status === 401) {
+    if (error.response?.status === 401 && !String(error.config?.url || '').startsWith('/auth/')) {
       // Lazy import tránh circular dep
       import('../stores/auth').then(({ useAuthStore }) => {
         useAuthStore().forceLogout()

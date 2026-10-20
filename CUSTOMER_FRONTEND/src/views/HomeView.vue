@@ -24,5 +24,6 @@ reload()
       <ProductGrid v-else-if="products.length" :products="products" />
       <EmptyState v-else title="Hiện chưa có sản phẩm." description="Bộ sưu tập sẽ được cập nhật khi có sản phẩm đang kinh doanh." />
     </section>
+    <section class="container home-about"><div><span class="eyebrow">VỀ SMASHSTEP</span><h2>Giày thể thao. Phong cách của bạn.</h2><p>Từ lựa chọn hằng ngày đến những bước tiến mới, hãy tìm đôi giày phù hợp với nhu cầu và dấu ấn của riêng bạn.</p></div><RouterLink to="/ve-chung-toi" class="button button-outline">Câu chuyện của chúng tôi <BaseIcon name="arrow" /></RouterLink></section>
   </div>
 </template>
