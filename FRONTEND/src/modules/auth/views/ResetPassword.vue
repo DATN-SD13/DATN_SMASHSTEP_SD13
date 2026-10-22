@@ -1,6 +1,6 @@
 <script setup>
 import { passwordError } from '../../../utils/accountValidation'
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '../../../utils/api'
 
@@ -18,6 +18,16 @@ const success     = ref(false)
 
 // Trạng thái kiểm tra token
 const tokenStatus = ref('checking') // 'checking' | 'valid' | 'invalid'
+
+// Phân biệt admin vs khách hàng dựa vào route hiện tại
+const isAdmin = computed(() => !route.path.startsWith('/khach-hang'))
+
+const forgotPasswordPath = computed(() =>
+  isAdmin.value ? '/quen-mat-khau-quan-ly' : '/khach-hang/quen-mat-khau'
+)
+const loginPath = computed(() =>
+  isAdmin.value ? '/dang-nhap' : '/khach-hang/dang-nhap'
+)
 
 onMounted(async () => {
   if (!token) {
@@ -89,11 +99,11 @@ async function handleSubmit() {
           Link đặt lại mật khẩu đã hết hạn hoặc không hợp lệ.<br/>
           Vui lòng gửi lại yêu cầu.
         </p>
-        <button class="btn" @click="router.push('/khach-hang/quen-mat-khau')">
+        <button class="btn" @click="router.push(forgotPasswordPath)">
           Gửi lại yêu cầu
         </button>
         <p class="back-link">
-          <RouterLink to="/khach-hang/dang-nhap">
+          <RouterLink :to="loginPath">
             <i class="bi bi-arrow-left"></i> Về trang đăng nhập
           </RouterLink>
         </p>
@@ -106,7 +116,7 @@ async function handleSubmit() {
         <p class="sub">
           Mật khẩu của bạn đã được cập nhật. Bạn có thể đăng nhập ngay bây giờ.
         </p>
-        <button class="btn" @click="router.push('/khach-hang/dang-nhap')">
+        <button class="btn" @click="router.push(loginPath)">
           Đăng nhập ngay
         </button>
       </template>
@@ -183,7 +193,7 @@ async function handleSubmit() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #1a0533 0%, #3d1a6e 100%);
+  background: linear-gradient(135deg, #0f1b2d 0%, #1a3a5c 100%);
   padding: 20px;
 }
 
@@ -257,7 +267,7 @@ async function handleSubmit() {
   transition: border-color .2s;
 }
 
-.pass-wrap input:focus { border-color: #7c4dff; }
+.pass-wrap input:focus { border-color: #168dcc; }
 
 .toggle-pass {
   position: absolute;
@@ -289,7 +299,7 @@ async function handleSubmit() {
 .btn {
   width: 100%;
   height: 46px;
-  background: #7c4dff;
+  background: #168dcc;
   color: #fff;
   border: none;
   border-radius: 8px;
@@ -300,7 +310,7 @@ async function handleSubmit() {
   margin-bottom: 4px;
 }
 
-.btn:hover:not(:disabled) { background: #6a3de8; }
+.btn:hover:not(:disabled) { background: #117ab5; }
 .btn:disabled { opacity: .6; cursor: not-allowed; }
 
 .back-link {
@@ -309,7 +319,7 @@ async function handleSubmit() {
 }
 
 .back-link a {
-  color: #7c4dff;
+  color: #168dcc;
   text-decoration: none;
   font-weight: 600;
 }

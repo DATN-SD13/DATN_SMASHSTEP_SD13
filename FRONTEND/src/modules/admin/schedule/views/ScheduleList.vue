@@ -106,6 +106,13 @@ async function loadEmployees() {
 }
 
 function reset() { f.tuKhoa = ''; f.caId = ''; f.ngayLam = toYMDToday(); page.value = 1; load() }
+
+// Format ngày yyyy-MM-dd → dd/MM/yyyy để hiển thị
+function fmtNgay(val) {
+  if (!val) return ''
+  const [y, m, d] = String(val).substring(0, 10).split('-')
+  return d && m && y ? `${d}/${m}/${y}` : val
+}
 watch(page, load)
 watch(size, () => { page.value = 1; load() })
 onMounted(() => { loadShifts(); load(); loadLichBiKhoa() })
@@ -174,7 +181,7 @@ async function submitThayThe() {
 
 // ── Actions bảng ──────────────────────────────────────────
 function handleDelete(row) {
-  confirmAction(`Xóa lịch làm của ${row.tenNhanVien} ngày ${row.ngayLam}?`, async () => {
+  confirmAction(`Xóa lịch làm của ${row.tenNhanVien} ngày ${fmtNgay(row.ngayLam)}?`, async () => {
     try { await scheduleService.deleteLich(row.id); showSuccess('Đã xóa.'); load() }
     catch (e) { showError(e?.response?.data?.message || 'Xóa thất bại') }
   })
@@ -502,7 +509,7 @@ async function submitModal() {
                   :title="l.tenCa + ' · ' + l.thoiGian"
                 >
                   <i class="bi bi-calendar3"></i>
-                  {{ l.ngayLam }}
+                  {{ fmtNgay(l.ngayLam) }}
                   <span class="warn-chip-ca">{{ l.tenCa }}</span>
                   <button
                     class="warn-chip-btn"
@@ -602,10 +609,9 @@ async function submitModal() {
                     <td class="ss-strong">{{ row.tenNhanVien }}</td>
                     <td>{{ row.tenCa }}</td>
                     <td class="nowrap">{{ row.thoiGian }}</td>
-                    <td class="nowrap">{{ row.ngayLam }}</td>
+                    <td class="nowrap">{{ fmtNgay(row.ngayLam) }}</td>
                     <td>
                       <div class="ss-row-actions">
-                        <button class="ss-icon-btn" title="Xem"><i class="bi bi-eye"></i></button>
                         <button class="ss-icon-btn" title="Sửa trạng thái" @click="openEditModal(row)">
                           <i class="bi bi-pencil-square"></i>
                         </button>
@@ -825,7 +831,7 @@ async function submitModal() {
             </div>
             <div class="thayt-info-row">
               <span class="thayt-lbl"><i class="bi bi-calendar3"></i> Ngày làm</span>
-              <span><strong>{{ thayTheLich.ngayLam }}</strong></span>
+              <span><strong>{{ fmtNgay(thayTheLich.ngayLam) }}</strong></span>
             </div>
           </div>
 
@@ -926,7 +932,7 @@ async function submitModal() {
             </div>
             <div class="edit-info-row">
               <span class="edit-info-label">Ngày làm</span>
-              <span class="edit-info-val">{{ editRow.ngayLam }}</span>
+              <span class="edit-info-val">{{ fmtNgay(editRow.ngayLam) }}</span>
             </div>
           </div>
 

@@ -297,14 +297,14 @@ public class LichLamViecService {
             // Header row
             // Cột: A=maNhanVien, B=tenNhanVien(auto), C=maCa, D=tenCa(auto), E=ngayLam, F=ghiChu
             String[] headers = {
-                "maNhanVien (*)",
+                "Mã nhân viên (*)",
                 "Tên nhân viên (tự động)",
-                "maCa (*)",
+                "Mã ca (*)",
                 "Tên ca (tự động)",
-                "ngayLam yyyy-MM-dd (*)",
-                "ghiChu"
+                "Ngày làm dd/MM/yyyy (*)",
+                "Ghi chú"
             };
-            int[] colWidths = {5000, 8000, 4000, 8000, 6000, 6000};
+            int[] colWidths = {5000, 8000, 4000, 9000, 7000, 7000};
             Row headerRow = sheet.createRow(0);
             for (int i = 0; i < headers.length; i++) {
                 Cell cell = headerRow.createCell(i);
@@ -313,58 +313,48 @@ public class LichLamViecService {
                 sheet.setColumnWidth(i, colWidths[i]);
             }
 
-            // Số dòng data tối đa hỗ trợ
-            int maxRows = 500;
+            // Số dòng data tối đa hỗ trợ (cho data validation)
+            int maxRows  = 500;
             int nvCount  = nhanViens.size();
             int caCount  = cas.size();
 
-            // Điền dòng ví dụ + VLOOKUP cho toàn bộ maxRows dòng
-            String ngayEx = LocalDate.now().toString();
+            // Style ngày — định dạng dd/MM/yyyy
+            CellStyle dateStyle = wb.createCellStyle();
+            dateStyle.cloneStyleFrom(dStyle);
+            CreationHelper createHelper = wb.getCreationHelper();
+            dateStyle.setDataFormat(createHelper.createDataFormat().getFormat("dd/MM/yyyy"));
+
+            // Sheet LichLamViec: tạo sẵn VLOOKUP cho cột B và D để tự hiện tên.
+            // Cột A, C, E, F để trống để người dùng nhập.
             for (int r = 1; r <= maxRows; r++) {
                 Row row = sheet.createRow(r);
 
-                // Cột A — maNhanVien: điền ví dụ cho 3 dòng đầu
-                Cell cellA = row.createCell(0);
-                if (r <= 3 && nvCount > 0) {
-                    cellA.setCellValue(nhanViens.get(Math.min(r - 1, nvCount - 1)).getMaNhanVien());
-                }
-                cellA.setCellStyle(dStyle);
+                row.createCell(0).setCellStyle(dStyle); // A — maNhanVien (người dùng nhập)
 
-                // Cột B — tenNhanVien: VLOOKUP tự động
+                // B — tenNhanVien: tự hiện theo mã NV ở cột A
                 Cell cellB = row.createCell(1);
                 if (nvCount > 0) {
                     cellB.setCellFormula(
-                        "IF(A" + (r+1) + "=\"\",\"\","
-                        + "IFERROR(VLOOKUP(A" + (r+1) + ",_NhanVien!$A:$B,2,0),\"Không tìm thấy\"))"
+                        "IF(A" + (r + 1) + "=\"\",\"\","
+                        + "IFERROR(VLOOKUP(A" + (r + 1) + ",_NhanVien!$A:$B,2,0),\"Không tìm thấy\"))"
                     );
                 }
-                cellB.setCellStyle(roStyle);
+                cellB.setCellStyle(dStyle);
 
-                // Cột C — maCa: điền ví dụ cho 3 dòng đầu
-                Cell cellC = row.createCell(2);
-                if (r <= 3 && caCount > 0) {
-                    cellC.setCellValue(cas.get(0).getMaCa());
-                }
-                cellC.setCellStyle(dStyle);
+                row.createCell(2).setCellStyle(dStyle); // C — maCa (người dùng nhập)
 
-                // Cột D — tenCa: VLOOKUP tự động
+                // D — tenCa: tự hiện theo mã ca ở cột C
                 Cell cellD = row.createCell(3);
                 if (caCount > 0) {
                     cellD.setCellFormula(
-                        "IF(C" + (r+1) + "=\"\",\"\","
-                        + "IFERROR(VLOOKUP(C" + (r+1) + ",_CaLamViec!$A:$B,2,0),\"Không tìm thấy\"))"
+                        "IF(C" + (r + 1) + "=\"\",\"\","
+                        + "IFERROR(VLOOKUP(C" + (r + 1) + ",_CaLamViec!$A:$B,2,0),\"Không tìm thấy\"))"
                     );
                 }
-                cellD.setCellStyle(roStyle);
+                cellD.setCellStyle(dStyle);
 
-                // Cột E — ngayLam: mặc định hôm nay cho tất cả dòng
-                Cell cellE = row.createCell(4);
-                cellE.setCellValue(ngayEx);
-                cellE.setCellStyle(dStyle);
-
-                // Cột F — ghiChu
-                Cell cellF = row.createCell(5);
-                cellF.setCellStyle(dStyle);
+                row.createCell(4).setCellStyle(dateStyle); // E — ngayLam (người dùng nhập)
+                row.createCell(5).setCellStyle(dStyle);    // F — ghiChu
             }
 
             // Data validation — dropdown maNhanVien (cột A)
@@ -400,41 +390,110 @@ public class LichLamViecService {
 
             // ── Sheet hướng dẫn ──
             Sheet guide = wb.createSheet("HuongDan");
-            String[] lines = {
-                "HƯỚNG DẪN IMPORT LỊCH LÀM VIỆC",
-                "",
-                "Sheet 'LichLamViec' gồm 6 cột:",
-                "  - maNhanVien (*)          : Mã nhân viên — có dropdown gợi ý, bắt buộc",
-                "  - Tên nhân viên (tự động) : Tự động hiện khi nhập đúng mã (không cần nhập)",
-                "  - maCa (*)                : Mã ca làm việc — có dropdown gợi ý, bắt buộc",
-                "  - Tên ca (tự động)        : Tự động hiện khi nhập đúng mã (không cần nhập)",
-                "  - ngayLam (*)             : Ngày làm, định dạng yyyy-MM-dd, ví dụ: 2026-10-16, bắt buộc",
-                "  - ghiChu                  : Ghi chú (tuỳ chọn)",
-                "",
-                "Lưu ý:",
-                "  - Các cột (*) là bắt buộc.",
-                "  - Cột 'Tên nhân viên' và 'Tên ca' chỉ để tham khảo, không cần nhập.",
-                "  - Nếu tên hiện 'Không tìm thấy' nghĩa là mã không đúng.",
-                "  - Nếu đã có lịch trùng ca+ngày sẽ bị bỏ qua, không báo lỗi.",
-                "  - Hỗ trợ tối đa 500 dòng mỗi lần import."
+            guide.setColumnWidth(0, 14000);
+            guide.setColumnWidth(1, 14000);
+            guide.setColumnWidth(2, 8000);
+            guide.setColumnWidth(3, 14000);
+            guide.setColumnWidth(4, 8000);
+            guide.setColumnWidth(5, 8000);
+
+            // Style tiêu đề lớn
+            Font titleFont = wb.createFont();
+            titleFont.setBold(true);
+            titleFont.setFontHeightInPoints((short) 13);
+            CellStyle titleStyle = wb.createCellStyle();
+            titleStyle.setFont(titleFont);
+
+            // Style tiêu đề bảng ví dụ (giống header sheet chính)
+            CellStyle exHStyle = wb.createCellStyle();
+            exHStyle.cloneStyleFrom(hStyle);
+
+            // Style dữ liệu ví dụ
+            CellStyle exDStyle = wb.createCellStyle();
+            exDStyle.cloneStyleFrom(dStyle);
+            exDStyle.setFillForegroundColor(IndexedColors.LIGHT_YELLOW.getIndex());
+            exDStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+
+            int row = 0;
+
+            // Tiêu đề
+            Cell titleCell = guide.createRow(row++).createCell(0);
+            titleCell.setCellValue("HƯỚNG DẪN IMPORT LỊCH LÀM VIỆC");
+            titleCell.setCellStyle(titleStyle);
+
+            guide.createRow(row++); // dòng trống
+
+            // Mô tả cột
+            String[][] colDesc = {
+                {"Mã nhân viên (*)",        "Bắt buộc. Chọn từ dropdown hoặc nhập mã nhân viên."},
+                {"Tên nhân viên (tự động)", "Không cần nhập. Tự hiện sau khi nhập đúng mã."},
+                {"Mã ca (*)",               "Bắt buộc. Chọn từ dropdown hoặc nhập mã ca làm việc."},
+                {"Tên ca (tự động)",        "Không cần nhập. Tự hiện sau khi nhập đúng mã ca."},
+                {"Ngày làm (*)",            "Bắt buộc. Định dạng dd/MM/yyyy, ví dụ: " + LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))},
+                {"Ghi chú",                "Tuỳ chọn. Mô tả thêm nếu cần."},
             };
-            CellStyle guideStyle = wb.createCellStyle();
-            Font guideFont = wb.createFont();
-            guideStyle.setFont(guideFont);
-            for (int i = 0; i < lines.length; i++) {
-                Row r = guide.createRow(i);
-                Cell c = r.createCell(0);
-                c.setCellValue(lines[i]);
-                if (i == 0) {
-                    Font boldFont = wb.createFont();
-                    boldFont.setBold(true);
-                    boldFont.setFontHeightInPoints((short) 13);
-                    CellStyle titleStyle = wb.createCellStyle();
-                    titleStyle.setFont(boldFont);
-                    c.setCellStyle(titleStyle);
+
+            Font boldSm = wb.createFont(); boldSm.setBold(true);
+            CellStyle boldStyle = wb.createCellStyle(); boldStyle.setFont(boldSm);
+
+            for (String[] desc : colDesc) {
+                Row r = guide.createRow(row++);
+                Cell c0 = r.createCell(0); c0.setCellValue("• " + desc[0]); c0.setCellStyle(boldStyle);
+                Cell c1 = r.createCell(1); c1.setCellValue(desc[1]);
+            }
+
+            guide.createRow(row++); // dòng trống
+
+            // Lưu ý
+            Cell noteTitle = guide.createRow(row++).createCell(0);
+            noteTitle.setCellValue("LƯU Ý QUAN TRỌNG:");
+            noteTitle.setCellStyle(boldStyle);
+
+            String[] notes = {
+                "• Không thay đổi tên sheet 'LichLamViec' và không xóa dòng tiêu đề.",
+                "• Dòng đã có lịch trùng ca + ngày sẽ bị bỏ qua (không báo lỗi).",
+                "• Nếu tên NV / tên ca hiện 'Không tìm thấy' nghĩa là mã không đúng.",
+                "• Hỗ trợ tối đa 500 dòng mỗi lần import.",
+            };
+            for (String note : notes) {
+                guide.createRow(row++).createCell(0).setCellValue(note);
+            }
+
+            guide.createRow(row++); // dòng trống
+
+            // Bảng ví dụ
+            Cell exTitle = guide.createRow(row++).createCell(0);
+            exTitle.setCellValue("VÍ DỤ DỮ LIỆU:");
+            exTitle.setCellStyle(boldStyle);
+
+            // Header bảng ví dụ
+            String[] exHeaders = {"Mã nhân viên (*)", "Tên nhân viên (tự động)", "Mã ca (*)", "Tên ca (tự động)", "Ngày làm (*)", "Ghi chú"};
+            Row exHeaderRow = guide.createRow(row++);
+            for (int c = 0; c < exHeaders.length; c++) {
+                Cell cell = exHeaderRow.createCell(c);
+                cell.setCellValue(exHeaders[c]);
+                cell.setCellStyle(exHStyle);
+            }
+
+            // Dòng ví dụ từ dữ liệu thực
+            int exCount = Math.min(3, Math.min(nvCount, caCount > 0 ? 3 : 0));
+            for (int i = 0; i < exCount; i++) {
+                Row exRow = guide.createRow(row++);
+                String maNv  = nhanViens.get(i).getMaNhanVien();
+                String tenNv = nhanViens.get(i).getTenNhanVien();
+                String maCa  = cas.get(i % caCount).getMaCa();
+                String tenCa = cas.get(i % caCount).getTenCa()
+                        + " (" + fmt(cas.get(i % caCount).getGioBatDau())
+                        + "-"  + fmt(cas.get(i % caCount).getGioKetThuc()) + ")";
+                String ngay  = LocalDate.now().plusDays(i).format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+
+                String[] vals = {maNv, tenNv, maCa, tenCa, ngay, ""};
+                for (int c = 0; c < vals.length; c++) {
+                    Cell cell = exRow.createCell(c);
+                    cell.setCellValue(vals[c]);
+                    cell.setCellStyle(exDStyle);
                 }
             }
-            guide.setColumnWidth(0, 22000);
 
             // Đặt LichLamViec là sheet active
             wb.setActiveSheet(wb.getSheetIndex("LichLamViec"));
@@ -461,21 +520,33 @@ public class LichLamViecService {
                 if (row == null) continue;
 
                 String maNv    = cellStr(row.getCell(0));  // cột A
-                String maCa    = cellStr(row.getCell(2));  // cột C (bỏ qua cột B tenNhanVien auto)
-                String ngayStr = cellStr(row.getCell(4));  // cột E (bỏ qua cột D tenCa auto)
+                String maCa    = cellStr(row.getCell(2));  // cột C
+                String ngayStr = cellStr(row.getCell(4));  // cột E
                 String ghiChu  = cellStr(row.getCell(5));  // cột F
 
+                // Bỏ qua dòng trống hoàn toàn (chưa nhập dữ liệu)
+                if (maNv.isEmpty() && maCa.isEmpty() && ngayStr.isEmpty()) continue;
+
+                // Báo lỗi nếu thiếu 1 trong 3 field bắt buộc
                 if (maNv.isEmpty() || maCa.isEmpty() || ngayStr.isEmpty()) {
-                    errorMessages.add("Dòng " + (i + 1) + ": thiếu dữ liệu bắt buộc");
+                    errorMessages.add("Dòng " + (i + 1) + ": thiếu dữ liệu bắt buộc"
+                        + (maNv.isEmpty() ? " (mã nhân viên)" : "")
+                        + (maCa.isEmpty() ? " (mã ca)" : "")
+                        + (ngayStr.isEmpty() ? " (ngày làm)" : ""));
                     errors++;
                     continue;
                 }
 
                 LocalDate ngayLam;
                 try {
-                    ngayLam = LocalDate.parse(ngayStr.trim(), DateTimeFormatter.ISO_LOCAL_DATE);
+                    String s = ngayStr.trim();
+                    if (s.contains("/")) {
+                        ngayLam = LocalDate.parse(s, DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+                    } else {
+                        ngayLam = LocalDate.parse(s, DateTimeFormatter.ISO_LOCAL_DATE);
+                    }
                 } catch (DateTimeParseException e) {
-                    errorMessages.add("Dòng " + (i + 1) + ": ngày '" + ngayStr + "' không đúng định dạng yyyy-MM-dd");
+                    errorMessages.add("Dòng " + (i + 1) + ": ngày '" + ngayStr + "' không đúng định dạng dd/MM/yyyy");
                     errors++;
                     continue;
                 }
@@ -742,14 +813,43 @@ public class LichLamViecService {
         return expired.size();
     }
 
-    private String cellStr(Cell cell) {        if (cell == null) return "";
-        return switch (cell.getCellType()) {
+    private String cellStr(Cell cell) {
+        if (cell == null) return "";
+        CellType type = cell.getCellType();
+        // Evaluate formula để lấy giá trị thực
+        if (type == CellType.FORMULA) {
+            try {
+                FormulaEvaluator evaluator = cell.getSheet().getWorkbook()
+                        .getCreationHelper().createFormulaEvaluator();
+                CellValue cv = evaluator.evaluate(cell);
+                type = cv.getCellType();
+                return switch (type) {
+                    case STRING  -> cv.getStringValue().trim();
+                    case NUMERIC -> {
+                        double num = cv.getNumberValue();
+                        if (num == 0) yield ""; // ô trống date-formatted
+                        if (DateUtil.isCellDateFormatted(cell)) {
+                            yield DateUtil.getLocalDateTime(num, false).toLocalDate()
+                                    .format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+                        }
+                        yield String.valueOf((long) num);
+                    }
+                    default -> "";
+                };
+            } catch (Exception e) {
+                return "";
+            }
+        }
+        return switch (type) {
             case STRING  -> cell.getStringCellValue().trim();
             case NUMERIC -> {
+                double num = cell.getNumericCellValue();
+                if (num == 0) yield ""; // ô trống date-formatted
                 if (DateUtil.isCellDateFormatted(cell)) {
-                    yield cell.getLocalDateTimeCellValue().toLocalDate().toString();
+                    yield cell.getLocalDateTimeCellValue().toLocalDate()
+                            .format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
                 }
-                yield String.valueOf((long) cell.getNumericCellValue());
+                yield String.valueOf((long) num);
             }
             default -> "";
         };
