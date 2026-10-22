@@ -19,6 +19,28 @@ const pages         = ref(1)
 const totalElements = ref(0)
 const viewMode      = ref('bang')
 
+// ── Cảnh báo nhân viên bị khóa ────────────────────────────
+const lichBiKhoa        = ref([])   // lịch tương lai của NV bị khóa
+const showKhoaWarning   = ref(true) // có thể ẩn đi tạm thời
+
+async function loadLichBiKhoa() {
+  try {
+    lichBiKhoa.value = await scheduleService.getLichNhanVienBiKhoa() || []
+  } catch { lichBiKhoa.value = [] }
+}
+
+// Nhóm lịch theo nhân viên để hiển thị gọn
+const lichBiKhoaTheoNV = computed(() => {
+  const map = new Map()
+  for (const l of lichBiKhoa.value) {
+    if (!map.has(l.maNhanVien)) {
+      map.set(l.maNhanVien, { maNhanVien: l.maNhanVien, tenNhanVien: l.tenNhanVien, lich: [] })
+    }
+    map.get(l.maNhanVien).lich.push(l)
+  }
+  return [...map.values()]
+})
+
 const toYMDToday = () => {
   const d = new Date()
   const y = d.getFullYear()
@@ -86,7 +108,69 @@ async function loadEmployees() {
 function reset() { f.tuKhoa = ''; f.caId = ''; f.ngayLam = toYMDToday(); page.value = 1; load() }
 watch(page, load)
 watch(size, () => { page.value = 1; load() })
-onMounted(() => { loadShifts(); load() })
+onMounted(() => { loadShifts(); load(); loadLichBiKhoa() })
+
+// ── Thay nhân viên vào ca (từ banner cảnh báo) ────────────
+const thayTheModal    = ref(false)
+const thayTheLich     = ref(null)   // lịch đang cần thay { id, maNhanVien, tenNhanVien, tenCa, thoiGian, ngayLam, caLamViecId }
+const thayTheSearch   = ref('')
+const thayTheSaving   = ref(false)
+const thayTheError    = ref('')
+const thayTheMaNV     = ref('')     // mã NV được chọn để thay vào
+const nvTrongCa       = ref([])     // mã NV đã có lịch trong ca đó (để disable)
+
+const thayTheEmps = computed(() => {
+  const kw = thayTheSearch.value.trim().toLowerCase()
+  // Loại bỏ chính NV đang bị khóa
+  const list = employees.value.filter(e => e.code !== thayTheLich.value?.maNhanVien)
+  if (!kw) return list
+  return list.filter(e =>
+    (e.code||'').toLowerCase().includes(kw) || (e.name||'').toLowerCase().includes(kw)
+  )
+})
+
+async function openThayThe(lich) {
+  thayTheLich.value   = lich
+  thayTheMaNV.value   = ''
+  thayTheSearch.value = ''
+  thayTheError.value  = ''
+  nvTrongCa.value     = []
+  thayTheModal.value  = true
+  // Load song song: danh sách NV active + NV đã có lịch trong ca đó
+  await Promise.all([
+    loadEmployees(),
+    scheduleService.getNhanVienTrongCa(lich.caLamViecId, lich.ngayLam)
+      .then(list => { nvTrongCa.value = list || [] })
+      .catch(() => {})
+  ])
+}
+
+async function submitThayThe() {
+  if (!thayTheMaNV.value) { thayTheError.value = 'Vui lòng chọn nhân viên thay thế'; return }
+  // Kiểm tra trùng ca ngay tại frontend
+  if (nvTrongCa.value.includes(thayTheMaNV.value)) {
+    thayTheError.value = 'Nhân viên này đã có lịch trong ca đó, không thể thay thế.'
+    return
+  }
+  thayTheSaving.value = true
+  thayTheError.value  = ''
+  try {
+    // Tạo lịch mới cho NV thay thế trước
+    await scheduleService.phanCa({
+      maNhanViens: [thayTheMaNV.value],
+      caLamViecId: Number(thayTheLich.value.caLamViecId),
+      ngayLam:     thayTheLich.value.ngayLam,
+      ghiChu:      `Thay thế ${thayTheLich.value.tenNhanVien}`
+    })
+    // Xóa lịch cũ của NV bị khóa sau khi tạo thành công
+    await scheduleService.deleteLich(thayTheLich.value.id)
+    thayTheModal.value = false
+    showSuccess('Đã xếp lịch thành công.')
+    await Promise.all([loadLichBiKhoa(), viewMode.value === 'lich' ? loadCalendar() : load()])
+  } catch (e) {
+    thayTheError.value = e?.response?.data?.message || 'Thay thế thất bại'
+  } finally { thayTheSaving.value = false }
+}
 
 // ── Actions bảng ──────────────────────────────────────────
 function handleDelete(row) {
@@ -378,6 +462,62 @@ async function submitModal() {
   <AdminLayout>
     <main class="ss-page">
 
+      <!-- ── Cảnh báo nhân viên bị khóa ── -->
+      <Transition name="warn-fade">
+        <section
+          v-if="showKhoaWarning && lichBiKhoa.length"
+          class="ss-card warn-banner"
+        >
+          <div class="warn-banner-head">
+            <div class="warn-banner-title">
+              <i class="bi bi-exclamation-triangle-fill"></i>
+              <span>
+                Cần xếp lại lịch —
+                <strong>{{ lichBiKhoa.length }}</strong> ca sắp tới
+                của <strong>{{ lichBiKhoaTheoNV.length }}</strong> nhân viên bị khóa chưa được sắp xếp lại
+              </span>
+            </div>
+            <button class="ss-icon-btn warn-close" title="Ẩn cảnh báo" @click="showKhoaWarning = false">
+              <i class="bi bi-x-lg"></i>
+            </button>
+          </div>
+
+          <div class="warn-nv-list">
+            <div
+              v-for="nv in lichBiKhoaTheoNV"
+              :key="nv.maNhanVien"
+              class="warn-nv-item"
+            >
+              <div class="warn-nv-info">
+                <i class="bi bi-person-fill-lock"></i>
+                <span class="ss-code">{{ nv.maNhanVien }}</span>
+                <span class="warn-nv-name">{{ nv.tenNhanVien }}</span>
+                <span class="warn-nv-count">{{ nv.lich.length }} ca</span>
+              </div>
+              <div class="warn-lich-chips">
+                <span
+                  v-for="l in nv.lich"
+                  :key="l.id"
+                  class="warn-chip"
+                  :title="l.tenCa + ' · ' + l.thoiGian"
+                >
+                  <i class="bi bi-calendar3"></i>
+                  {{ l.ngayLam }}
+                  <span class="warn-chip-ca">{{ l.tenCa }}</span>
+                  <button
+                    class="warn-chip-btn"
+                    title="Thay nhân viên vào ca này"
+                    @click="openThayThe(l)"
+                  >
+                    <i class="bi bi-person-fill-up"></i> Thay thế
+                  </button>
+                </span>
+              </div>
+            </div>
+          </div>
+        </section>
+      </Transition>
+
       <!-- Bộ lọc -->
       <section class="ss-card">
         <div class="ss-head">
@@ -658,6 +798,80 @@ async function submitModal() {
       </div>
     </Teleport>
 
+    <!-- Modal thay thế nhân viên bị khóa -->
+    <Teleport to="body">
+      <div v-if="thayTheModal" class="ss-modal-bg" @click.self="thayTheModal=false">
+        <div class="ss-modal" style="width:min(560px,100%)">
+
+          <div class="ss-head">
+            <div class="ss-head-icon warn-icon"><i class="bi bi-person-fill-up"></i></div>
+            <h2>Thay nhân viên vào ca</h2>
+            <span class="ss-spacer"></span>
+            <button class="ss-icon-btn" @click="thayTheModal=false"><i class="bi bi-x-lg"></i></button>
+          </div>
+
+          <!-- Thông tin ca cần thay -->
+          <div v-if="thayTheLich" class="thayt-info">
+            <div class="thayt-info-row">
+              <span class="thayt-lbl"><i class="bi bi-person-fill-lock"></i> NV bị khóa</span>
+              <span>
+                <span class="ss-code">{{ thayTheLich.maNhanVien }}</span>
+                <strong style="margin-left:6px">{{ thayTheLich.tenNhanVien }}</strong>
+              </span>
+            </div>
+            <div class="thayt-info-row">
+              <span class="thayt-lbl"><i class="bi bi-arrow-left-right"></i> Ca làm việc</span>
+              <span><strong>{{ thayTheLich.tenCa }}</strong> · {{ thayTheLich.thoiGian }}</span>
+            </div>
+            <div class="thayt-info-row">
+              <span class="thayt-lbl"><i class="bi bi-calendar3"></i> Ngày làm</span>
+              <span><strong>{{ thayTheLich.ngayLam }}</strong></span>
+            </div>
+          </div>
+
+          <!-- Chọn NV thay thế -->
+          <div class="ss-field" style="margin-top:16px">
+            <label class="ss-label">
+              Chọn nhân viên thay thế <span class="req">*</span>
+              <span v-if="thayTheMaNV" class="badge-count">1 đã chọn</span>
+            </label>
+            <div class="ss-search" style="margin-bottom:8px">
+              <i class="bi bi-search"></i>
+              <input class="ss-input" v-model="thayTheSearch" placeholder="Tìm theo tên hoặc mã..." />
+            </div>
+            <div class="emp-list">
+              <label
+                v-for="emp in thayTheEmps"
+                :key="emp.id"
+                class="emp-item"
+                :class="{ selected: thayTheMaNV === emp.code, 'emp-item-disabled': nvTrongCa.includes(emp.code) }"
+              >
+                <input type="radio" class="ss-cb" :value="emp.code" v-model="thayTheMaNV"
+                  :disabled="nvTrongCa.includes(emp.code)" />
+                <span class="ss-code" style="min-width:72px;font-size:11px">{{ emp.code }}</span>
+                <span class="ss-strong" style="font-size:12px">{{ emp.name }}</span>
+                <span v-if="nvTrongCa.includes(emp.code)" class="emp-trung-ca">
+                  <i class="bi bi-calendar-x"></i> Đã có ca
+                </span>
+              </label>
+              <div v-if="!thayTheEmps.length" class="ss-empty" style="height:60px">Không tìm thấy</div>
+            </div>
+          </div>
+
+          <p v-if="thayTheError" class="ss-hint warn"><i class="bi bi-exclamation-circle"></i> {{ thayTheError }}</p>
+
+          <div class="ss-actions">
+            <button class="ss-btn" @click="thayTheModal=false" :disabled="thayTheSaving">Hủy</button>
+            <button class="ss-btn primary" @click="submitThayThe" :disabled="thayTheSaving || !thayTheMaNV">
+              <i :class="thayTheSaving ? 'bi bi-arrow-repeat spin' : 'bi bi-check2'"></i>
+              {{ thayTheSaving ? 'Đang xử lý...' : 'Xác nhận thay thế' }}
+            </button>
+          </div>
+
+        </div>
+      </div>
+    </Teleport>
+
     <!-- Modal chi tiết ô lịch -->
     <Teleport to="body">
       <div v-if="calDetail" class="ss-modal-bg" @click.self="calDetail=null">
@@ -862,6 +1076,117 @@ async function submitModal() {
 </template>
 
 <style scoped>
+/* ── Banner cảnh báo NV bị khóa ───────────────────────── */
+.warn-banner {
+  border: 1.5px solid #f6ad55;
+  background: #fffbf0;
+  padding: 16px 20px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+
+.warn-banner-head {
+  display: flex; align-items: flex-start;
+  justify-content: space-between; gap: 12px;
+}
+
+.warn-banner-title {
+  display: flex; align-items: flex-start; gap: 10px;
+  font-size: 13.5px; color: #7b4f00;
+  line-height: 1.5;
+}
+.warn-banner-title i { font-size: 16px; color: #d97706; flex-shrink: 0; margin-top: 2px; }
+
+.warn-close { color: #d97706; }
+.warn-close:hover { background: #fde68a; }
+
+.warn-nv-list {
+  display: flex; flex-direction: column; gap: 10px;
+}
+
+.warn-nv-item {
+  background: #fff; border: 1px solid #fde68a;
+  border-radius: 8px; padding: 10px 14px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+
+.warn-nv-info {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px;
+}
+.warn-nv-info i { color: #d97706; font-size: 14px; }
+.warn-nv-name { font-weight: 600; color: var(--ss-text); }
+.warn-nv-count {
+  margin-left: auto;
+  background: #fef3c7; color: #92400e;
+  font-size: 11px; font-weight: 700;
+  padding: 2px 8px; border-radius: 20px;
+}
+
+.warn-lich-chips {
+  display: flex; flex-wrap: wrap; gap: 6px;
+}
+
+.warn-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: #fff7ed; border: 1px solid #fed7aa;
+  color: #9a3412;
+  font-size: 11.5px; font-weight: 600;
+  padding: 3px 10px; border-radius: 6px;
+}
+.warn-chip i { font-size: 10px; color: #c2410c; }
+.warn-chip-ca {
+  font-weight: 400; color: #78350f;
+  margin-left: 2px;
+}
+
+.warn-chip-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  margin-left: 6px; padding: 2px 8px;
+  background: #fff; border: 1px solid #c2410c;
+  color: #c2410c; border-radius: 4px;
+  font-size: 11px; font-weight: 600;
+  cursor: pointer; transition: background .15s, color .15s;
+}
+.warn-chip-btn:hover { background: #c2410c; color: #fff; }
+.warn-chip-btn i { font-size: 11px; }
+
+/* ── Modal thay thế ────────────────────────────────────── */
+.warn-icon { background: #fff7ed !important; color: #d97706 !important; }
+
+.thayt-info {
+  background: #fffbf0; border: 1px solid #fde68a;
+  border-radius: 8px; padding: 12px 16px;
+  display: flex; flex-direction: column; gap: 8px;
+  margin-top: 4px;
+}
+.thayt-info-row {
+  display: flex; align-items: center; gap: 12px;
+  font-size: 13px;
+}
+.thayt-lbl {
+  min-width: 130px; font-size: 11.5px; font-weight: 600;
+  color: var(--ss-muted);
+  display: flex; align-items: center; gap: 6px;
+}
+
+/* NV đã có lịch trong ca — disabled */
+.emp-item-disabled {
+  opacity: .55; cursor: not-allowed;
+}
+.emp-item-disabled input { cursor: not-allowed; }
+
+.emp-trung-ca {
+  margin-left: auto;
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; font-weight: 600;
+  color: #c62828; background: #fff5f5;
+  border: 1px solid #ef9a9a;
+  padding: 2px 8px; border-radius: 20px;
+}
+
+.warn-fade-enter-active, .warn-fade-leave-active { transition: all .3s ease; }
+.warn-fade-enter-from, .warn-fade-leave-to { opacity: 0; transform: translateY(-8px); }
+
 .filter-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 .filter-label { font-size:12px; font-weight:600; color:var(--ss-text); white-space:nowrap; }
 .filter-input { width:200px; }

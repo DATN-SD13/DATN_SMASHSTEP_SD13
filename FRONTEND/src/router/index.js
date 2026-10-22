@@ -92,6 +92,7 @@ const router = createRouter({
     { path: '/lich-su-hoat-dong',    component: () => import('../modules/admin/schedule/views/LichSuHoatDong.vue'), meta: { title: 'Lịch sử hoạt động', parent: { label: 'Quản lý lịch làm', to: '/lich-lam-viec' }, requiresAuth: true, userType: 'NHAN_VIEN', role: 'ADMIN' } },
 
     { path: '/invoice', redirect: '/hoa-don' },
+    { path: '/ca-nhan', component: () => import('../modules/admin/profile/views/ProfileView.vue'), meta: { title: 'Thông tin cá nhân', requiresAuth: true, userType: 'NHAN_VIEN' } },
     { path: '/:pathMatch(.*)*', component: ComingSoon, meta: { title: 'Đang phát triển' } }
   ]
 })

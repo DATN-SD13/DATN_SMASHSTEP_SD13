@@ -56,6 +56,36 @@ public interface LichLamViecRepository extends JpaRepository<LichLamViec, Long> 
             String maNhanVien, Long caId, LocalDate ngayLam);
 
     /**
+     * Trả về danh sách mã nhân viên đã có lịch trong ca+ngày chỉ định.
+     * Dùng để kiểm tra trùng ca khi thay thế nhân viên.
+     */
+    @Query("""
+        SELECT nv.maNhanVien FROM LichLamViec l
+        JOIN l.idNhanVien nv
+        WHERE l.idCaLamViec.id = :caId
+          AND l.ngayLam = :ngayLam
+        """)
+    List<String> findMaNhanVienTrongCa(
+            @Param("caId")    Long caId,
+            @Param("ngayLam") LocalDate ngayLam);
+
+    /**
+     * Lịch tương lai (ngayLam >= hôm nay) còn đang mở (trangThai 0 hoặc 1)
+     * của nhân viên bị khóa (trangThai != 1). Dùng để hiển thị cảnh báo xếp lại.
+     */
+    @Query("""
+        SELECT l FROM LichLamViec l
+        JOIN FETCH l.idNhanVien nv
+        LEFT JOIN FETCH nv.idVaiTro vt
+        JOIN FETCH l.idCaLamViec ca
+        WHERE nv.trangThai != 1
+          AND l.trangThai IN (0, 1)
+          AND l.ngayLam >= :tuNgay
+        ORDER BY l.ngayLam ASC, ca.gioBatDau ASC
+        """)
+    List<LichLamViec> findLichCuaNhanVienBiKhoa(@Param("tuNgay") LocalDate tuNgay);
+
+    /**
      * Lịch chưa giao ca (trangThai 0 hoặc 1) mà thời điểm kết thúc ca đã qua.
      * Dùng native query để tính datetime kết thúc chính xác (kể cả ca qua đêm).
      */
@@ -76,8 +106,8 @@ public interface LichLamViecRepository extends JpaRepository<LichLamViec, Long> 
 
     /**
      * Tính tổng doanh thu (thanhTien) của nhân viên trong khoảng thời gian ca.
-     * Ca bắt đầu lúc gioBatDau ngayLam và kết thúc lúc gioKetThuc ngayLam.
-     * Nếu gioKetThuc < gioBatDau (ca qua đêm) thì kết thúc ngày hôm sau.
+     * Tính cả hóa đơn tại quầy đã thanh toán (trangThai=8, ngayThanhToan!=null)
+     * và hóa đơn online hoàn thành (trangThai=5, ngayThanhToan!=null).
      */
     @Query("""
         SELECT COALESCE(SUM(h.thanhTien), 0)
@@ -85,7 +115,8 @@ public interface LichLamViecRepository extends JpaRepository<LichLamViec, Long> 
         WHERE h.idNhanVien.id = :nhanVienId
           AND h.ngayThanhToan >= :batDau
           AND h.ngayThanhToan < :ketThuc
-          AND h.trangThai = 8
+          AND h.ngayThanhToan IS NOT NULL
+          AND (h.trangThai = 5 OR h.trangThai = 8)
         """)
     BigDecimal tinhDoanhThu(
             @Param("nhanVienId") Long nhanVienId,

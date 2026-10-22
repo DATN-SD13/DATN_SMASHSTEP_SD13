@@ -5,7 +5,7 @@ import com.smashstep.datn.employee.repository.NhanVienImportBatchRepository;
 import com.smashstep.datn.employee.repository.NhanVienImportMailRepository;
 import com.smashstep.datn.employee.util.NhanVienImportExcelReader;
 import com.smashstep.datn.employee.util.NhanVienImportMailCipher;
-import com.smashstep.datn.employee.exception.NhanVienImportException;
+import com.smashstep.datn.employee.exeption.NhanVienImportException;
 import com.smashstep.datn.auth.security.JwtAuthFilter.AuthDetails;
 import com.smashstep.datn.common.exception.AppException;
 import com.smashstep.datn.employee.mail.EmployeeMailService;

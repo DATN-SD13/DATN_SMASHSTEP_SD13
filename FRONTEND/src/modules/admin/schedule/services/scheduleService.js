@@ -12,6 +12,12 @@ const scheduleService = {
   async getCaHomNay() {
     return unwrap(await api.get('/lich-lam-viec/ca-hom-nay'))
   },
+  async getLichNhanVienBiKhoa() {
+    return unwrap(await api.get('/lich-lam-viec/nhan-vien-bi-khoa'))
+  },
+  async getNhanVienTrongCa(caId, ngayLam) {
+    return unwrap(await api.get('/lich-lam-viec/nhan-vien-trong-ca', { params: { caId, ngayLam } }))
+  },
   async getCaLamViecActive() {
     return unwrap(await api.get('/ca-lam-viec/active'))
   },
