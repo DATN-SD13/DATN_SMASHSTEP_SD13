@@ -106,8 +106,8 @@ public interface LichLamViecRepository extends JpaRepository<LichLamViec, Long> 
 
     /**
      * Tính tổng doanh thu (thanhTien) của nhân viên trong khoảng thời gian ca.
-     * Ca bắt đầu lúc gioBatDau ngayLam và kết thúc lúc gioKetThuc ngayLam.
-     * Nếu gioKetThuc < gioBatDau (ca qua đêm) thì kết thúc ngày hôm sau.
+     * Tính cả hóa đơn tại quầy đã thanh toán (trangThai=8, ngayThanhToan!=null)
+     * và hóa đơn online hoàn thành (trangThai=5, ngayThanhToan!=null).
      */
     @Query("""
         SELECT COALESCE(SUM(h.thanhTien), 0)
@@ -115,7 +115,8 @@ public interface LichLamViecRepository extends JpaRepository<LichLamViec, Long> 
         WHERE h.idNhanVien.id = :nhanVienId
           AND h.ngayThanhToan >= :batDau
           AND h.ngayThanhToan < :ketThuc
-          AND h.trangThai = 8
+          AND h.ngayThanhToan IS NOT NULL
+          AND (h.trangThai = 5 OR h.trangThai = 8)
         """)
     BigDecimal tinhDoanhThu(
             @Param("nhanVienId") Long nhanVienId,

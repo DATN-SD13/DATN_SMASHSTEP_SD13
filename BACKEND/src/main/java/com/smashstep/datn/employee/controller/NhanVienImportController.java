@@ -1,7 +1,7 @@
 package com.smashstep.datn.employee.controller;
 import com.smashstep.datn.employee.service.NhanVienImportService;
 import com.smashstep.datn.employee.dto.NhanVienImportDto;
-import com.smashstep.datn.employee.exception.NhanVienImportException;
+import com.smashstep.datn.employee.exeption.NhanVienImportException;
 import com.smashstep.datn.common.response.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;

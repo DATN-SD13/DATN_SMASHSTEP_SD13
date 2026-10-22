@@ -5,6 +5,7 @@ import api from '../../../../utils/api'
 import { useAuthStore } from '../../../../stores/auth'
 import { useAddressApi } from '../../../../composables/useAddressApi'
 import Select2KhachHang from '../../customer/components/Select2KhachHang.vue'
+import { showSuccess, showError } from '../../../../utils/feedback'
 
 const authStore = useAuthStore()
 
@@ -34,7 +35,69 @@ const showOld  = ref(false)
 const showNew  = ref(false)
 const showCfm  = ref(false)
 
-const toast = reactive({ show: false, type: 'success', msg: '' })
+// ── Lỗi validate inline ────────────────────────────────────
+const errors = reactive({
+  name: '', email: '', phone: '', street: '',
+  province: '', ward: '',
+  matKhauCu: '', matKhauMoi: '', xacNhan: ''
+})
+
+function clearErrors() {
+  Object.keys(errors).forEach(k => errors[k] = '')
+}
+
+function validateField(field) {
+  switch (field) {
+    case 'name': {
+      const v = form.value.name?.trim()
+      errors.name = !v                  ? 'Vui lòng nhập họ tên.'
+                  : v.length > 255      ? 'Họ tên không được vượt quá 255 ký tự.'
+                  : ''
+      break
+    }
+    case 'email': {
+      const v = form.value.email?.trim()
+      errors.email = !v                                          ? 'Vui lòng nhập email.'
+                   : !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)     ? 'Email không hợp lệ.'
+                   : v.length > 255                             ? 'Email không được vượt quá 255 ký tự.'
+                   : ''
+      break
+    }
+    case 'phone': {
+      const v = form.value.phone?.trim()
+      errors.phone = !v                    ? 'Vui lòng nhập số điện thoại.'
+                   : !/^0\d{9}$/.test(v)  ? 'Số điện thoại gồm 10 chữ số, bắt đầu bằng 0.'
+                   : ''
+      break
+    }
+    case 'street': {
+      const v = form.value.street?.trim() || ''
+      errors.street = v.length > 500 ? 'Địa chỉ cụ thể không được vượt quá 500 ký tự.' : ''
+      break
+    }
+    case 'province':
+      errors.province = !form.value.province ? 'Vui lòng chọn tỉnh / thành phố.' : ''
+      break
+    case 'ward':
+      errors.ward = !form.value.ward ? 'Vui lòng chọn phường / xã.' : ''
+      break
+    case 'matKhauCu':
+      errors.matKhauCu = !passForm.matKhauCu?.trim()
+        ? 'Vui lòng nhập mật khẩu hiện tại.' : ''
+      break
+    case 'matKhauMoi':
+      errors.matKhauMoi = !passForm.matKhauMoi        ? 'Vui lòng nhập mật khẩu mới.'
+                        : passForm.matKhauMoi.length < 6 ? 'Mật khẩu mới phải có ít nhất 6 ký tự.'
+                        : ''
+      break
+    case 'xacNhan':
+      errors.xacNhan = !passForm.xacNhan                          ? 'Vui lòng xác nhận mật khẩu mới.'
+                     : passForm.xacNhan !== passForm.matKhauMoi    ? 'Mật khẩu xác nhận không khớp.'
+                     : ''
+      break
+  }
+}
+
 const avatarUploading = ref(false)
 const avatarInput = ref(null)
 
@@ -95,9 +158,9 @@ async function onAvatarChange(e) {
     const url = res?.data?.data?.url ?? res?.data?.url ?? res?.url ?? res
     form.value.image = url
     profile.image    = url
-    showToast('success', 'Tải ảnh lên thành công!')
+    showSuccess('Tải ảnh lên thành công!')
   } catch (e) {
-    showToast('error', e.response?.data?.message || 'Tải ảnh thất bại.')
+    showError(e.response?.data?.message || 'Tải ảnh thất bại.')
   } finally {
     avatarUploading.value = false
     if (avatarInput.value) avatarInput.value.value = ''
@@ -108,7 +171,7 @@ async function onAvatarChange(e) {
 async function saveInfo() {
   if (saving.value) return
   const err = validateInfo()
-  if (err) { showToast('error', err); return }
+  if (err) return
 
   saving.value = true
   try {
@@ -129,29 +192,32 @@ async function saveInfo() {
     // Cập nhật tên trong store
     authStore.user = { ...authStore.user, name: data.name, avatar: data.image }
     localStorage.setItem('ss_user', JSON.stringify(authStore.user))
-    showToast('success', 'Cập nhật thông tin thành công!')
+    showSuccess('Cập nhật thông tin thành công!')
   } catch (e) {
-    showToast('error', e.response?.data?.message || 'Lưu thất bại.')
+    showError(e.response?.data?.message || 'Lưu thất bại.')
   } finally {
     saving.value = false
   }
 }
 
 function validateInfo() {
-  if (!form.value.name?.trim())  return 'Vui lòng nhập họ tên.'
-  if (!form.value.email?.trim()) return 'Vui lòng nhập email.'
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.value.email.trim())) return 'Email không hợp lệ.'
-  if (!form.value.phone?.trim()) return 'Vui lòng nhập số điện thoại.'
-  if (!/^0\d{9}$/.test(form.value.phone.trim())) return 'Số điện thoại phải gồm 10 số và bắt đầu bằng 0.'
-  return null
+  validateField('name')
+  validateField('email')
+  validateField('phone')
+  validateField('province')
+  validateField('ward')
+  validateField('street')
+  return errors.name || errors.email || errors.phone || errors.province || errors.ward || errors.street || null
 }
 
 // ── Đổi mật khẩu ──────────────────────────────────────────
 async function savePassword() {
   if (savingPass.value) return
-  if (!passForm.matKhauCu)  { showToast('error', 'Vui lòng nhập mật khẩu hiện tại.'); return }
-  if (passForm.matKhauMoi.length < 6) { showToast('error', 'Mật khẩu mới phải có ít nhất 6 ký tự.'); return }
-  if (passForm.matKhauMoi !== passForm.xacNhan) { showToast('error', 'Mật khẩu xác nhận không khớp.'); return }
+  // Validate tất cả 3 field rồi mới dừng nếu có lỗi
+  validateField('matKhauCu')
+  validateField('matKhauMoi')
+  validateField('xacNhan')
+  if (errors.matKhauCu || errors.matKhauMoi || errors.xacNhan) return
 
   savingPass.value = true
   try {
@@ -160,18 +226,13 @@ async function savePassword() {
       matKhauMoi: passForm.matKhauMoi
     })
     passForm.matKhauCu = passForm.matKhauMoi = passForm.xacNhan = ''
-    showToast('success', 'Đổi mật khẩu thành công!')
+    errors.matKhauCu = errors.matKhauMoi = errors.xacNhan = ''
+    showSuccess('Đổi mật khẩu thành công!')
   } catch (e) {
-    showToast('error', e.response?.data?.message || 'Đổi mật khẩu thất bại.')
+    showError(e.response?.data?.message || 'Đổi mật khẩu thất bại.')
   } finally {
     savingPass.value = false
   }
-}
-
-// ── Toast ──────────────────────────────────────────────────
-function showToast(type, msg) {
-  toast.type = type; toast.msg = msg; toast.show = true
-  setTimeout(() => { toast.show = false }, 3500)
 }
 
 function fmtDate(val) {
@@ -189,14 +250,6 @@ function fmtDatetime(val) {
 <template>
   <AdminLayout>
     <main class="ss-page profile-page">
-
-      <!-- Toast -->
-      <Transition name="toast">
-        <div v-if="toast.show" :class="['profile-toast', toast.type]">
-          <i :class="toast.type === 'success' ? 'bi bi-check-circle-fill' : 'bi bi-exclamation-circle-fill'"></i>
-          {{ toast.msg }}
-        </div>
-      </Transition>
 
       <!-- Loading -->
       <div v-if="loading" class="profile-loading">
@@ -265,17 +318,35 @@ function fmtDatetime(val) {
 
                 <div class="ss-field">
                   <label class="ss-label">Họ và tên <span class="req">*</span></label>
-                  <input class="ss-input" v-model="form.name" placeholder="Nhập họ tên" />
+                  <input class="ss-input" :class="{ 'input-error': errors.name }"
+                    v-model="form.name" placeholder="Nhập họ tên"
+                    maxlength="255"
+                    @blur="validateField('name')" @input="errors.name = ''" />
+                  <div class="field-bottom">
+                    <p v-if="errors.name" class="field-error">{{ errors.name }}</p>
+                    <span v-else-if="(form.name?.length || 0) > 200" class="char-count"
+                      :class="{ warn: (form.name?.length || 0) > 230 }">
+                      {{ form.name?.length || 0 }}/255
+                    </span>
+                  </div>
                 </div>
 
                 <div class="ss-field">
                   <label class="ss-label">Email <span class="req">*</span></label>
-                  <input class="ss-input" v-model="form.email" type="email" placeholder="Nhập email" />
+                  <input class="ss-input" :class="{ 'input-error': errors.email }"
+                    v-model="form.email" type="email" placeholder="Nhập email"
+                    maxlength="255"
+                    @blur="validateField('email')" @input="errors.email = ''" />
+                  <p v-if="errors.email" class="field-error">{{ errors.email }}</p>
                 </div>
 
                 <div class="ss-field">
                   <label class="ss-label">Số điện thoại <span class="req">*</span></label>
-                  <input class="ss-input" v-model="form.phone" type="tel" placeholder="0xxxxxxxxx" />
+                  <input class="ss-input" :class="{ 'input-error': errors.phone }"
+                    v-model="form.phone" type="tel" placeholder="0xxxxxxxxx"
+                    maxlength="10"
+                    @blur="validateField('phone')" @input="errors.phone = ''" />
+                  <p v-if="errors.phone" class="field-error">{{ errors.phone }}</p>
                 </div>
 
                 <div class="ss-field">
@@ -284,7 +355,7 @@ function fmtDatetime(val) {
                 </div>
 
                 <div class="ss-field">
-                  <label class="ss-label">Tỉnh / Thành phố</label>
+                  <label class="ss-label">Tỉnh / Thành phố <span class="req">*</span></label>
                   <Select2KhachHang
                     v-model="form.province"
                     :options="provinces.map(p => ({ id: p.name, text: p.name }))"
@@ -293,13 +364,14 @@ function fmtDatetime(val) {
                     :search="true"
                     :allow-clear="true"
                     dropdown-parent-selector=""
-                    @change="changeProvince"
+                    @change="() => { changeProvince(); validateField('province'); errors.ward = '' }"
                   />
-                  <p v-if="addressError" class="ss-field-error">{{ addressError }}</p>
+                  <p v-if="errors.province" class="field-error">{{ errors.province }}</p>
+                  <p v-else-if="addressError" class="field-error">{{ addressError }}</p>
                 </div>
 
                 <div class="ss-field">
-                  <label class="ss-label">Phường / Xã</label>
+                  <label class="ss-label">Phường / Xã <span class="req">*</span></label>
                   <Select2KhachHang
                     v-model="form.ward"
                     :options="wards.map(w => ({ id: w.name, text: w.name }))"
@@ -308,12 +380,24 @@ function fmtDatetime(val) {
                     :search="true"
                     :allow-clear="true"
                     dropdown-parent-selector=""
+                    @change="validateField('ward')"
                   />
+                  <p v-if="errors.ward" class="field-error">{{ errors.ward }}</p>
                 </div>
 
                 <div class="ss-field full">
                   <label class="ss-label">Địa chỉ cụ thể</label>
-                  <input class="ss-input" v-model="form.street" placeholder="Số nhà, tên đường..." />
+                  <input class="ss-input" :class="{ 'input-error': errors.street }"
+                    v-model="form.street" placeholder="Số nhà, tên đường..."
+                    maxlength="500"
+                    @blur="validateField('street')" @input="errors.street = ''" />
+                  <div class="field-bottom">
+                    <p v-if="errors.street" class="field-error">{{ errors.street }}</p>
+                    <span v-else-if="(form.street?.length || 0) > 0" class="char-count"
+                      :class="{ warn: (form.street?.length || 0) > 450 }">
+                      {{ form.street?.length || 0 }}/500
+                    </span>
+                  </div>
                 </div>
 
               </div>
@@ -334,37 +418,47 @@ function fmtDatetime(val) {
                 <div class="ss-field">
                   <label class="ss-label">Mật khẩu hiện tại <span class="req">*</span></label>
                   <div class="pass-wrap">
-                    <input class="ss-input" :type="showOld ? 'text' : 'password'"
+                    <input class="ss-input" :class="{ 'input-error': errors.matKhauCu }"
+                      :type="showOld ? 'text' : 'password'"
                       v-model="passForm.matKhauCu" placeholder="Nhập mật khẩu hiện tại"
-                      autocomplete="current-password" />
+                      autocomplete="current-password"
+                      @blur="validateField('matKhauCu')" @input="errors.matKhauCu = ''" />
                     <button type="button" class="toggle-pass" @click="showOld = !showOld">
                       <i :class="showOld ? 'bi bi-eye-slash' : 'bi bi-eye'"></i>
                     </button>
                   </div>
+                  <p v-if="errors.matKhauCu" class="field-error">{{ errors.matKhauCu }}</p>
                 </div>
 
                 <div class="ss-field">
                   <label class="ss-label">Mật khẩu mới <span class="req">*</span></label>
                   <div class="pass-wrap">
-                    <input class="ss-input" :type="showNew ? 'text' : 'password'"
+                    <input class="ss-input" :class="{ 'input-error': errors.matKhauMoi }"
+                      :type="showNew ? 'text' : 'password'"
                       v-model="passForm.matKhauMoi" placeholder="Ít nhất 6 ký tự"
-                      autocomplete="new-password" />
+                      autocomplete="new-password"
+                      @blur="validateField('matKhauMoi')"
+                      @input="errors.matKhauMoi = ''; if (passForm.xacNhan) validateField('xacNhan')" />
                     <button type="button" class="toggle-pass" @click="showNew = !showNew">
                       <i :class="showNew ? 'bi bi-eye-slash' : 'bi bi-eye'"></i>
                     </button>
                   </div>
+                  <p v-if="errors.matKhauMoi" class="field-error">{{ errors.matKhauMoi }}</p>
                 </div>
 
                 <div class="ss-field">
                   <label class="ss-label">Xác nhận mật khẩu mới <span class="req">*</span></label>
                   <div class="pass-wrap">
-                    <input class="ss-input" :type="showCfm ? 'text' : 'password'"
+                    <input class="ss-input" :class="{ 'input-error': errors.xacNhan }"
+                      :type="showCfm ? 'text' : 'password'"
                       v-model="passForm.xacNhan" placeholder="Nhập lại mật khẩu mới"
-                      autocomplete="new-password" />
+                      autocomplete="new-password"
+                      @blur="validateField('xacNhan')" @input="errors.xacNhan = ''" />
                     <button type="button" class="toggle-pass" @click="showCfm = !showCfm">
                       <i :class="showCfm ? 'bi bi-eye-slash' : 'bi bi-eye'"></i>
                     </button>
                   </div>
+                  <p v-if="errors.xacNhan" class="field-error">{{ errors.xacNhan }}</p>
                 </div>
 
                 <div class="form-actions">
@@ -528,25 +622,40 @@ function fmtDatetime(val) {
   color: var(--ss-muted); cursor: pointer; font-size: 16px;
 }
 
-/* ── Toast ─────────────────────────────────────────────── */
-.profile-toast {
-  position: fixed; bottom: 28px; right: 28px; z-index: 9999;
-  display: flex; align-items: center; gap: 10px;
-  padding: 13px 20px; border-radius: 10px;
-  font-size: 13.5px; font-weight: 600;
-  box-shadow: 0 6px 20px rgba(0,0,0,.15);
-  max-width: 340px;
-}
-.profile-toast.success { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
-.profile-toast.error   { background: #fff1f1; color: #c62828; border: 1px solid #ef9a9a; }
-
-.toast-enter-active, .toast-leave-active { transition: all .3s ease; }
-.toast-enter-from, .toast-leave-to { opacity: 0; transform: translateY(16px); }
-
 .spin { display: inline-block; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .req { color: #e53e3e; }
+
+/* ── Validate inline ───────────────────────────────────── */
+.field-error {
+  margin: 4px 0 0;
+  font-size: 12px; color: #c62828;
+  display: flex; align-items: center; gap: 4px;
+}
+.field-error::before {
+  content: '\F332';
+  font-family: 'Bootstrap Icons';
+  font-size: 11px;
+}
+
+.input-error {
+  border-color: #e53e3e !important;
+  background: #fff8f8 !important;
+}
+
+/* ── Field bottom (lỗi + counter) ──────────────────────── */
+.field-bottom {
+  display: flex; justify-content: space-between;
+  align-items: flex-start; min-height: 18px;
+  margin-top: 4px;
+}
+
+.char-count {
+  font-size: 11px; color: var(--ss-muted);
+  margin-left: auto;
+}
+.char-count.warn { color: #d97706; font-weight: 600; }
 
 .ss-field-error {
   margin: 4px 0 0;
