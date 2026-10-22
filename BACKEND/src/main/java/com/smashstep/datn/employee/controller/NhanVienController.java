@@ -2,6 +2,7 @@ package com.smashstep.datn.employee.controller;
 
 import com.smashstep.datn.common.response.ApiResponse;
 import com.smashstep.datn.common.response.PageResponse;
+import com.smashstep.datn.employee.dto.DoiMatKhauRequest;
 import com.smashstep.datn.employee.dto.NhanVienRequest;
 import com.smashstep.datn.employee.dto.NhanVienResponse;
 import com.smashstep.datn.employee.dto.TrangThaiNhanVienRequest;
@@ -9,6 +10,8 @@ import com.smashstep.datn.employee.dto.VaiTroResponse;
 import com.smashstep.datn.employee.service.NhanVienService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -27,6 +30,41 @@ import java.util.List;
 public class NhanVienController {
 
     private final NhanVienService nhanVienService;
+
+    // =========================================================
+    // THÔNG TIN CÁ NHÂN (nhân viên đang đăng nhập)
+    // =========================================================
+    @GetMapping("/me")
+    public ApiResponse<NhanVienResponse> layThongTinCaNhan() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String username = auth != null ? auth.getName() : null;
+        return ApiResponse.ok(
+                "Lấy thông tin cá nhân thành công",
+                nhanVienService.layChiTiet(username)
+        );
+    }
+
+    @PutMapping("/me")
+    public ApiResponse<NhanVienResponse> capNhatCaNhan(
+            @Valid @RequestBody NhanVienRequest request
+    ) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String username = auth != null ? auth.getName() : null;
+        return ApiResponse.ok(
+                "Cập nhật thông tin cá nhân thành công",
+                nhanVienService.sua(username, request)
+        );
+    }
+
+    @PatchMapping("/me/doi-mat-khau")
+    public ApiResponse<Void> doiMatKhau(
+            @Valid @RequestBody DoiMatKhauRequest request
+    ) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String username = auth != null ? auth.getName() : null;
+        nhanVienService.doiMatKhau(username, request);
+        return ApiResponse.ok("Đổi mật khẩu thành công");
+    }
 
     // =========================================================
     // DANH SÁCH
