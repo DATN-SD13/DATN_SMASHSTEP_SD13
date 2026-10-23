@@ -3,15 +3,15 @@ import vue from '@vitejs/plugin-vue'
 
 const apiProxy = {
   '/api': {
-    target: 'http://localhost:8080',
+    target: 'http://127.0.0.1:8080',
     changeOrigin: true
   },
   '/uploads/products': {
-    target: 'http://localhost:8080',
+    target: 'http://127.0.0.1:8080',
     changeOrigin: true
   },
   '/uploads/avatars': {
-    target: 'http://localhost:8080',
+    target: 'http://127.0.0.1:8080',
     changeOrigin: true
   }
 }

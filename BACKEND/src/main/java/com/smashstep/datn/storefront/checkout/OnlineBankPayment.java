@@ -98,6 +98,8 @@ public class OnlineBankPayment {
     }
     public Payment details(HoaDon h) {
         String method = h.getIdPhuongThucThanhToan() == null ? null : h.getIdPhuongThucThanhToan().getMaPhuongThuc();
+        if ("VNPAY".equals(method) && OnlineOrderInventory.managed(em,h) && h.getNgayThanhToan()!=null)
+            return result(method,"PAID","Đã thanh toán bằng VNPAY",h,false);
         if (!bankOrder(em, h)) return result(method, "OTHER", "", h, false);
         var receipts = em.createQuery("select p from LichSuThanhToan p where p.idHoaDon.id=:id", LichSuThanhToan.class)
                 .setParameter("id", h.getId()).getResultList();
