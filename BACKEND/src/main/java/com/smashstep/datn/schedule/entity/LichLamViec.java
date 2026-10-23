@@ -33,7 +33,7 @@ public class LichLamViec {
     @Column(name = "trang_thai")
     private Integer trangThai;
 
-    @Column(name = "ghi_chu")
+    @Column(name = "ghi_chu", length = 500)
     private String ghiChu;
 
     @Column(name = "ngay_tao")
