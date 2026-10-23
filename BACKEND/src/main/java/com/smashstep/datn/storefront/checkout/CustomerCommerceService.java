@@ -4,6 +4,7 @@ import com.smashstep.datn.common.exception.AppException;
 import com.smashstep.datn.common.pricing.CurrentPriceService;
 import com.smashstep.datn.customer.entity.KhachHang;
 import com.smashstep.datn.invoice.entity.*;
+import com.smashstep.datn.invoice.rules.PosPriceSnapshot;
 import com.smashstep.datn.invoice.enums.TrangThaiHoaDon;
 import com.smashstep.datn.invoice.service.InvoiceCodeService;
 import com.smashstep.datn.payment.entity.PhuongThucThanhToan;
@@ -179,6 +180,9 @@ public class CustomerCommerceService {
             v.setSoLuong(v.getSoLuong()-line.quantity());
             var d=new HoaDonChiTiet(); d.setIdHoaDon(h); d.setIdSanPhamChiTiet(v); d.setSoLuong(line.quantity());
             d.setDonGia(line.variant().giaSauGiam()); d.setThanhTien(line.total()); d.setTrangThai(1); em.persist(d);
+            String priceRecord=PosPriceSnapshot.onlineLine(line.variant().variantId(),line.variant().giaGoc(),
+                    line.variant().giaSauGiam(),line.variant().phanTramGiam());
+            if(priceRecord!=null)history(h,priceRecord);
         }
         if(voucher.voucher()!=null) voucher.voucher().setSoLuongDaDung(Objects.requireNonNullElse(voucher.voucher().getSoLuongDaDung(),0)+1);
         if(voucher.assignment()!=null) voucher.assignment().setNgaySuDung(now);
@@ -195,8 +199,8 @@ public class CustomerCommerceService {
         var receiver=r.receiver();
         var existing=addresses.getAddresses(customer.getMaKhachHang()).stream().filter(a ->
                 same(a.getReceiverName(),receiver.name()) && same(a.getReceiverPhone(),receiver.phone())
-                && same(a.getProvince(),receiver.province()) && same(a.getWard(),receiver.ward())
-                && same(a.getDistrict(),receiver.district()) && same(a.getStreet(),receiver.street())).findFirst();
+                        && same(a.getProvince(),receiver.province()) && same(a.getWard(),receiver.ward())
+                        && same(a.getDistrict(),receiver.district()) && same(a.getStreet(),receiver.street())).findFirst();
         if(existing.isPresent()) {
             if(Boolean.TRUE.equals(r.makeDefaultAddress())) addresses.setDefaultAddress(customer.getMaKhachHang(),existing.get().getId());
             return;
@@ -276,7 +280,7 @@ public class CustomerCommerceService {
             String value=r.items().stream().sorted(Comparator.comparing(Item::variantId)).map(i->i.variantId()+":"+i.quantity()).reduce("",(a,b)->a+"|"+b)
                     +"|"+Objects.toString(r.voucherCode(),"")+"|"+r.paymentMethodId()+"|"+r.receiver()+"|"+r.note()+"|"+r.expectedTotal()
                     +(Boolean.TRUE.equals(r.saveAddress()) || Boolean.TRUE.equals(r.makeDefaultAddress())
-                            ? "|save:"+Boolean.TRUE.equals(r.saveAddress())+"|default:"+Boolean.TRUE.equals(r.makeDefaultAddress()) : "");
+                    ? "|save:"+Boolean.TRUE.equals(r.saveAddress())+"|default:"+Boolean.TRUE.equals(r.makeDefaultAddress()) : "");
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
         } catch(java.security.NoSuchAlgorithmException e) {throw new IllegalStateException(e);}
     }

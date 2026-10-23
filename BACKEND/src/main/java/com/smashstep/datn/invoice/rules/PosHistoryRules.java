@@ -14,18 +14,18 @@ public final class PosHistoryRules {
     public static boolean danhRieng(String note) {
         return note != null
                 && (note.startsWith(KY_THUAT)
-                        || note.startsWith(HOAN_TAT)
-                        || note.startsWith(THAO_TAC_POS)
-                        || note.startsWith(com.smashstep.datn.storefront.checkout.OnlineOrderInventory.PREFIX)
-                        || note.startsWith(com.smashstep.datn.storefront.checkout.VnpayOrderService.PREFIX));
+                || note.startsWith(HOAN_TAT)
+                || note.startsWith(THAO_TAC_POS)
+                || note.startsWith(com.smashstep.datn.storefront.checkout.OnlineOrderInventory.PREFIX)
+                || note.startsWith(com.smashstep.datn.storefront.checkout.VnpayOrderService.PREFIX));
     }
 
     public static boolean hienThi(HoaDon invoice, LichSuHoaDon row) {
         if (row.getGhiChu() != null && (row.getGhiChu().startsWith(com.smashstep.datn.storefront.checkout.OnlineOrderInventory.PREFIX)
                 || row.getGhiChu().startsWith(com.smashstep.datn.storefront.checkout.VnpayOrderService.PREFIX))) return false;
-        if (!PosDraftRules.managed(invoice)) return true;
         String note = row.getGhiChu();
         if (PosPriceSnapshot.metadata(note)) return false;
+        if (!PosDraftRules.managed(invoice)) return true;
         if (note != null && (note.startsWith(KY_THUAT) || note.startsWith(THAO_TAC_POS)))
             return false;
         // Cả giỏ cũ trước bản cập nhật: trạng thái 8 là mốc giỏ chờ, không phải thao tác quản lý

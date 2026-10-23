@@ -3,6 +3,7 @@ package com.smashstep.datn.storefront.checkout;
 import com.smashstep.datn.common.exception.AppException;
 import com.smashstep.datn.customer.entity.KhachHang;
 import com.smashstep.datn.invoice.entity.*;
+import com.smashstep.datn.invoice.rules.PosPriceSnapshot;
 import com.smashstep.datn.invoice.service.InvoiceCodeService;
 import com.smashstep.datn.payment.entity.*;
 import com.smashstep.datn.product.service.KhoaGhiSanPham;
@@ -104,6 +105,9 @@ public class VnpayOrderService {
             var detail = new HoaDonChiTiet(); detail.setIdHoaDon(invoice); detail.setIdSanPhamChiTiet(variant);
             detail.setSoLuong(line.quantity()); detail.setDonGia(line.variant().giaSauGiam());
             detail.setThanhTien(line.total()); detail.setTrangThai(1); em.persist(detail);
+            String priceRecord=PosPriceSnapshot.onlineLine(line.variant().variantId(),line.variant().giaGoc(),
+                    line.variant().giaSauGiam(),line.variant().phanTramGiam());
+            if(priceRecord!=null)history(invoice,priceRecord,now);
         }
         if (voucher.voucher() != null)
             voucher.voucher().setSoLuongDaDung(Math.addExact(Objects.requireNonNullElse(voucher.voucher().getSoLuongDaDung(), 0), 1));
