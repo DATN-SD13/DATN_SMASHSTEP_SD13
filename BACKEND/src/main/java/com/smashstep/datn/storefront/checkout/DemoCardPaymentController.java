@@ -20,6 +20,7 @@ public class DemoCardPaymentController {
     @PostMapping("/quote") public ApiResponse<CommerceDtos.Quote> quote(Authentication auth,@Valid @RequestBody CommerceDtos.Request request) { return ApiResponse.ok(demo.quote(id(auth),request)); }
     @PostMapping public ApiResponse<DemoCardPayment.View> create(Authentication auth,@Valid @RequestBody CommerceDtos.Request request) { return ApiResponse.ok(demo.create(id(auth),request)); }
     @GetMapping("/{code}") public ApiResponse<DemoCardPayment.View> get(Authentication auth,@PathVariable String code) { return ApiResponse.ok(demo.get(id(auth),code)); }
+    @PostMapping("/{code}/account") public ApiResponse<DemoCardPayment.View> account(Authentication auth,@PathVariable String code,@Valid @RequestBody DemoCardPayment.Account account) { return ApiResponse.ok(demo.account(id(auth),code,account)); }
     @PostMapping("/{code}/card") public ApiResponse<DemoCardPayment.View> card(Authentication auth,@PathVariable String code,@Valid @RequestBody DemoCardPayment.Card card) { return ApiResponse.ok(demo.card(id(auth),code,card)); }
     @PostMapping("/{code}/otp") public ApiResponse<DemoCardPayment.View> otp(Authentication auth,@PathVariable String code,@Valid @RequestBody DemoCardPayment.Otp otp) { return ApiResponse.ok(demo.otp(id(auth),code,otp)); }
     @PostMapping("/{code}/cancel") public ApiResponse<DemoCardPayment.View> cancel(Authentication auth,@PathVariable String code) { return ApiResponse.ok(demo.cancel(id(auth),code)); }

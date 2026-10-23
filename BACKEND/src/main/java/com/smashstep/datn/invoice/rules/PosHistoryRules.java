@@ -16,11 +16,13 @@ public final class PosHistoryRules {
                 && (note.startsWith(KY_THUAT)
                         || note.startsWith(HOAN_TAT)
                         || note.startsWith(THAO_TAC_POS)
-                        || note.startsWith(com.smashstep.datn.storefront.checkout.OnlineOrderInventory.PREFIX));
+                        || note.startsWith(com.smashstep.datn.storefront.checkout.OnlineOrderInventory.PREFIX)
+                        || note.startsWith(com.smashstep.datn.storefront.checkout.VnpayOrderService.PREFIX));
     }
 
     public static boolean hienThi(HoaDon invoice, LichSuHoaDon row) {
-        if (row.getGhiChu() != null && row.getGhiChu().startsWith(com.smashstep.datn.storefront.checkout.OnlineOrderInventory.PREFIX)) return false;
+        if (row.getGhiChu() != null && (row.getGhiChu().startsWith(com.smashstep.datn.storefront.checkout.OnlineOrderInventory.PREFIX)
+                || row.getGhiChu().startsWith(com.smashstep.datn.storefront.checkout.VnpayOrderService.PREFIX))) return false;
         if (!PosDraftRules.managed(invoice)) return true;
         String note = row.getGhiChu();
         if (PosPriceSnapshot.metadata(note)) return false;

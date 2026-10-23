@@ -17,12 +17,13 @@ onMounted(() => { load(); timer = setInterval(load, 15000); window.addEventListe
 onBeforeUnmount(() => { disposed = true; clearInterval(timer); window.removeEventListener('focus', load) })
 </script>
 <template>
-  <section v-if="rows.length || error" class="demo-orders" aria-labelledby="paid-demo-heading">
+  <section class="demo-orders" aria-labelledby="paid-demo-heading">
     <header><div><span class="demo-badge">GIẢ LẬP</span><h2 id="paid-demo-heading">Đơn thử đã thanh toán ({{ rows.length }})</h2></div><button type="button" :disabled="loading" @click="load">{{ loading ? 'Đang tải…' : 'Làm mới' }}</button></header>
-    <p>Chỉ hiện sau khi thẻ thử và OTP đã được xác thực. Không phải hóa đơn thật, không cộng doanh thu, không giao hàng. Dữ liệu giữ tối đa 24 giờ và mất khi backend khởi động lại.</p>
+    <p>Chỉ hiện sau khi giao dịch thử được xác nhận. VNPAY được xác minh qua IPN hoặc API truy vấn giao dịch. Không phải hóa đơn thật, không cộng doanh thu, không giao hàng. Đơn đã thanh toán được lưu riêng và vẫn còn khi backend khởi động lại.</p>
     <p v-if="error" class="demo-error" role="alert">{{ error }}</p>
+    <p v-else-if="!rows.length" role="status">{{ loading ? 'Đang tải đơn thử…' : 'Chưa có đơn thử thanh toán thành công. Đơn chưa thanh toán, bị hủy hoặc hết hạn sẽ không xuất hiện ở đây.' }}</p>
     <details v-for="order in rows" :key="order.code" class="demo-order">
-      <summary><span><strong>{{ order.receiver?.name }}</strong><small>{{ order.code }}</small></span><span class="demo-amount">{{ money(order.amount) }}<small>Đã thanh toán thử ✓</small></span></summary>
+      <summary><span><strong>{{ order.receiver?.name }}</strong><small>{{ order.channel === 'VNPAY_SANDBOX' ? (order.confirmationMethod === 'QUERYDR' ? 'VNPAY Sandbox · API đã xác minh' : 'VNPAY Sandbox · IPN đã xác minh') : 'Tài khoản / thẻ thử · OTP đã xác thực' }}</small><small>{{ order.code }}</small></span><span class="demo-amount">{{ money(order.amount) }}<small>Đã thanh toán thử ✓</small></span></summary>
       <dl><dt>Thời gian</dt><dd>{{ new Date(order.paidAt).toLocaleString('vi-VN') }}</dd><dt>Giao dịch thử</dt><dd>{{ order.reference }}</dd><dt>Người nhận minh họa</dt><dd>{{ order.receiver?.name }} · {{ order.receiver?.phone }}</dd><dt>Địa chỉ minh họa</dt><dd>{{ [order.receiver?.street, order.receiver?.ward, order.receiver?.district, order.receiver?.province].filter(Boolean).join(', ') }}</dd></dl>
       <ul><li v-for="line in order.lines" :key="line.variant.variantId"><span>{{ line.variant.name }} · {{ line.variant.color }} / {{ line.variant.size }} × {{ line.quantity }}</span><strong>{{ money(line.total) }}</strong></li></ul>
       <div class="demo-totals"><span>Tạm tính: {{ money(order.subtotal) }}</span><span>Voucher minh họa: −{{ money(order.discount) }}</span><span>Vận chuyển: {{ money(order.shipping) }}</span></div>

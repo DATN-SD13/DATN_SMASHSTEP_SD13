@@ -831,12 +831,26 @@ public class SalesService {
         return new CheckoutVoucher(evaluated.phieuGiamGia(), evaluated.phieuKhachHang(), evaluated.tienGiam());
     }
 
+    /** A verified prepaid order keeps the voucher quote time; all eligibility/capacity locks still apply. */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public CheckoutVoucher kiemTraPhieuDaThanhToan(KhachHang customer, BigDecimal subtotal, String code, LocalDateTime quotedAt) {
+        if (quotedAt == null || quotedAt.isAfter(LocalDateTime.now().plusMinutes(1)))
+            throw AppException.badRequest("Thời điểm báo giá không hợp lệ");
+        var evaluated = kiemTraPhieu(code, customer, subtotal, true, quotedAt, true);
+        return new CheckoutVoucher(evaluated.phieuGiamGia(), evaluated.phieuKhachHang(), evaluated.tienGiam());
+    }
+
+    private VoucherEvaluation kiemTraPhieu(String ma, KhachHang khachHang, BigDecimal tongTienHang, boolean khoa, LocalDateTime thoiDiem) {
+        return kiemTraPhieu(ma, khachHang, tongTienHang, khoa, thoiDiem, false);
+    }
+
     private VoucherEvaluation kiemTraPhieu(
             String ma,
             KhachHang khachHang,
             BigDecimal tongTienHang,
             boolean khoa,
-            LocalDateTime thoiDiem) {
+            LocalDateTime thoiDiem,
+            boolean giuThoiDiemBaoGia) {
         PhieuGiamGia phieuGiamGia = null;
         PhieuGiamGiaKhachHang phieuKhachHang = null;
         BigDecimal tienGiam = SO_KHONG;
@@ -854,7 +868,7 @@ public class SalesService {
                 throw AppException.badRequest("Mã phiếu giảm giá không hợp lệ");
             phieuGiamGia = khopDuLieu.get(0);
             if (khoa) entityManager.refresh(phieuGiamGia, LockModeType.PESSIMISTIC_WRITE);
-            if (khoa) thoiDiem = LocalDateTime.now();
+            if (khoa && !giuThoiDiemBaoGia) thoiDiem = LocalDateTime.now();
             if ((phieuGiamGia.getSoLuongDaDung() != null && phieuGiamGia.getSoLuongDaDung() < 0)
                     || (phieuGiamGia.getSoLuong() != null && phieuGiamGia.getSoLuong() <= 0)
                     || (phieuGiamGia.getGiaTriToiThieu() != null

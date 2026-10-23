@@ -73,6 +73,10 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 // Public storefront exposes read-only catalogue endpoints.
                 .requestMatchers(HttpMethod.GET, "/api/store/**").permitAll()
+                // These callbacks validate VNPAY HMAC; browser return never records payment.
+                .requestMatchers(HttpMethod.GET, "/api/payments/vnpay/ipn", "/api/payments/vnpay/return-check").permitAll()
+                // A signed browser proof may request a server-to-server QueryDr; it cannot assign payment status.
+                .requestMatchers(HttpMethod.POST, "/api/payments/vnpay/reconcile-return").permitAll()
                 // Auth endpoints — public
                 .requestMatchers("/api/auth/**").permitAll()
                 // Health check — public
