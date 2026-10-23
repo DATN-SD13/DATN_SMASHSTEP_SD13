@@ -17,12 +17,16 @@ public final class PosHistoryRules {
                 || note.startsWith(HOAN_TAT)
                 || note.startsWith(THAO_TAC_POS)
                 || note.startsWith(com.smashstep.datn.storefront.checkout.OnlineOrderInventory.PREFIX)
-                || note.startsWith(com.smashstep.datn.storefront.checkout.VnpayOrderService.PREFIX));
+                || note.startsWith(com.smashstep.datn.storefront.checkout.VnpayOrderService.PREFIX)
+                || com.smashstep.datn.storefront.checkout.OrderEmailNotifications.technical(note)
+                || note.startsWith(com.smashstep.datn.storefront.checkout.OrderLocation.PREFIX));
     }
 
     public static boolean hienThi(HoaDon invoice, LichSuHoaDon row) {
         if (row.getGhiChu() != null && (row.getGhiChu().startsWith(com.smashstep.datn.storefront.checkout.OnlineOrderInventory.PREFIX)
-                || row.getGhiChu().startsWith(com.smashstep.datn.storefront.checkout.VnpayOrderService.PREFIX))) return false;
+                || row.getGhiChu().startsWith(com.smashstep.datn.storefront.checkout.VnpayOrderService.PREFIX)
+                || com.smashstep.datn.storefront.checkout.OrderEmailNotifications.technical(row.getGhiChu())
+                || row.getGhiChu().startsWith(com.smashstep.datn.storefront.checkout.OrderLocation.PREFIX))) return false;
         String note = row.getGhiChu();
         if (PosPriceSnapshot.metadata(note)) return false;
         if (!PosDraftRules.managed(invoice)) return true;

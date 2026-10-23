@@ -49,6 +49,7 @@ public class HoaDonService {
     private final NhanVienRepository nhanVienRepository;
     @jakarta.persistence.PersistenceContext private jakarta.persistence.EntityManager entityManager;
     @org.springframework.beans.factory.annotation.Autowired private InvoiceCodeService dichVuMaHoaDon;
+    @org.springframework.beans.factory.annotation.Autowired private com.smashstep.datn.storefront.checkout.OrderEmailNotifications orderMail;
 
     @Transactional(readOnly = true)
     public PageResponse<HoaDonListDto> timKiem(
@@ -273,6 +274,7 @@ public class HoaDonService {
                         : request.getGhiChu());
         lichSu.setNgayTao(LocalDateTime.now());
         lichSuHoaDonRepository.save(lichSu);
+        if(orderMail!=null && !java.util.Objects.equals(trangThaiHienTai,hoaDon.getTrangThai()))orderMail.queueStatus(hoaDon);
         return chiTiet(ma);
     }
 
@@ -280,6 +282,7 @@ public class HoaDonService {
     public HoaDonDetailDto xuLyGiaoThatBai(String ma, com.smashstep.datn.invoice.dto.XuLyGiaoThatBaiDto request) {
         dichVuMaHoaDon.lockInvoiceCreation();
         var h=hoaDonRepository.findByMaHoaDonForUpdate(ma).orElseThrow(() -> AppException.notFound("Không tìm thấy hóa đơn"));
+        Integer previousStatus=h.getTrangThai();
         Long actor=com.smashstep.datn.sales.service.PosActor.employeeId();
         var employee=nhanVienRepository.findById(actor).orElseThrow(() -> AppException.forbidden("Không tìm thấy nhân viên"));
         if (!Integer.valueOf(1).equals(employee.getTrangThai())) throw AppException.forbidden("Nhân viên không hoạt động");
@@ -340,6 +343,7 @@ public class HoaDonService {
             }
         }
         h.setNgayCapNhat(LocalDateTime.now());
+        if(orderMail!=null && !java.util.Objects.equals(previousStatus,h.getTrangThai()))orderMail.queueStatus(h);
         entityManager.flush();
         return chiTiet(ma);
     }
