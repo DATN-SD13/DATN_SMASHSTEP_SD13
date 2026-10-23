@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import api from '../utils/api'
 import { showError } from '../utils/feedback'
+import AdminAiWidget from '../modules/admin/admin-ai/components/AdminAiWidget.vue'
 
 const route     = useRoute()
 const router    = useRouter()
@@ -178,6 +179,7 @@ const nav = [
     ]
   },
   { label: 'Quản lý khách hàng', icon: 'bi-people', to: '/khach-hang' },
+  { label: 'Hỗ trợ trực tuyến', icon: 'bi-chat-dots', to: '/ho-tro-truc-tuyen' },
   { label: 'Quản lý nhân viên', icon: 'bi-person-badge', to: '/nhan-vien', adminOnly: true },
   {
     key: 'schedule', label: 'Quản lý lịch làm', icon: 'bi-calendar-week', adminOnly: true,
@@ -288,6 +290,8 @@ const crumbs = computed(() => ({
       <slot />
     </section>
   </div>
+
+  <AdminAiWidget v-if="authStore.isAdmin" />
 
   <!-- Panel ca làm việc hôm nay -->
   <Teleport to="body">
