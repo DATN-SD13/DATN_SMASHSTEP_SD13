@@ -80,6 +80,7 @@ const router = createRouter({
     { path: '/thiet-lap-bien-the', redirect: '/thuoc-tinh' },
 
     { path: '/khach-hang',      component: CustomerList, meta: { title: 'Khách hàng', requiresAuth: true, userType: 'NHAN_VIEN' } },
+    { path: '/ho-tro-truc-tuyen', component: () => import('../modules/admin/chat/views/ChatSupportView.vue'), meta: { title: 'Hỗ trợ trực tuyến', requiresAuth: true, userType: 'NHAN_VIEN' } },
     { path: '/khach-hang/them', component: AddCustomer,  meta: { title: 'Thêm khách hàng', parent: { label: 'Khách hàng', to: '/khach-hang' }, requiresAuth: true, userType: 'NHAN_VIEN' } },
 
     { path: '/nhan-vien',       component: EmployeeList,   meta: { title: 'Nhân viên', requiresAuth: true, userType: 'NHAN_VIEN', role: 'ADMIN' } },

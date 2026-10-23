@@ -27,10 +27,12 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/lich-lam-viec")
 @RequiredArgsConstructor
+@org.springframework.security.access.prepost.PreAuthorize("hasRole('ADMIN')")
 public class LichLamViecController {
 
     private final LichLamViecService lichLamViecService;
     private final VaiTroRepository   vaiTroRepository;
+    private final com.smashstep.datn.schedule.service.LichLamViecImportService nhapExcel;
 
     /** Danh sách vai trò (cho bộ lọc lịch sử) */
     @GetMapping("/vai-tro")
@@ -62,12 +64,14 @@ public class LichLamViecController {
     }
 
     /** Ca làm việc hôm nay của nhân viên đang đăng nhập */
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('ADMIN','STAFF')")
     @GetMapping("/ca-hom-nay")
     public ApiResponse<List<LichLamViecResponse>> getCaHomNay(
             org.springframework.security.core.Authentication authentication
     ) {
-        com.smashstep.datn.auth.security.JwtAuthFilter.AuthDetails details =
-                (com.smashstep.datn.auth.security.JwtAuthFilter.AuthDetails) authentication.getDetails();
+        if(authentication==null||!(authentication.getDetails() instanceof com.smashstep.datn.auth.security.JwtAuthFilter.AuthDetails details)
+                ||!"NHAN_VIEN".equals(details.userType())||details.userId()==null)
+            throw com.smashstep.datn.common.exception.AppException.forbidden("Cần đăng nhập tài khoản nhân viên");
         return ApiResponse.ok("Ca hôm nay",
                 lichLamViecService.getCaHomNay(details.userId()));
     }
@@ -189,4 +193,24 @@ public class LichLamViecController {
     ) throws IOException {
         return ApiResponse.ok("Import hoàn tất", lichLamViecService.importExcel(file));
     }
+    @PostMapping("/{id}/thay-nhan-vien")
+    public ApiResponse<LichLamViecResponse> thayNhanVien(@PathVariable Long id,
+                                                         @Valid @RequestBody com.smashstep.datn.schedule.dto.ThayNhanVienRequest body){
+        return ApiResponse.ok("Đã thay nhân viên",lichLamViecService.thayNhanVien(id,body.maNhanVien()));
+    }
+    @PostMapping(value="/import-excel/preview",consumes=MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<com.smashstep.datn.schedule.dto.LichLamViecImportDto.XemTruoc> preview(@RequestParam("file") MultipartFile file){
+        return ApiResponse.ok("Đã kiểm tra dữ liệu",nhapExcel.xemTruoc(file));
+    }
+    @PostMapping("/import-excel/confirm")
+    public ApiResponse<com.smashstep.datn.schedule.dto.LichLamViecImportDto.KetQua> confirm(
+            @Valid @RequestBody com.smashstep.datn.schedule.dto.LichLamViecImportDto.XacNhan body){
+        return ApiResponse.ok("Nhập lịch thành công",nhapExcel.xacNhan(body));
+    }
+    @ExceptionHandler(com.smashstep.datn.schedule.exception.LichLamViecImportException.class)
+    public ResponseEntity<ApiResponse<com.smashstep.datn.schedule.dto.LichLamViecImportDto.XemTruoc>> importError(
+            com.smashstep.datn.schedule.exception.LichLamViecImportException error){
+        return ResponseEntity.status(error.getStatus()).body(ApiResponse.error(error.getMessage(),error.getData()));
+    }
+
 }

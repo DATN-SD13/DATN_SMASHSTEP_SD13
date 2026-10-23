@@ -142,6 +142,11 @@ function fillProfile(data) {
     street:   profile.street,
     image:    profile.image
   })
+  // Đồng bộ dữ liệu đã lưu từ BE cho header và lần tải trang tiếp theo.
+  if (authStore.user) {
+    authStore.user = { ...authStore.user, name: profile.name, avatar: profile.image }
+    localStorage.setItem('ss_user', JSON.stringify(authStore.user))
+  }
 }
 
 // ── Avatar upload ──────────────────────────────────────────
@@ -189,9 +194,6 @@ async function saveInfo() {
     })
     const data = res.data?.data ?? res.data ?? res
     fillProfile(data)
-    // Cập nhật tên trong store
-    authStore.user = { ...authStore.user, name: data.name, avatar: data.image }
-    localStorage.setItem('ss_user', JSON.stringify(authStore.user))
     showSuccess('Cập nhật thông tin thành công!')
   } catch (e) {
     showError(e.response?.data?.message || 'Lưu thất bại.')
