@@ -39,6 +39,28 @@ public class LichLamViecController {
                 vaiTroRepository.findByTrangThaiOrderByIdAsc(1));
     }
 
+    /**
+     * Danh sách mã nhân viên đã có lịch trong ca + ngày chỉ định.
+     * Dùng để disable NV đã trùng ca khi thay thế.
+     */
+    @GetMapping("/nhan-vien-trong-ca")
+    public ApiResponse<List<String>> getNhanVienTrongCa(
+            @RequestParam Long caId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate ngayLam) {
+        return ApiResponse.ok("OK", lichLamViecService.getMaNhanVienTrongCa(caId, ngayLam));
+    }
+
+    /**
+     * Lịch tương lai cần xếp lại — nhân viên bị khóa còn có lịch mở.
+     * Chỉ ADMIN mới xem được.
+     */
+    @org.springframework.security.access.prepost.PreAuthorize("hasRole('ADMIN')")
+    @GetMapping("/nhan-vien-bi-khoa")
+    public ApiResponse<List<LichLamViecResponse>> getLichNhanVienBiKhoa() {
+        return ApiResponse.ok("Lấy lịch nhân viên bị khóa thành công",
+                lichLamViecService.getLichCuaNhanVienBiKhoa());
+    }
+
     /** Ca làm việc hôm nay của nhân viên đang đăng nhập */
     @GetMapping("/ca-hom-nay")
     public ApiResponse<List<LichLamViecResponse>> getCaHomNay(

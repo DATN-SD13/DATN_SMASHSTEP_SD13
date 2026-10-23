@@ -44,6 +44,24 @@ public class LichLamViecService {
     private static final DateTimeFormatter DATE_FMT     = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final DateTimeFormatter DATETIME_FMT = DateTimeFormatter.ofPattern("HH:mm\ndd/MM/yyyy");
 
+    // ── Danh sách mã NV đã có lịch trong ca+ngày ─────────
+    public List<String> getMaNhanVienTrongCa(Long caId, LocalDate ngayLam) {
+        return lichLamViecRepository.findMaNhanVienTrongCa(caId, ngayLam);
+    }
+
+    // ── Lịch cần xếp lại (nhân viên bị khóa) ─────────────
+    /**
+     * Trả về các lịch tương lai còn mở (trangThai 0 hoặc 1) của nhân viên bị khóa.
+     * Admin dùng để biết cần xếp lại ca cho ai.
+     */
+    public List<LichLamViecResponse> getLichCuaNhanVienBiKhoa() {
+        return lichLamViecRepository
+                .findLichCuaNhanVienBiKhoa(LocalDate.now())
+                .stream()
+                .map(l -> toResponse(l, false))
+                .toList();
+    }
+
     // ── Ca hôm nay của nhân viên ──────────────────────────
     public List<LichLamViecResponse> getCaHomNay(Long nhanVienId) {
         LocalDate today = LocalDate.now();

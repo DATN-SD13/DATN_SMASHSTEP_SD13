@@ -4,6 +4,8 @@ import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ProductShell from '../components/ProductShell.vue'
 import ProductFilter from '../components/ProductFilter.vue'
+import SanPhamImportModal from '../components/SanPhamImportModal.vue'
+import { taiMauSanPham } from '../services/sanPhamImportService'
 import ProductTable from '../components/ProductTable.vue'
 import ProductPagination from '../components/ProductPagination.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
@@ -13,6 +15,13 @@ import { productAttributeService, attributeTypes } from '../services/productAttr
 
 const route = useRoute(), router = useRouter()
 const options = ref({}), codeBusy = ref(false)
+const showImport = ref(false), templateBusy = ref(false)
+async function downloadImportTemplate() {
+  if (templateBusy.value) return
+  templateBusy.value = true; error.value = ''
+  try { await taiMauSanPham() } catch (e) { error.value = errorMessage(e) } finally { templateBusy.value = false }
+}
+function importedProducts(value) { success.value = `Đã nhập ${value.soSanPham} sản phẩm và ${value.soBienThe} biến thể.`; load(0) }
 const { confirmation, confirming, confirmError, askConfirmation, cancelConfirmation, confirmAction } = useConfirmation()
 const optionsBusy = ref(false)
 const optionsError = ref('')
@@ -101,7 +110,7 @@ onBeforeUnmount(() => { loadVersion++ })
 
 <template>
   <ProductShell title="Danh sách sản phẩm" description="Quản lý sản phẩm, thuộc tính và tồn kho theo biến thể." :error="error || optionsError" :success="success">
-    <template #actions><RouterLink class="p-btn" to="/bien-the-san-pham"><i class="bi bi-layers"></i> Biến thể</RouterLink><RouterLink class="p-btn" to="/thuoc-tinh"><i class="bi bi-sliders"></i> Thuộc tính</RouterLink><button type="button" class="p-btn primary" :disabled="codeBusy || confirming" @click="openCreate"><i class="bi bi-plus-lg"></i>{{ codeBusy ? 'Đang lấy mã...' : 'Thêm sản phẩm' }}</button></template>
+    <template #actions><button type="button" class="p-btn" :disabled="templateBusy || confirming" @click="downloadImportTemplate"><i class="bi bi-download"></i>{{ templateBusy ? 'Đang tải…' : 'Tải file mẫu' }}</button><button type="button" class="p-btn" :disabled="confirming || codeBusy" @click="showImport = true"><i class="bi bi-file-earmark-excel"></i> Nhập Excel</button><RouterLink class="p-btn" to="/bien-the-san-pham"><i class="bi bi-layers"></i> Biến thể</RouterLink><RouterLink class="p-btn" to="/thuoc-tinh"><i class="bi bi-sliders"></i> Thuộc tính</RouterLink><button type="button" class="p-btn primary" :disabled="codeBusy || confirming" @click="openCreate"><i class="bi bi-plus-lg"></i>{{ codeBusy ? 'Đang lấy mã...' : 'Thêm sản phẩm' }}</button></template>
     <ProductFilter :options="options" :busy="busy || confirming" :options-busy="optionsBusy" @search="search" />
     <div v-if="optionsError" class="p-filter-actions">
       <button class="p-btn" :disabled="optionsBusy" @click="loadOptions">Tải lại bộ lọc</button>
@@ -117,6 +126,7 @@ onBeforeUnmount(() => { loadVersion++ })
         <ProductPagination :page="page" :busy="busy || confirming" @change="load($event)" @size="load(0, $event)" />
       </template>
     </section>
+    <SanPhamImportModal v-if="showImport" @close="showImport = false" @imported="importedProducts" />
     <ConfirmModal v-bind="confirmation || {}" :show="!!confirmation" :loading="confirming" :error="confirmError" @confirm="confirmAction" @cancel="cancelConfirmation" />
   </ProductShell>
 </template>

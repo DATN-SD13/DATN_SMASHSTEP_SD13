@@ -1,4 +1,4 @@
-package com.smashstep.datn.employee.exception;
+package com.smashstep.datn.employee.exeption;
 import com.smashstep.datn.employee.dto.NhanVienImportDto;
 public class NhanVienImportException extends RuntimeException {
     private final NhanVienImportDto.Preview preview;

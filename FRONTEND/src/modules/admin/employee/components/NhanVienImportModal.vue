@@ -1,10 +1,11 @@
 <script setup>
-import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import employeeService from '../services/employeeService'
 import { useAuthStore } from '../../../../stores/auth'
 const emit = defineEmits(['close', 'imported'])
 const auth = useAuthStore()
 const file = ref(null), input = ref(null), preview = ref(null), result = ref(null), history = ref([])
+const historyPanel = ref(null), bodyPanel = ref(null)
 const error = ref(''), previewBusy = ref(false), confirmBusy = ref(false), retryBusy = ref(false), historyBusy = ref(false)
 const busy = computed(() => previewBusy.value || confirmBusy.value || retryBusy.value)
 const canConfirm = computed(() => preview.value?.totalRows > 0 && preview.value.invalidRows === 0 && !busy.value && !result.value)
@@ -31,6 +32,13 @@ async function refreshResult(id = result.value?.batchId, quiet = false) {
     if (!quiet) error.value = message(e)
     if (result.value?.emailPending > 0) pollTimer = setTimeout(() => refreshResult(id, true), 5000)
   }
+}
+async function viewHistory(id) {
+  await refreshResult(id)
+  if (!alive || result.value?.batchId !== id) return
+  await nextTick()
+  if (historyPanel.value) historyPanel.value.open = false
+  bodyPanel.value?.scrollTo({ top: 0, behavior: 'smooth' })
 }
 async function loadHistory() {
   historyBusy.value = true
@@ -87,7 +95,7 @@ onBeforeUnmount(() => { alive = false; clearTimeout(pollTimer); ++refreshVersion
   <div class="import-overlay" @click.self="!busy && emit('close')">
     <section class="import-modal" role="dialog" aria-modal="true" aria-labelledby="employee-import-title">
       <header class="import-head"><div class="ss-head"><span class="ss-head-icon"><i class="bi bi-file-earmark-excel"></i></span><div><h2 id="employee-import-title">Nhập Excel nhân viên</h2><p>Xem trước và kiểm tra toàn bộ dữ liệu trước khi tạo tài khoản.</p></div></div><button type="button" class="ss-icon-btn" aria-label="Đóng nhập Excel" :disabled="busy" @click="emit('close')"><i class="bi bi-x-lg"></i></button></header>
-      <div class="import-body">
+      <div ref="bodyPanel" class="import-body">
         <p v-if="error" class="import-alert error" role="alert">{{ error }}</p>
         <div v-if="!result" class="import-file"><label for="employee-import-file">Chọn file Excel (.xlsx, .xls · tối đa 5 MB / 500 dòng)</label><div><input id="employee-import-file" ref="input" type="file" accept=".xlsx,.xls" :disabled="busy" @change="chooseFile"/><button type="button" class="ss-btn" :disabled="!file || busy" @click="readFile">{{ previewBusy ? 'Đang kiểm tra…' : 'Xem trước dữ liệu' }}</button></div><small>Dùng file mẫu. Email không được trùng; SĐT lưu dạng Text để giữ số 0 đầu. Ngày sinh dùng dd/MM/yyyy.</small></div>
         <template v-if="preview">
@@ -102,7 +110,20 @@ onBeforeUnmount(() => { alive = false; clearTimeout(pollTimer); ++refreshVersion
           <div class="import-result-actions"><button type="button" class="ss-btn" :disabled="busy" @click="refreshResult()"><i class="bi bi-arrow-clockwise"></i> Cập nhật kết quả</button><button v-if="result.emailFailed || result.emailPending" type="button" class="ss-btn primary" :disabled="busy" @click="retryEmails">{{ retryBusy ? 'Đang yêu cầu…' : 'Gửi tiếp / thử lại email lỗi' }}</button></div>
           <div class="import-table"><table class="ss-table"><thead><tr><th>Dòng</th><th>Mã NV</th><th>Họ tên</th><th>Email</th><th>Kết quả email</th><th>Chi tiết</th></tr></thead><tbody><tr v-for="row in result.rows" :key="row.mailId"><td>{{ row.rowNumber }}</td><td class="ss-code">{{ row.employeeCode }}</td><td>{{ row.name }}</td><td>{{ row.email }}</td><td><span :class="row.state === 'SENT' ? 'valid' : row.state === 'FAILED' ? 'invalid' : ''">{{ stateLabel(row.state) }}</span></td><td>{{ row.error || '—' }}</td></tr></tbody></table></div>
         </template>
-        <section class="import-history"><div><h3>Lịch sử nhập của bạn</h3><button type="button" class="ss-btn" :disabled="busy || historyBusy" @click="loadHistory">Tải lại lịch sử</button></div><p v-if="historyBusy" class="ss-hint">Đang tải…</p><p v-else-if="!history.length" class="ss-hint">Chưa có lô nhập nào.</p><button v-for="batch in history" :key="batch.batchId" type="button" class="import-history-item" :disabled="busy" @click="refreshResult(batch.batchId)"><span>{{ dateLabel(batch.createdAt) }} · {{ batch.createdCount }} nhân viên</span><span>Đã gửi {{ batch.emailSent }} · Lỗi {{ batch.emailFailed }} · Chờ {{ batch.emailPending }}</span></button></section>
+        <details ref="historyPanel" class="import-history">
+          <summary class="import-history-summary">
+            <span class="import-history-title"><i class="bi bi-clock-history" aria-hidden="true"></i> Lịch sử nhập của bạn <span class="import-history-count">{{ history.length }} lô gần nhất</span></span>
+            <span class="import-history-toggle">Xem lịch sử <i class="bi bi-chevron-down" aria-hidden="true"></i></span>
+          </summary>
+          <div class="import-history-content">
+            <div class="import-history-toolbar"><p class="ss-hint">Chọn một lô để xem chi tiết và kết quả gửi email.</p><button type="button" class="ss-btn sm" :disabled="busy || historyBusy" @click="loadHistory">{{ historyBusy ? 'Đang tải…' : 'Tải lại lịch sử' }}</button></div>
+            <p v-if="historyBusy" class="ss-hint" role="status">Đang tải lịch sử…</p>
+            <p v-else-if="!history.length" class="ss-hint">Chưa có lô nhập nào.</p>
+            <div v-else class="import-history-list" role="region" aria-label="Các lô nhập gần đây" tabindex="0">
+              <button v-for="batch in history" :key="batch.batchId" type="button" class="import-history-item" :disabled="busy" @click="viewHistory(batch.batchId)"><span><b>{{ dateLabel(batch.createdAt) }}</b><small>{{ batch.createdCount }} nhân viên</small></span><span class="import-history-stats"><span class="valid">Đã gửi {{ batch.emailSent }}</span><span :class="{ invalid: batch.emailFailed }">Lỗi {{ batch.emailFailed }}</span><span>Chờ {{ batch.emailPending }}</span><i class="bi bi-chevron-right" aria-hidden="true"></i></span></button>
+            </div>
+          </div>
+        </details>
       </div>
       <footer class="import-footer"><button type="button" class="ss-btn" :disabled="busy" @click="emit('close')">Đóng</button><button v-if="result" type="button" class="ss-btn" :disabled="busy" @click="newFile">Chọn file khác</button><button v-else type="button" class="ss-btn primary" :disabled="!canConfirm" @click="confirmImport">{{ confirmBusy ? 'Đang lưu toàn bộ lô…' : 'Xác nhận nhập' }}</button></footer>
     </section>
@@ -110,11 +131,12 @@ onBeforeUnmount(() => { alive = false; clearTimeout(pollTimer); ++refreshVersion
 </template>
 <style scoped>
 .import-overlay { position:fixed; inset:0; display:grid; place-items:center; padding:20px; background:rgba(15,23,42,.45); z-index:1150; }
-.import-modal { width:min(1180px,100%); max-height:90vh; background:#fff; border:1px solid var(--ss-border); border-radius:16px; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 20px 70px rgba(15,23,42,.2); }
-.import-head,.import-footer { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:18px 22px; border-bottom:1px solid var(--ss-border); }
+.import-modal { width:min(1240px,100%); min-height:0; max-height:calc(100vh - 40px); max-height:calc(100dvh - 40px); background:#fff; border:1px solid var(--ss-border); border-radius:16px; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 20px 70px rgba(15,23,42,.2); }
+.import-head,.import-footer { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; gap:16px; padding:18px 22px; border-bottom:1px solid var(--ss-border); }
 .import-head h2 { font-size:17px; font-weight:600; margin:0; color:var(--ss-text); }
 .import-head p { margin:4px 0 0; font-size:12px; color:var(--ss-muted); }
-.import-body { padding:20px 22px; overflow:auto; display:grid; gap:16px; }
+.import-body { flex:1 1 auto; min-height:0; padding:18px 22px; overflow:auto; display:flex; flex-direction:column; gap:16px; scrollbar-gutter:stable; }
+.import-body > * { flex-shrink:0; }
 .import-file { display:grid; gap:10px; border:1px dashed #b9d3f3; border-radius:12px; padding:16px; background:#f8fbff; }
 .import-file>div { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
 .import-file small,.import-table small { display:block; color:var(--ss-muted); margin-top:4px; }
@@ -125,14 +147,30 @@ onBeforeUnmount(() => { alive = false; clearTimeout(pollTimer); ++refreshVersion
 .import-counts>span { padding:12px 16px; background:var(--ss-surface); border:1px solid var(--ss-border); border-radius:9px; font-size:13px; }
 .import-counts b { margin-left:10px; font-size:18px; }
 .valid { color:#148c4d; }.invalid { color:#b8262b; }
-.import-table { border:1px solid var(--ss-border); border-radius:10px; overflow:auto; }
+.import-table { flex:0 0 auto; min-height:120px; max-height:360px; max-height:min(360px,45dvh); border:1px solid var(--ss-border); border-radius:10px; overflow:auto; scrollbar-gutter:stable; }
+.import-table thead th { position:sticky; top:0; z-index:1; background:#f3f7fc; }
 .import-table table { min-width:920px; }.import-table td { vertical-align:top; font-size:12px; max-width:300px; white-space:normal; overflow-wrap:anywhere; }
 .import-table ul { color:#b8262b; margin:0; padding-left:16px; line-height:1.7; }.invalid-row { background:#fff8f8; }
 .import-footer { border-top:1px solid var(--ss-border); border-bottom:0; justify-content:flex-end; background:#f8fafc; }
 .import-result-actions { display:flex; gap:10px; flex-wrap:wrap; }
-.import-history { border-top:1px solid var(--ss-border); padding-top:16px; display:grid; gap:8px; }
-.import-history>div { display:flex; align-items:center; justify-content:space-between; gap:12px; }.import-history h3 { font-size:14px; font-weight:600; margin:0; }
-.import-history-item { display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; border:1px solid var(--ss-border); border-radius:8px; background:#fff; color:var(--ss-text); padding:10px 12px; text-align:left; font:inherit; cursor:pointer; }
-.import-history-item:hover { background:var(--ss-primary-soft); }
+.import-history { border:1px solid var(--ss-border); border-radius:10px; background:#fff; }
+.import-history-summary { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:13px 14px; list-style:none; cursor:pointer; color:var(--ss-text); }
+.import-history-summary::-webkit-details-marker { display:none; }
+.import-history-summary:focus-visible,.import-history-list:focus-visible { outline:2px solid var(--ss-primary); outline-offset:2px; }
+.import-history-title { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:13px; font-weight:600; }
+.import-history-title > i { color:var(--ss-primary); }
+.import-history-count { font-size:11px; font-weight:500; color:var(--ss-muted); background:var(--ss-surface); padding:3px 8px; border-radius:999px; }
+.import-history-toggle { display:flex; align-items:center; gap:8px; flex-shrink:0; font-size:12px; color:var(--ss-primary); }
+.import-history[open] .import-history-toggle > i { transform:rotate(180deg); }
+.import-history-content { padding:0 14px 14px; }
+.import-history-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:0 0 10px; }
+.import-history-list { display:grid; gap:8px; max-height:180px; overflow:auto; overscroll-behavior:contain; padding-right:4px; scrollbar-gutter:stable; }
+.import-history-item { display:flex; justify-content:space-between; align-items:center; gap:12px; width:100%; border:1px solid var(--ss-border); border-radius:8px; background:#fff; color:var(--ss-text); padding:10px 12px; text-align:left; font:inherit; cursor:pointer; }
+.import-history-item b { font-size:12px; font-weight:600; }
+.import-history-item small { display:block; color:var(--ss-muted); font-size:11px; margin-top:3px; }
+.import-history-stats { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:10px; font-size:11px; }
+.import-history-item:hover { background:var(--ss-primary-soft); border-color:#b9d3f3; }
+.import-history-item:disabled { opacity:.6; cursor:wait; }
+@media(max-width:640px) { .import-history-summary,.import-history-toolbar { align-items:flex-start; }.import-history-toggle { font-size:0; }.import-history-toggle i { font-size:13px; }.import-history-item { align-items:flex-start; flex-direction:column; }.import-history-stats { justify-content:flex-start; }.import-modal { max-height:calc(100dvh - 20px); }.import-table { max-height:300px; } }
 @media(max-width:640px) { .import-overlay { padding:10px; }.import-body,.import-head,.import-footer { padding:14px; }.import-head p { display:none; }.import-counts>span { flex:1; }.import-file input { width:100%; } }
 </style>

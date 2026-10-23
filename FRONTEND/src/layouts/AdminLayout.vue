@@ -1,13 +1,23 @@
 <script setup>
 import { computed, ref, onMounted, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import api from '../utils/api'
 import { showError } from '../utils/feedback'
 
 const route     = useRoute()
+const router    = useRouter()
 const authStore = useAuthStore()
 const logo      = new URL('../assets/logo3D.png', import.meta.url).href
+
+// directive click-outside
+const vClickOutside = {
+  mounted(el, binding) {
+    el._clickOutside = (e) => { if (!el.contains(e.target)) binding.value(e) }
+    document.addEventListener('click', el._clickOutside)
+  },
+  unmounted(el) { document.removeEventListener('click', el._clickOutside) }
+}
 const collapsed = ref(typeof window !== 'undefined' && window.innerWidth < 992)
 
 const userAvatarInitials = computed(() => {
@@ -17,9 +27,14 @@ const userAvatarInitials = computed(() => {
 
 const userName = computed(() => authStore.user?.name || 'Nhân viên')
 
+const showUserMenu = ref(false)
 const showLogoutConfirm = ref(false)
 
+function toggleUserMenu() { showUserMenu.value = !showUserMenu.value }
+function closeUserMenu() { showUserMenu.value = false }
+
 function confirmLogout() {
+  showUserMenu.value = false
   showLogoutConfirm.value = true
 }
 
@@ -31,9 +46,46 @@ async function doLogout() {
 }
 
 // ── Panel ca làm việc ─────────────────────────────────────
-const showCaPanel  = ref(false)
-const caList       = ref([])
-const caLoading    = ref(false)
+const showCaPanel    = ref(false)
+const caList         = ref([])
+const caLoading      = ref(false)
+
+// Số ca hôm nay của nhân viên đang đăng nhập (badge xanh trong button)
+const caNhanVienCount = ref(0)
+// Số thứ tự ca hiện tại của cửa hàng (nút tròn bên ngoài, vd: 1=sáng, 2=chiều, 3=tối)
+const caHienTaiSo     = ref(0)
+
+// ── Panel ca cửa hàng (nút tròn bên ngoài) ────────────────
+const showCaActivePanel  = ref(false)
+const caActiveList       = ref([])
+const caActiveLoading    = ref(false)
+
+async function openCaActivePanel() {
+  showCaActivePanel.value = true
+  if (caActiveLoading.value) return
+  caActiveLoading.value = true
+  try {
+    const res       = await api.get('/ca-lam-viec/active')
+    caActiveList.value = res.data?.data || []
+    caHienTaiSo.value  = soThuTuCaHienTai(caActiveList.value)
+  } catch { caActiveList.value = [] }
+  finally { caActiveLoading.value = false }
+}
+
+// Trả về true nếu ca này đang diễn ra ngay lúc này
+function laCaHienTai(ca) {
+  const now    = new Date()
+  const nowMin = now.getHours() * 60 + now.getMinutes()
+  const bd = ca.gioBatDau || ca.thoiGian?.split(' - ')[0]
+  const kt = ca.gioKetThuc || ca.thoiGian?.split(' - ')[1]
+  if (!bd || !kt) return false
+  const [bh, bm] = bd.split(':').map(Number)
+  const [kh, km] = kt.split(':').map(Number)
+  const bdMin = bh * 60 + bm
+  const ktMin = kh * 60 + km
+  if (ktMin < bdMin) return nowMin >= bdMin || nowMin <= ktMin
+  return nowMin >= bdMin && nowMin <= ktMin
+}
 
 const STATUS_CA = {
   0: { label: 'Chờ giao ca',  cls: 'warn'    },
@@ -51,45 +103,47 @@ function fmtTime(str) {
   return str.replace('\n', ' ')
 }
 
+// Trả về số thứ tự (1-based) của ca đang diễn ra ngay lúc này trong danh sách
+// activeCas đã được sort theo gioBatDau tăng dần từ backend
+function soThuTuCaHienTai(activeCas) {
+  const now    = new Date()
+  const nowMin = now.getHours() * 60 + now.getMinutes()
+  const idx = activeCas.findIndex(ca => {
+    const bd = ca.gioBatDau || ca.thoiGian?.split(' - ')[0]
+    const kt = ca.gioKetThuc || ca.thoiGian?.split(' - ')[1]
+    if (!bd || !kt) return false
+    const [bh, bm] = bd.split(':').map(Number)
+    const [kh, km] = kt.split(':').map(Number)
+    const bdMin = bh * 60 + bm
+    const ktMin = kh * 60 + km
+    if (ktMin < bdMin) return nowMin >= bdMin || nowMin <= ktMin   // ca qua đêm
+    return nowMin >= bdMin && nowMin <= ktMin
+  })
+  return idx === -1 ? 0 : idx + 1
+}
+
+async function loadCaData() {
+  try {
+    const [resActive, resHoNay] = await Promise.all([
+      api.get('/ca-lam-viec/active'),
+      api.get('/lich-lam-viec/ca-hom-nay')
+    ])
+    const activeCas      = resActive.data?.data || []
+    caHienTaiSo.value    = soThuTuCaHienTai(activeCas)
+    caList.value         = resHoNay.data?.data || []
+    caNhanVienCount.value = caList.value.length
+  } catch { /* ignore */ }
+}
+
 async function openCaPanel() {
   showCaPanel.value = true
   if (caLoading.value) return
   caLoading.value = true
-  try {
-    const res = await api.get('/lich-lam-viec/ca-hom-nay')
-    caList.value = res.data?.data || []
-    caHomNayCount.value = caList.value.length
-  } catch { caList.value = [] }
+  try { await loadCaData() }
   finally { caLoading.value = false }
 }
 
-const caHomNayCount = ref(0)
-
-// Tính số ca đang diễn ra hiện tại (trangThai=1 và trong khoảng giờ ca)
-function demCaHienTai(list) {
-  const now = new Date()
-  const nowMin = now.getHours() * 60 + now.getMinutes()
-  return list.filter(ca => {
-    if (ca.trangThai !== 1) return false
-    if (!ca.thoiGian) return true // không có giờ thì cứ tính là đang diễn ra
-    // thoiGian dạng "08:00 - 17:00"
-    const match = ca.thoiGian.match(/(\d{2}):(\d{2})\s*-\s*(\d{2}):(\d{2})/)
-    if (!match) return true
-    const bdMin = parseInt(match[1]) * 60 + parseInt(match[2])
-    const ktMin = parseInt(match[3]) * 60 + parseInt(match[4])
-    // Ca qua đêm: ktMin < bdMin
-    if (ktMin < bdMin) return nowMin >= bdMin || nowMin <= ktMin
-    return nowMin >= bdMin && nowMin <= ktMin
-  }).length
-}
-
-onMounted(async () => {
-  try {
-    const res = await api.get('/lich-lam-viec/ca-hom-nay')
-    caList.value = res.data?.data || []
-    caHomNayCount.value = caList.value.length
-  } catch { /* ignore */ }
-})
+onMounted(loadCaData)
 
 // Menu quản trị cửa hàng
 const nav = [
@@ -203,18 +257,32 @@ const crumbs = computed(() => ({
           <button type="button" class="pill shift" @click="openCaPanel">
             <i class="bi bi-arrow-left-right"></i>
             <span>Ca làm việc</span>
-            <span v-if="caHomNayCount > 0" class="ca-badge">{{ caHomNayCount }}</span>
+            <span v-if="caNhanVienCount > 0" class="ca-badge">{{ caNhanVienCount }}</span>
           </button>
-          <button type="button" class="bell" @click="openCaPanel" :title="caHomNayCount + ' ca hôm nay'">{{ caHomNayCount }}</button>
-          <button type="button" class="pill user">
-            <span class="avatar">{{ userAvatarInitials }}</span>
-            <span class="user-name">{{ userName }}</span>
-            <i class="bi bi-chevron-down"></i>
-          </button>
-          <button type="button" class="pill logout" title="Đăng xuất" @click="confirmLogout">
-            <i class="bi bi-box-arrow-right"></i>
-          </button>
+          <button type="button" class="bell" @click="openCaActivePanel" :title="caHienTaiSo ? 'Đang ở ca ' + caHienTaiSo : 'Ngoài giờ ca'">{{ caHienTaiSo || '—' }}</button>
+
+          <!-- User dropdown -->
+          <div class="user-wrap" v-click-outside="closeUserMenu">
+            <button type="button" class="pill user" @click="toggleUserMenu">
+              <span class="avatar">{{ userAvatarInitials }}</span>
+              <span class="user-name">{{ userName }}</span>
+              <i class="bi bi-chevron-down" :class="{ 'chev-up': showUserMenu }"></i>
+            </button>
+            <div v-if="showUserMenu" class="user-dropdown">
+              <RouterLink to="/ca-nhan" class="user-dd-item" @click="closeUserMenu">
+                <i class="bi bi-person-circle"></i>
+                Trang cá nhân
+              </RouterLink>
+              <div class="user-dd-divider"></div>
+              <button type="button" class="user-dd-item user-dd-logout" @click="confirmLogout">
+                <i class="bi bi-box-arrow-right"></i>
+                Đăng xuất
+              </button>
+            </div>
+          </div>
+
         </div>
+
       </header>
 
       <slot />
@@ -280,6 +348,68 @@ const crumbs = computed(() => ({
               </div>
             </div>
           </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+
+  <!-- Panel ca đang hoạt động (nút tròn bên ngoài) -->
+  <Teleport to="body">
+    <Transition name="ca-panel">
+      <div v-if="showCaActivePanel" class="ca-overlay" @click.self="showCaActivePanel=false">
+        <div class="ca-panel">
+
+          <div class="ca-panel-head">
+            <div class="ca-panel-title">
+              <i class="bi bi-clock-history"></i>
+              <span>Ca làm việc cửa hàng</span>
+            </div>
+            <button class="ca-close" @click="showCaActivePanel=false"><i class="bi bi-x-lg"></i></button>
+          </div>
+
+          <div class="ca-date-label">
+            <i class="bi bi-calendar3"></i>
+            {{ new Date().toLocaleDateString('vi-VN', { weekday:'long', day:'2-digit', month:'long', year:'numeric' }) }}
+          </div>
+
+          <!-- Loading -->
+          <div v-if="caActiveLoading" class="ca-empty">
+            <i class="bi bi-arrow-repeat ca-spin"></i> Đang tải...
+          </div>
+
+          <!-- Không có ca -->
+          <div v-else-if="!caActiveList.length" class="ca-empty">
+            <i class="bi bi-calendar-x" style="font-size:32px;color:var(--ss-faint)"></i>
+            <p>Không có ca nào đang hoạt động</p>
+          </div>
+
+          <!-- Danh sách ca cửa hàng -->
+          <div v-else class="ca-list">
+            <div
+              v-for="(ca, idx) in caActiveList"
+              :key="ca.id"
+              class="ca-card"
+              :class="{ 'ca-card-active': laCaHienTai(ca) }"
+            >
+              <div class="ca-card-top">
+                <div class="ca-shift-name">
+                  <span class="ca-index">Ca {{ idx + 1 }}</span>
+                  {{ ca.tenCa }}
+                </div>
+                <span v-if="laCaHienTai(ca)" class="ca-pill ca-pill-now">
+                  <i class="bi bi-circle-fill" style="font-size:7px"></i> Đang diễn ra
+                </span>
+              </div>
+              <div class="ca-time-row">
+                <i class="bi bi-clock"></i>
+                <span>{{ ca.thoiGian || (ca.gioBatDau + ' - ' + ca.gioKetThuc) }}</span>
+              </div>
+              <div v-if="ca.moTa" class="ca-note">
+                <i class="bi bi-info-circle"></i> {{ ca.moTa }}
+              </div>
+            </div>
+          </div>
+
         </div>
       </div>
     </Transition>
@@ -500,6 +630,36 @@ const crumbs = computed(() => ({
 .avatar { width: 30px; height: 30px; border-radius: 50%; background: var(--ss-primary-soft); color: var(--ss-primary); display: grid; place-items: center; font-size: 10.5px; font-weight: 700; }
 .user .bi { font-size: 10px; color: var(--ss-muted); }
 
+/* ── User dropdown ──────────────────────────────────────── */
+.user-wrap { position: relative; }
+
+.chev-up { transform: rotate(180deg) !important; }
+
+.user-dropdown {
+  position: absolute; top: calc(100% + 8px); right: 0;
+  min-width: 180px; background: #fff;
+  border: 1px solid var(--ss-border); border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.12);
+  padding: 6px; z-index: 300;
+}
+
+.user-dd-item {
+  display: flex; align-items: center; gap: 9px;
+  width: 100%; padding: 9px 10px; border-radius: 7px;
+  font-size: 13px; font-weight: 500; color: var(--ss-text);
+  text-decoration: none; background: none; border: none;
+  cursor: pointer; text-align: left;
+  transition: background .15s;
+}
+.user-dd-item:hover { background: var(--ss-surface); }
+.user-dd-item i { color: var(--ss-muted); font-size: 14px; }
+
+.user-dd-divider { height: 1px; background: var(--ss-border); margin: 4px 0; }
+
+.user-dd-logout { color: #e53935; }
+.user-dd-logout:hover { background: #fff1f1; }
+.user-dd-logout i { color: #e53935; }
+
 @media (max-width: 991px) {
   .topbar { padding: 0 16px; }
   .shift span, .user-name { display: none; }
@@ -626,6 +786,32 @@ const crumbs = computed(() => ({
   font-size: 12px; color: var(--ss-muted);
   display: flex; align-items: flex-start; gap: 6px;
   padding-top: 4px; border-top: 1px dashed var(--ss-border);
+}
+
+/* ── Ca card hiện tại ──────────────────────────────────── */
+.ca-card-active {
+  border-color: var(--ss-primary);
+  background: linear-gradient(135deg, #f0f7ff 0%, #fff 100%);
+  box-shadow: 0 2px 8px rgba(var(--ss-primary-rgb, 21,101,192), .12);
+}
+
+.ca-index {
+  font-size: 11px; font-weight: 700;
+  color: var(--ss-muted);
+  margin-right: 4px;
+}
+
+.ca-pill-now {
+  background: #e8f5e9; color: #2e7d32;
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 10px; border-radius: 20px;
+  font-size: 11px; font-weight: 600;
+  animation: ca-pulse .8s ease-in-out infinite alternate;
+}
+
+@keyframes ca-pulse {
+  from { opacity: 1; }
+  to   { opacity: .6; }
 }
 </style>
 

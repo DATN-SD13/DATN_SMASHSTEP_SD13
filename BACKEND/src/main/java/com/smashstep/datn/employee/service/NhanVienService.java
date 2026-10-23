@@ -2,6 +2,7 @@ package com.smashstep.datn.employee.service;
 
 import com.smashstep.datn.common.exception.AppException;
 import com.smashstep.datn.common.response.PageResponse;
+import com.smashstep.datn.employee.dto.DoiMatKhauRequest;
 import com.smashstep.datn.employee.dto.NhanVienRequest;
 import com.smashstep.datn.employee.dto.NhanVienResponse;
 import com.smashstep.datn.employee.dto.TrangThaiNhanVienRequest;
@@ -251,6 +252,30 @@ public class NhanVienService {
         return toResponse(
                 nhanVienRepository.save(nhanVien)
         );
+    }
+
+    // =========================================================
+    // ĐỔI MẬT KHẨU (nhân viên tự đổi)
+    // =========================================================
+    @org.springframework.transaction.annotation.Transactional
+    public void doiMatKhau(String username, DoiMatKhauRequest request) {
+        NhanVien nv = findByMa(username);
+
+        if (nv.getMatKhau() == null) {
+            throw AppException.badRequest("Tài khoản chưa có mật khẩu. Vui lòng liên hệ quản trị viên.");
+        }
+
+        if (!passwordEncoder.matches(request.getMatKhauCu(), nv.getMatKhau())) {
+            throw AppException.badRequest("Mật khẩu hiện tại không đúng.");
+        }
+
+        if (request.getMatKhauMoi().equals(request.getMatKhauCu())) {
+            throw AppException.badRequest("Mật khẩu mới không được trùng mật khẩu cũ.");
+        }
+
+        nv.setMatKhau(passwordEncoder.encode(request.getMatKhauMoi()));
+        nv.setNgayCapNhat(java.time.LocalDateTime.now());
+        nhanVienRepository.save(nv);
     }
 
     // =========================================================
