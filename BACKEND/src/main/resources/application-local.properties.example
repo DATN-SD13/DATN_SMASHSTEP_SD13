@@ -1,0 +1,13 @@
+# Optional: copy to application-local.properties (Git ignored) only to use your own merchant.
+# Backend starts without this file; VNPAY needs the local signing key.
+# Fill both fields below with your own Sandbox merchant; keep private/production keys out of Git.
+app.payment.vnpay.enabled=true
+app.payment.vnpay.tmn-code=${VNPAY_TMN_CODE:}
+app.payment.vnpay.hash-secret=${VNPAY_HASH_SECRET:}
+app.payment.vnpay.payment-url=https://sandbox.vnpayment.vn/paymentv2/vpcpay.html
+app.payment.vnpay.return-url=http://localhost:5174/thanh-toan-vnpay/ket-qua
+app.payment.vnpay.allow-local-return=true
+app.payment.vnpay.query-enabled=true
+app.payment.vnpay.query-ip=127.0.0.1
+# Keep verified receipts in a private persistent directory outside the repository.
+app.payment.demo.ledger-file=${PAYMENT_DEMO_LEDGER_FILE:${user.home}/.smashstep/paid-orders.json}

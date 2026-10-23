@@ -140,7 +140,7 @@ public class VnpayOrderService {
             if (line == null || line.variant() == null || line.variant().variantId() == null
                     || line.variant().variantId() <= 0 || !ids.add(line.variant().variantId())
                     || line.quantity() < 1 || line.quantity() > 10000 || line.variant().giaSauGiam() == null
-                    || line.variant().giaSauGiam().signum() <= 0 || line.total() == null
+                    || line.variant().giaSauGiam().signum() < 0 || line.total() == null
                     || line.variant().giaSauGiam().multiply(BigDecimal.valueOf(line.quantity())).compareTo(line.total()) != 0)
                 throw AppException.conflict("Chi tiết sản phẩm không khớp biên nhận VNPAY");
             subtotal = subtotal.add(line.total());

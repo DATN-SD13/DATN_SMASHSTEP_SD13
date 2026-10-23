@@ -71,6 +71,21 @@ public class CustomerCommerceService {
             return new Line(v,i.quantity(),v.giaSauGiam().multiply(BigDecimal.valueOf(i.quantity())));
         }).toList();
     }
+    public void validateQuotedOffer(Long customerId,List<Item> items,Quote offer) {
+        var quoted=offer.lines();
+        var current=lines(items);
+        if(current.size()!=quoted.size()) throw AppException.conflict("Sản phẩm trong đơn hàng vừa thay đổi");
+        for(int i=0;i<current.size();i++)
+            if(!Objects.equals(current.get(i).variant().variantId(),quoted.get(i).variant().variantId())
+                    || current.get(i).quantity()!=quoted.get(i).quantity()
+                    || current.get(i).variant().giaSauGiam().compareTo(quoted.get(i).variant().giaSauGiam())!=0)
+                throw AppException.conflict("Giá sản phẩm vừa thay đổi. Vui lòng kiểm tra lại đơn hàng.");
+        var options=vouchers(customerId,offer.subtotal());
+        var best=options.isEmpty()?null:options.get(0);
+        if(!Objects.equals(best==null?null:best.code(),offer.voucherCode())
+                || (best==null?BigDecimal.ZERO:best.discount()).compareTo(offer.discount())!=0)
+            throw AppException.conflict("Voucher tốt nhất vừa thay đổi. Vui lòng cập nhật lại đơn hàng.");
+    }
     public List<Method> methods() {
         return em.createQuery("select p from PhuongThucThanhToan p where p.trangThai=1 and (p.idHinhThucThanhToan is null or p.idHinhThucThanhToan.trangThai=1) order by p.id",PhuongThucThanhToan.class)
                 .getResultList().stream().map(p->new Method(p.getId(),p.getMaPhuongThuc(),p.getTenPhuongThuc(),
@@ -89,7 +104,10 @@ public class CustomerCommerceService {
     private Quote calculateQuote(Long customerId,Request r,boolean demo) {
         var c=customer(customerId); var lines=lines(r.items());
         BigDecimal subtotal=lines.stream().map(Line::total).reduce(BigDecimal.ZERO,BigDecimal::add);
-        var voucher=sales.tinhThuPhieu(c,subtotal,r.voucherCode());
+        // Select one eligible voucher by its actual saving after campaign prices, never stack vouchers.
+        var options=vouchers(customerId,subtotal);
+        String selectedCode=options.isEmpty()?null:options.get(0).code();
+        var voucher=sales.tinhThuPhieu(c,subtotal,selectedCode);
         BigDecimal fee=null; String message="";
         try { fee=shipping.fee(r.receiver(),r.items().stream().mapToInt(Item::quantity).sum(),subtotal.subtract(voucher.tienGiam())); }
         catch(AppException e) { message=e.getMessage(); }
@@ -101,7 +119,7 @@ public class CustomerCommerceService {
         if((bank || demo) && total!=null && !OnlineBankPayment.validAmount(total)) {
             methodValid=false; message="Thanh toán QR cần tổng tiền VND nguyên dương, tối đa 13 chữ số. Vui lòng chọn COD hoặc liên hệ cửa hàng.";
         }
-        return new Quote(lines,subtotal,voucher.tienGiam(),fee,total,r.voucherCode(),methods,fee!=null && methodValid,message);
+        return new Quote(lines,subtotal,voucher.tienGiam(),fee,total,selectedCode,methods,fee!=null && methodValid,message);
     }
     public List<Voucher> vouchers(Long customerId,BigDecimal subtotal) {
         var c=customer(customerId);
@@ -112,9 +130,14 @@ public class CustomerCommerceService {
                 .setParameter("now",now).setParameter("c",customerId).getResultList();
         for(var p:rows) try {
             var evaluation=sales.tinhThuPhieu(c,subtotal,p.getMaPhieuGiamGia());
-            result.add(new Voucher(p.getMaPhieuGiamGia(),p.getTenPhieuGiamGia(),p.getLoaiGiamGia(),p.getGiaTriGiam(),p.getGiaTriToiThieu(),p.getGiamToiDa(),evaluation.tienGiam(),p.getNgayKetThuc()));
+            if(evaluation.tienGiam().signum()>0)
+                result.add(new Voucher(p.getMaPhieuGiamGia(),p.getTenPhieuGiamGia(),p.getLoaiGiamGia(),p.getGiaTriGiam(),p.getGiaTriToiThieu(),p.getGiamToiDa(),evaluation.tienGiam(),p.getNgayKetThuc()));
         } catch(AppException ineligible) { /* Not a usable voucher for this customer and subtotal. */ }
-        result.sort(Comparator.comparing(Voucher::discount).reversed()); return result;
+        result.sort(Comparator.comparing(Voucher::discount).reversed()
+                .thenComparing(Voucher::expiresAt).thenComparing(Voucher::code,String.CASE_INSENSITIVE_ORDER));
+        var unique=new LinkedHashMap<String,Voucher>();
+        for(var voucher:result) unique.putIfAbsent(voucher.code().trim().toLowerCase(Locale.ROOT),voucher);
+        return List.copyOf(unique.values());
     }
     @Transactional
     public Order checkout(Long customerId,Request r) {
@@ -136,11 +159,9 @@ public class CustomerCommerceService {
         var q=quote(customerId,r);
         if(!q.canCheckout()) throw AppException.badRequest(q.message());
         // The carrier request can span a campaign boundary. Reprice again after the network call.
-        var finalLines=lines(r.items());
-        for(int i=0;i<finalLines.size();i++) if(finalLines.get(i).variant().giaSauGiam().compareTo(q.lines().get(i).variant().giaSauGiam())!=0)
-            throw AppException.conflict("Giá sản phẩm vừa thay đổi. Vui lòng kiểm tra lại đơn hàng.");
+        validateQuotedOffer(customerId,r.items(),q);
         if(r.expectedTotal()==null || r.expectedTotal().compareTo(q.total())!=0) throw AppException.conflict("Giá hoặc phí vận chuyển đã thay đổi. Vui lòng kiểm tra tổng mới và đặt lại.");
-        var voucher=sales.kiemTraPhieuDatHang(c,q.subtotal(),r.voucherCode());
+        var voucher=sales.kiemTraPhieuDatHang(c,q.subtotal(),q.voucherCode());
         if(voucher.discount().compareTo(q.discount())!=0) throw AppException.conflict("Ưu đãi vừa thay đổi. Vui lòng kiểm tra lại đơn hàng.");
         var method=em.find(PhuongThucThanhToan.class,r.paymentMethodId(),LockModeType.PESSIMISTIC_READ);
         if(method==null || !Integer.valueOf(1).equals(method.getTrangThai())
