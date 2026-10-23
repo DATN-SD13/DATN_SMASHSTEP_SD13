@@ -123,4 +123,8 @@ public interface LichLamViecRepository extends JpaRepository<LichLamViec, Long> 
             @Param("batDau")     LocalDateTime batDau,
             @Param("ketThuc")    LocalDateTime ketThuc
     );
+    @Query("select l from LichLamViec l join fetch l.idCaLamViec join fetch l.idNhanVien where l.idNhanVien.id=:employee and l.ngayLam between :from and :to order by l.ngayLam,l.idCaLamViec.gioBatDau")
+    List<LichLamViec> findForEmployee(@Param("employee") Long employee,@Param("from") LocalDate from,@Param("to") LocalDate to);
+    boolean existsByIdCaLamViec_Id(Long shift);
+
 }

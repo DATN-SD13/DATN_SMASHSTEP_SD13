@@ -27,6 +27,7 @@ public class CaLamViecController {
     }
 
     // Cho phép mọi user đã đăng nhập — dùng cho panel ca cửa hàng ở header
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
     @GetMapping("/active")
     public ApiResponse<List<CaLamViecResponse>> getActive() {
         return ApiResponse.ok("Lấy danh sách ca đang hoạt động thành công", caLamViecService.getActive());

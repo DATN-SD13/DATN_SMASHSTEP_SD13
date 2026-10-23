@@ -30,7 +30,7 @@ async function save() {
 <template><form class="account-address-form" @submit.prevent="save" aria-label="Thông tin địa chỉ">
   <div class="account-section-heading"><div><h3>{{ address.id ? 'Chỉnh sửa địa chỉ' : 'Thêm địa chỉ mới' }}</h3><p>Thông tin người nhận được lấy sẵn từ tài khoản. Bạn có thể đổi người nhận cho địa chỉ này.</p></div></div>
   <p v-if="error" class="account-alert account-alert--error" role="alert">{{ error }}</p>
-  <fieldset :disabled="saving"><CheckoutReceiverForm v-model="receiver" @busy="resolving = $event" />
+  <fieldset :disabled="saving"><CheckoutReceiverForm v-model="receiver" :disabled="saving" @busy="resolving = $event" />
     <div class="account-form-grid"><div class="account-form-wide"><span class="account-field-label">Loại địa chỉ</span><div class="account-radio-group"><label><input v-model="addressType" type="radio" :value="1"> Nhà riêng</label><label><input v-model="addressType" type="radio" :value="2"> Văn phòng</label></div></div>
     <label class="account-checkbox account-form-wide"><input v-model="isDefault" type="checkbox" :disabled="!!address.isDefault || firstAddress"> Đặt làm địa chỉ mặc định</label></div>
   </fieldset>

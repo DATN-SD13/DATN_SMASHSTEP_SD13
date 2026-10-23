@@ -42,7 +42,7 @@ Nếu kho CA của JDK không xác minh được chuỗi chứng chỉ Sandbox (
 ## Ghi hóa đơn chính và khôi phục
 
 - Checkout luôn đọc giá chiến dịch từ CurrentPriceService: các chiến dịch cùng áp dụng lấy phần trăm giảm lớn nhất trên từng biến thể, không cộng dồn. Giá gốc vẫn giữ nguyên; trang checkout hiển thị giá gốc, giá sau giảm và số tiền giảm sản phẩm.
-- Backend tự chọn đúng một voucher hợp lệ cho khách và tiền hàng sau giảm sản phẩm: so sánh số tiền giảm thực tế sau giới hạn, điều kiện tối thiểu, thời hạn, lượt dùng và quyền sử dụng voucher cá nhân. Trùng mức giảm ưu tiên phiếu hết hạn sớm, rồi mã phiếu; không cộng nhiều voucher. Quote trả lại voucherCode đã chọn, frontend không tự tính giảm.
+- Mặc định backend tự chọn đúng một voucher hợp lệ giảm nhiều nhất cho khách và tiền hàng sau giảm sản phẩm. Khách có thể bấm Áp dụng phiếu này để đổi sang phiếu khác, hoặc trở lại Tự chọn phiếu giảm nhiều nhất. Backend kiểm tra điều kiện tối thiểu, thời hạn, lượt dùng và quyền dùng phiếu cá nhân cho mọi lựa chọn; không cộng nhiều voucher. Trùng mức giảm ưu tiên phiếu hết hạn sớm, rồi mã phiếu. Quote trả lại voucherCode và số tiền giảm đã chốt, frontend không tự tính giảm.
 - Trước khi tạo phiên thanh toán, backend kiểm tra lại giá, voucher và expectedTotal. Nếu thay đổi trong lúc lấy phí GHN, khách phải cập nhật tổng; không ký số tiền cũ. Journal giữ mã voucher đã chốt để ghi đúng hóa đơn sau xác nhận từ VNPAY, không chọn lại voucher mới sau khi khách trả tiền.
 
 - VnpayOrderService chỉ nhận PAID_SANDBOX được xác nhận qua IPN/QUERYDR; không chuyển kết quả OTP giả lập nội bộ thành hóa đơn. Khách hàng, sản phẩm, số lượng và tiền lấy từ journal server, không nhận từ callback client.

@@ -4,6 +4,7 @@ import com.smashstep.datn.common.exception.AppException;
 import com.smashstep.datn.common.pricing.CurrentPriceService;
 import com.smashstep.datn.customer.entity.KhachHang;
 import com.smashstep.datn.invoice.entity.*;
+import com.smashstep.datn.invoice.rules.PosPriceSnapshot;
 import com.smashstep.datn.invoice.enums.TrangThaiHoaDon;
 import com.smashstep.datn.invoice.service.InvoiceCodeService;
 import com.smashstep.datn.payment.entity.PhuongThucThanhToan;
@@ -35,6 +36,8 @@ public class CustomerCommerceService {
     private final GhnShippingService shipping;
     private final com.smashstep.datn.customer.service.KhachHangService addresses;
     private final OnlineBankPayment bankPayment;
+    private final OrderEmailNotifications orderEmail;
+    private static final String SHIPPING_CHANGED="Khách hàng cập nhật thông tin nhận hàng";
 
     public KhachHang customer(Long id) {
         var c=em.find(KhachHang.class,id);
@@ -81,10 +84,11 @@ public class CustomerCommerceService {
                     || current.get(i).variant().giaSauGiam().compareTo(quoted.get(i).variant().giaSauGiam())!=0)
                 throw AppException.conflict("Giá sản phẩm vừa thay đổi. Vui lòng kiểm tra lại đơn hàng.");
         var options=vouchers(customerId,offer.subtotal());
-        var best=options.isEmpty()?null:options.get(0);
-        if(!Objects.equals(best==null?null:best.code(),offer.voucherCode())
-                || (best==null?BigDecimal.ZERO:best.discount()).compareTo(offer.discount())!=0)
-            throw AppException.conflict("Voucher tốt nhất vừa thay đổi. Vui lòng cập nhật lại đơn hàng.");
+        var selected=options.stream().filter(v->Objects.equals(v.code(),offer.voucherCode())).findFirst().orElse(null);
+        if((offer.voucherCode()!=null && selected==null)
+                || (offer.voucherCode()==null && !options.isEmpty())
+                || (selected==null?BigDecimal.ZERO:selected.discount()).compareTo(offer.discount())!=0)
+            throw AppException.conflict("Phiếu giảm giá vừa thay đổi hoặc không còn đủ điều kiện. Vui lòng kiểm tra lại đơn hàng.");
     }
     public List<Method> methods() {
         return em.createQuery("select p from PhuongThucThanhToan p where p.trangThai=1 and (p.idHinhThucThanhToan is null or p.idHinhThucThanhToan.trangThai=1) order by p.id",PhuongThucThanhToan.class)
@@ -103,10 +107,15 @@ public class CustomerCommerceService {
     }
     private Quote calculateQuote(Long customerId,Request r,boolean demo) {
         var c=customer(customerId); var lines=lines(r.items());
+        if(Boolean.TRUE.equals(r.receiveOrderEmails()) && (c.getEmail()==null || c.getEmail().isBlank() || com.smashstep.datn.common.validation.AccountRules.error(com.smashstep.datn.common.validation.AccountRules.Kind.EMAIL,c.getEmail())!=null))
+            throw AppException.badRequest("Tài khoản cần email hợp lệ để nhận xác nhận đơn hàng. Vui lòng liên hệ cửa hàng cập nhật email.");
         BigDecimal subtotal=lines.stream().map(Line::total).reduce(BigDecimal.ZERO,BigDecimal::add);
-        // Select one eligible voucher by its actual saving after campaign prices, never stack vouchers.
+        // Default to the largest actual saving; an explicit choice must remain eligible for this customer.
         var options=vouchers(customerId,subtotal);
-        String selectedCode=options.isEmpty()?null:options.get(0).code();
+        String requestedCode=r.voucherCode()==null?"":r.voucherCode().trim();
+        String selectedCode=requestedCode.isEmpty() ? (options.isEmpty()?null:options.get(0).code())
+                : options.stream().filter(v->v.code().equalsIgnoreCase(requestedCode)).map(Voucher::code).findFirst()
+                    .orElseThrow(()->AppException.badRequest("Phiếu giảm giá đã chọn không còn đủ điều kiện cho đơn hàng này. Vui lòng chọn phiếu khác hoặc chọn tự động."));
         var voucher=sales.tinhThuPhieu(c,subtotal,selectedCode);
         BigDecimal fee=null; String message="";
         try { fee=shipping.fee(r.receiver(),r.items().stream().mapToInt(Item::quantity).sum(),subtotal.subtract(voucher.tienGiam())); }
@@ -179,12 +188,17 @@ public class CustomerCommerceService {
             v.setSoLuong(v.getSoLuong()-line.quantity());
             var d=new HoaDonChiTiet(); d.setIdHoaDon(h); d.setIdSanPhamChiTiet(v); d.setSoLuong(line.quantity());
             d.setDonGia(line.variant().giaSauGiam()); d.setThanhTien(line.total()); d.setTrangThai(1); em.persist(d);
+            String priceRecord=PosPriceSnapshot.onlineLine(line.variant().variantId(),line.variant().giaGoc(),
+                    line.variant().giaSauGiam(),line.variant().phanTramGiam());
+            if(priceRecord!=null)history(h,priceRecord);
         }
         if(voucher.voucher()!=null) voucher.voucher().setSoLuongDaDung(Objects.requireNonNullElse(voucher.voucher().getSoLuongDaDung(),0)+1);
         if(voucher.assignment()!=null) voucher.assignment().setNgaySuDung(now);
         if(Boolean.TRUE.equals(r.saveAddress())) saveReceiverAddress(c,r);
         history(h,prefix+fingerprint); history(h,"CHUYEN_KHOAN".equals(method.getMaPhuongThuc())
                 ? "Khách hàng đặt hàng online; chờ chuyển khoản QR và cửa hàng đối soát" : "Khách hàng đặt hàng online; chờ xác nhận và thu COD");
+        OrderLocation.save(em,h,r.deliveryPoint());
+        orderEmail.configure(h,Boolean.TRUE.equals(r.receiveOrderEmails()));
         em.flush(); return order(customerId,h.getMaHoaDon());
     }
     @Transactional(propagation=org.springframework.transaction.annotation.Propagation.MANDATORY)
@@ -195,8 +209,8 @@ public class CustomerCommerceService {
         var receiver=r.receiver();
         var existing=addresses.getAddresses(customer.getMaKhachHang()).stream().filter(a ->
                 same(a.getReceiverName(),receiver.name()) && same(a.getReceiverPhone(),receiver.phone())
-                && same(a.getProvince(),receiver.province()) && same(a.getWard(),receiver.ward())
-                && same(a.getDistrict(),receiver.district()) && same(a.getStreet(),receiver.street())).findFirst();
+                        && same(a.getProvince(),receiver.province()) && same(a.getWard(),receiver.ward())
+                        && same(a.getDistrict(),receiver.district()) && same(a.getStreet(),receiver.street())).findFirst();
         if(existing.isPresent()) {
             if(Boolean.TRUE.equals(r.makeDefaultAddress())) addresses.setDefaultAddress(customer.getMaKhachHang(),existing.get().getId());
             return;
@@ -217,27 +231,38 @@ public class CustomerCommerceService {
                 .setParameter("c",customerId).setFirstResult(page*20).setMaxResults(20).getResultList().stream().map(this::response).toList();
     }
     public Order order(Long customerId,String code) { customer(customerId); return response(owned(customerId,code,false)); }
+    public OrderEmailNotifications.Status emailStatus(Long customerId,String code) {customer(customerId);return orderEmail.status(owned(customerId,code,false));}
     public OnlineBankPayment.Payment payment(Long customerId,String code) {
         customer(customerId); return bankPayment.details(owned(customerId,code,false));
     }
     @Transactional
     public Order editShipping(Long customerId,String code,Shipping r) {
-        customer(customerId); codes.lockInvoiceCreation(); var h=owned(customerId,code,true); editable(h);
-        if(OnlineBankPayment.bankOrder(em,h)) throw AppException.conflict("Đơn QR đã chốt số tiền chuyển khoản nên không thể đổi địa chỉ. Vui lòng liên hệ cửa hàng nếu cần hỗ trợ.");
+        customer(customerId); codes.lockInvoiceCreation(); var h=owned(customerId,code,true);
+        if(!Integer.valueOf(0).equals(h.getTrangThai()) || !OnlineOrderInventory.managed(em,h))
+            throw AppException.conflict("Chỉ được đổi thông tin nhận hàng khi đơn còn chờ xác nhận.");
+        if(same(h.getHoTenNguoiNhan(),r.receiver().name()) && same(h.getSoDienThoaiNguoiNhan(),r.receiver().phone())
+                && same(h.getDiaChiGiaoHang(),r.receiver().address()) && same(h.getGhiChu(),r.note())
+                && Objects.equals(OrderLocation.get(em,h),r.deliveryPoint()))
+            return response(h);
+        if(shippingChanges(h)>0)throw AppException.conflict("Bạn đã dùng hết một lần đổi thông tin nhận hàng của đơn này. Vui lòng liên hệ cửa hàng.");
         var rows=em.createQuery("select d from HoaDonChiTiet d where d.idHoaDon.id=:id",HoaDonChiTiet.class).setParameter("id",h.getId()).getResultList();
         if(r.receiver().address().length()>500) throw AppException.badRequest("Địa chỉ tối đa 500 ký tự");
         BigDecimal newFee=shipping.fee(r.receiver(),rows.stream().mapToInt(HoaDonChiTiet::getSoLuong).sum(),h.getTongTien().subtract(h.getTienGiamGia()));
+        if((OnlineBankPayment.hasReceipt(em,h) || OnlineBankPayment.bankOrder(em,h))
+                && newFee.compareTo(Objects.requireNonNullElse(h.getPhiVanChuyen(),BigDecimal.ZERO))!=0)
+            throw AppException.conflict("Đơn đã chốt thanh toán chỉ đổi được địa chỉ có cùng phí giao hàng. Vui lòng liên hệ cửa hàng nếu phí thay đổi.");
         // Editing shipping never reprices products or changes historical voucher amounts.
         h.setPhiVanChuyen(newFee); h.setThanhTien(h.getTongTien().subtract(h.getTienGiamGia()).add(newFee));
         h.setHoTenNguoiNhan(r.receiver().name().trim()); h.setSoDienThoaiNguoiNhan(r.receiver().phone().trim());
         h.setDiaChiGiaoHang(r.receiver().address()); h.setGhiChu(r.note()); h.setNgayCapNhat(LocalDateTime.now());
-        history(h,"Khách hàng cập nhật thông tin nhận hàng"); return response(h);
+        if(r.deliveryPoint()==null)OrderLocation.clear(em,h);else OrderLocation.save(em,h,r.deliveryPoint());
+        history(h,SHIPPING_CHANGED+" (1/1)"); em.flush(); return response(h);
     }
     @Transactional
     public Order cancel(Long customerId,String code) {
         customer(customerId); codes.lockInvoiceCreation(); var h=owned(customerId,code,true); editable(h);
         OnlineOrderInventory.restore(em,h); h.setTrangThai(6); h.setNgayCapNhat(LocalDateTime.now());
-        history(h,"Khách hàng hủy đơn khi đang chờ xác nhận"); return response(h);
+        history(h,"Khách hàng hủy đơn khi đang chờ xác nhận"); orderEmail.queueStatus(h); return response(h);
     }
     public List<Notice> notices(Long customerId) {
         customer(customerId); var from=LocalDateTime.now().minusDays(3); List<Notice> notices=new ArrayList<>();
@@ -255,6 +280,13 @@ public class CustomerCommerceService {
         return query.getResultStream().findFirst().orElseThrow(()->AppException.notFound("Không tìm thấy đơn hàng của bạn"));
     }
     private boolean isEditable(HoaDon h) { return Integer.valueOf(0).equals(h.getTrangThai()) && OnlineOrderInventory.managed(em,h) && !OnlineBankPayment.hasReceipt(em,h); }
+    private long shippingChanges(HoaDon h) {
+        return em.createQuery("select count(l) from LichSuHoaDon l where l.idHoaDon.id=:id and locate(:prefix,l.ghiChu)=1",Long.class)
+                .setParameter("id",h.getId()).setParameter("prefix",SHIPPING_CHANGED).getSingleResult();
+    }
+    private boolean canChangeShipping(HoaDon h) {
+        return Integer.valueOf(0).equals(h.getTrangThai()) && OnlineOrderInventory.managed(em,h) && shippingChanges(h)==0;
+    }
     private void editable(HoaDon h) { if(!isEditable(h)) throw AppException.conflict("Chỉ đơn online đang chờ xác nhận mới được sửa hoặc hủy"); }
     private String image(SanPhamChiTiet v) {
         return em.createQuery("select h.urlAnh from HinhAnhSanPham h where h.idSanPham.id=:p and (h.idSanPhamChiTiet.id=:v or h.idSanPhamChiTiet is null) order by case when h.idSanPhamChiTiet.id=:v then 0 else 1 end,h.isAnhChinh desc,h.id",String.class)
@@ -267,7 +299,7 @@ public class CustomerCommerceService {
                 .setParameter("id",h.getId()).getResultList().stream().filter(l->!com.smashstep.datn.invoice.rules.PosHistoryRules.danhRieng(l.getGhiChu()) && !com.smashstep.datn.invoice.rules.PosPriceSnapshot.metadata(l.getGhiChu()))
                 .map(l->new Event(l.getTrangThai(),label(l.getTrangThai()),l.getGhiChu(),l.getNgayTao())).toList();
         return new Order(h.getMaHoaDon(),h.getTrangThai(),label(h.getTrangThai()),h.getNgayTao(),h.getNgayCapNhat(),h.getHoTenNguoiNhan(),h.getSoDienThoaiNguoiNhan(),h.getDiaChiGiaoHang(),h.getIdPhuongThucThanhToan()==null?null:h.getIdPhuongThucThanhToan().getTenPhuongThuc(),com.smashstep.datn.invoice.rules.PosDraftRules.note(h),h.getTongTien(),h.getTienGiamGia(),h.getPhiVanChuyen(),h.getThanhTien(),isEditable(h),lines,history,
-                h.getIdPhuongThucThanhToan()==null?null:h.getIdPhuongThucThanhToan().getMaPhuongThuc(),isEditable(h) && !OnlineBankPayment.bankOrder(em,h));
+                h.getIdPhuongThucThanhToan()==null?null:h.getIdPhuongThucThanhToan().getMaPhuongThuc(),canChangeShipping(h),OrderLocation.get(em,h));
     }
     private static String label(Integer status) {var value=TrangThaiHoaDon.tuMa(status);return value==null?"Chưa xác định":value.getNhan();}
     private void history(HoaDon h,String message) {var l=new LichSuHoaDon();l.setIdHoaDon(h);l.setTrangThai(h.getTrangThai());l.setNgayTao(LocalDateTime.now());l.setGhiChu(message);em.persist(l);}
@@ -276,7 +308,9 @@ public class CustomerCommerceService {
             String value=r.items().stream().sorted(Comparator.comparing(Item::variantId)).map(i->i.variantId()+":"+i.quantity()).reduce("",(a,b)->a+"|"+b)
                     +"|"+Objects.toString(r.voucherCode(),"")+"|"+r.paymentMethodId()+"|"+r.receiver()+"|"+r.note()+"|"+r.expectedTotal()
                     +(Boolean.TRUE.equals(r.saveAddress()) || Boolean.TRUE.equals(r.makeDefaultAddress())
-                            ? "|save:"+Boolean.TRUE.equals(r.saveAddress())+"|default:"+Boolean.TRUE.equals(r.makeDefaultAddress()) : "");
+                    ? "|save:"+Boolean.TRUE.equals(r.saveAddress())+"|default:"+Boolean.TRUE.equals(r.makeDefaultAddress()) : "")
+                    +(r.deliveryPoint()==null?"":"|point:"+r.deliveryPoint())
+                    +(Boolean.TRUE.equals(r.receiveOrderEmails())?"|order-email:true":"");
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
         } catch(java.security.NoSuchAlgorithmException e) {throw new IllegalStateException(e);}
     }

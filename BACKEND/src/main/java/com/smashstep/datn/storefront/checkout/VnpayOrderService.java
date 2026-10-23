@@ -3,6 +3,7 @@ package com.smashstep.datn.storefront.checkout;
 import com.smashstep.datn.common.exception.AppException;
 import com.smashstep.datn.customer.entity.KhachHang;
 import com.smashstep.datn.invoice.entity.*;
+import com.smashstep.datn.invoice.rules.PosPriceSnapshot;
 import com.smashstep.datn.invoice.service.InvoiceCodeService;
 import com.smashstep.datn.payment.entity.*;
 import com.smashstep.datn.product.service.KhoaGhiSanPham;
@@ -32,6 +33,7 @@ public class VnpayOrderService {
     private final SalesService sales;
     private final CustomerCommerceService commerce;
     private final Validator validator;
+    private final OrderEmailNotifications orderEmail;
 
     public record Posted(String code, Long customerId) {}
 
@@ -75,6 +77,8 @@ public class VnpayOrderService {
                 throw AppException.conflict("Sản phẩm đã thanh toán không đủ tồn kho; cần cửa hàng xử lý, không thanh toán lại");
         }
         var request = entry.request();
+        if(request!=null && request.deliveryPoint()!=null && !validator.validate(request.deliveryPoint()).isEmpty())
+            throw AppException.conflict("Vị trí giao hàng trong biên nhận không hợp lệ; cần cửa hàng kiểm tra.");
         if (request == null && payment.discount().signum() != 0)
             throw AppException.conflict("Giao dịch cũ thiếu mã voucher gốc; cần bổ sung trước khi ghi hóa đơn");
         var voucher = sales.kiemTraPhieuDaThanhToan(customer, payment.subtotal(),
@@ -104,6 +108,9 @@ public class VnpayOrderService {
             var detail = new HoaDonChiTiet(); detail.setIdHoaDon(invoice); detail.setIdSanPhamChiTiet(variant);
             detail.setSoLuong(line.quantity()); detail.setDonGia(line.variant().giaSauGiam());
             detail.setThanhTien(line.total()); detail.setTrangThai(1); em.persist(detail);
+            String priceRecord=PosPriceSnapshot.onlineLine(line.variant().variantId(),line.variant().giaGoc(),
+                    line.variant().giaSauGiam(),line.variant().phanTramGiam());
+            if(priceRecord!=null)history(invoice,priceRecord,now);
         }
         if (voucher.voucher() != null)
             voucher.voucher().setSoLuongDaDung(Math.addExact(Objects.requireNonNullElse(voucher.voucher().getSoLuongDaDung(), 0), 1));
@@ -118,6 +125,8 @@ public class VnpayOrderService {
         history(invoice, marker + entry.fingerprint(), now);
         history(invoice, OnlineOrderInventory.PREFIX + entry.requestId() + "|" + entry.fingerprint(), now);
         history(invoice, "Đặt hàng online, đã thanh toán bằng VNPAY (Sandbox); chờ cửa hàng xác nhận", now);
+        OrderLocation.save(em,invoice,request==null?null:request.deliveryPoint());
+        orderEmail.configure(invoice,request!=null && Boolean.TRUE.equals(request.receiveOrderEmails()));
         em.flush();
         return new Posted(invoice.getMaHoaDon(), entry.owner());
     }

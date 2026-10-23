@@ -23,7 +23,6 @@ public class AuthService {
     private final KhachHangRepository khachHangRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
-
     public AuthService(
             NhanVienRepository nhanVienRepository,
             KhachHangRepository khachHangRepository,
