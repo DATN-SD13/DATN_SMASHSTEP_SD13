@@ -38,8 +38,10 @@ const router = createRouter({
 
     { path: '/gio-hang', component: () => import('../views/CartView.vue'), meta: { title: 'Giỏ hàng | SmashStep' } },
     { path: '/thanh-toan', component: () => import('../views/CheckoutView.vue'), meta: { title: 'Thanh toán | SmashStep', requiresAuth: true, customerOnly: true } },
-    { path: '/thanh-toan-thu', component: () => import('../views/PaymentDemoView.vue'), meta: { title: 'Thanh toán thử | SmashStep', public: true } },
-    { path: '/thanh-toan-thu/:code', component: () => import('../views/PaymentDemoView.vue'), meta: { title: 'Thanh toán thẻ giả lập | SmashStep', requiresAuth: true, customerOnly: true } },
+    { path: '/thanh-toan-vnpay/ket-qua', component: () => import('../views/VnpayReturnView.vue'), meta: { title: 'Kết quả thanh toán | SmashStep', public: true } },
+    { path: '/thanh-toan-vnpay/phien/:code', component: () => import('../views/VnpayReturnView.vue'), meta: { title: 'Thanh toán VNPAY | SmashStep', requiresAuth: true, customerOnly: true } },
+    { path: '/thanh-toan-thu', redirect: { path: '/thanh-toan', query: { payment: 'vnpay' } } },
+    { path: '/thanh-toan-thu/:code', component: () => import('../views/PaymentDemoView.vue'), meta: { title: 'Thanh toán thử | SmashStep', requiresAuth: true, customerOnly: true } },
     { path: '/don-hang', component: () => import('../views/OrderListView.vue'), meta: { title: 'Đơn hàng của bạn | SmashStep', requiresAuth: true, customerOnly: true } },
     { path: '/don-hang/:ma', component: () => import('../views/OrderDetailView.vue'), meta: { title: 'Chi tiết đơn hàng | SmashStep', requiresAuth: true, customerOnly: true } },
     { path: '/goi-y-giay', component: () => import('../views/RecommendationView.vue'), meta: { title: 'Gợi ý giày | SmashStep' } },

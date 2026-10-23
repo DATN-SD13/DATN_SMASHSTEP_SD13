@@ -166,6 +166,10 @@ public class CustomerCommerceService {
                 ? "Khách hàng đặt hàng online; chờ chuyển khoản QR và cửa hàng đối soát" : "Khách hàng đặt hàng online; chờ xác nhận và thu COD");
         em.flush(); return order(customerId,h.getMaHoaDon());
     }
+    @Transactional(propagation=org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public void savePaidReceiverAddress(Long customerId,Request request) {
+        saveReceiverAddress(customer(customerId),request);
+    }
     private void saveReceiverAddress(KhachHang customer,Request r) {
         var receiver=r.receiver();
         var existing=addresses.getAddresses(customer.getMaKhachHang()).stream().filter(a ->
