@@ -148,9 +148,8 @@ onBeforeUnmount(persist)
 
 <template>
   <Teleport to="body">
-    <button v-if="!open" type="button" class="admin-ai-launch" @click="open = true; minimized = false">
-      <span class="launch-mark">AI</span>
-      <span>Trợ lý quản trị</span>
+    <button v-if="!open" type="button" class="admin-ai-launch" title="Trợ lý quản trị" aria-label="Mở trợ lý quản trị" @click="open = true; minimized = false">
+      <span class="launch-mark" aria-hidden="true">AI</span>
     </button>
 
     <section v-else class="admin-ai-shell" :class="{ minimized }" aria-label="Trợ lý quản trị SmashStep">
@@ -240,12 +239,16 @@ onBeforeUnmount(persist)
 
 <style scoped>
 .admin-ai-launch {
-  position: fixed; right: 24px; bottom: 24px; z-index: 1080;
-  display: flex; align-items: center; gap: 10px; border: 0; border-radius: 16px;
-  padding: 11px 16px 11px 10px; background: var(--ss-primary); color: #fff;
-  font-weight: 700; box-shadow: 0 16px 40px rgba(15, 48, 78, .22); cursor: pointer;
+  position: fixed; right: 20px; bottom: 20px; z-index: 1080;
+  display: grid; place-items: center; width: 48px; height: 48px; min-width: 48px;
+  padding: 0; border: 1px solid rgba(255,255,255,.65); border-radius: 50%;
+  background: var(--ss-primary, #2878e8); color: #fff;
+  box-shadow: 0 4px 14px rgba(15,48,78,.18); cursor: pointer;
+  transition: box-shadow .18s ease, background-color .18s ease;
 }
-.launch-mark { display:grid; place-items:center; width:32px; height:32px; border-radius:10px; background:rgba(255,255,255,.16); font-size:12px; letter-spacing:.04em; }
+.admin-ai-launch:hover { background: #2169ce; box-shadow: 0 6px 18px rgba(15,48,78,.24); }
+.admin-ai-launch:focus-visible { outline: 3px solid #91bfff; outline-offset: 3px; }
+.launch-mark { display: block; font-size: 14px; line-height: 1; font-weight: 800; letter-spacing: .03em; }
 .admin-ai-shell {
   position: fixed; right: 24px; bottom: 24px; z-index: 1080; width: min(430px, calc(100vw - 32px)); height: min(720px, calc(100vh - 48px));
   display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--ss-border); border-radius: 22px;
