@@ -18,9 +18,11 @@ import java.util.List;
 public class JwtAuthFilter extends OncePerRequestFilter {
 
     private final JwtUtil jwtUtil;
+    private final NhanVienSessionService employeeSessions;
 
-    public JwtAuthFilter(JwtUtil jwtUtil) {
+    public JwtAuthFilter(JwtUtil jwtUtil, NhanVienSessionService employeeSessions) {
         this.jwtUtil = jwtUtil;
+        this.employeeSessions = employeeSessions;
     }
 
     @Override
@@ -41,6 +43,24 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 String userType = jwtUtil.getUserType(token);
                 Long   userId   = jwtUtil.getUserId(token);
 
+                if ("NHAN_VIEN".equals(userType) && !"/api/auth/login".equals(request.getServletPath())) {
+                    NhanVienSessionService.Session current;
+                    try { current = employeeSessions.current(userId); }
+                    catch (RuntimeException unavailable) {
+                        SecurityContextHolder.clearContext();
+                        response.setStatus(503); response.setContentType("application/json;charset=UTF-8");
+                        response.getWriter().write("{\"success\":false,\"message\":\"Chưa kiểm tra được quyền tài khoản. Vui lòng thử lại.\",\"data\":null}");
+                        return;
+                    }
+                    if (current == null) {
+                        SecurityContextHolder.clearContext();
+                        response.setStatus(401); response.setContentType("application/json;charset=UTF-8");
+                        response.getWriter().write("{\"success\":false,\"message\":\"Tài khoản đã bị khóa, bị xóa hoặc vai trò đã ngừng hoạt động. Vui lòng đăng nhập lại.\",\"data\":null}");
+                        return;
+                    }
+                    role = current.role();
+                    if (current.username() != null && !current.username().isBlank()) username = current.username();
+                }
                 var authorities = List.of(new SimpleGrantedAuthority("ROLE_" + role));
 
                 var auth = new UsernamePasswordAuthenticationToken(username, null, authorities);

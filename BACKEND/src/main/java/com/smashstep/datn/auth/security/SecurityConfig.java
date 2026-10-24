@@ -90,6 +90,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/chat/customer/**").hasRole("CUSTOMER")
                         .requestMatchers("/api/chat/staff/**").hasAnyRole("ADMIN", "STAFF")
                         .requestMatchers("/api/customer/**").hasRole("CUSTOMER")
+                        .requestMatchers("/api/thong-ke/**", "/api/thong-ke-tong-hop/**").hasRole("ADMIN")
+                        .requestMatchers("/api/nhan-vien/me", "/api/nhan-vien/me/**", "/api/nhan-vien/vai-tro").hasAnyRole("ADMIN", "STAFF")
+                        .requestMatchers("/api/nhan-vien", "/api/nhan-vien/**").hasRole("ADMIN")
                         .requestMatchers("/api/products/**", "/api/product-details/**", "/api/product-attributes/**",
                                 "/api/hoa-don/**", "/api/ban-hang/**", "/api/thong-ke/**", "/api/thong-ke-tong-hop/**")
                         .hasAnyRole("ADMIN", "STAFF")

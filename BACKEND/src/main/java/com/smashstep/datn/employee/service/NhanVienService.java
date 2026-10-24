@@ -199,6 +199,15 @@ public class NhanVienService {
     // =========================================================
     // SỬA NHÂN VIÊN
     // =========================================================
+    /** Hồ sơ cá nhân không phải API thay đổi vai trò, kể cả form cũ đang giữ roleId cũ. */
+    @Transactional
+    public NhanVienResponse suaThongTinCaNhan(String ma, NhanVienRequest request) {
+        lockEmployeeWrites();
+        var current = findByMa(ma);
+        request.setRoleId(current.getIdVaiTro() == null ? null : current.getIdVaiTro().getId());
+        return sua(ma, request);
+    }
+
     @Transactional
     public NhanVienResponse sua(
             String ma,

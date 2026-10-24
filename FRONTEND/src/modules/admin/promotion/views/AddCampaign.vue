@@ -1,4 +1,6 @@
 <script setup>
+import CampaignPagination from '../components/CampaignPagination.vue';
+import { useCampaignPagination } from '../composables/useCampaignPagination';
 import ProductThumbnail from '../../product/components/ProductThumbnail.vue';
 import { variantService } from '../../product/services/productService';
 
@@ -259,6 +261,10 @@ const filteredProducts = computed(() => {
 // BIẾN THỂ ĐÃ CHỌN
 // Lưu ID thật của san_pham_chi_tiet
 // =====================================================
+const productPagination = useCampaignPagination(filteredProducts);
+const { page: productPage, offset: productOffset, visibleRows: pagedProducts } = productPagination;
+watch(draft, productPagination.reset);
+
 const selected = ref([]);
 const hasUnsavedChanges = computed(() => {
   return (
@@ -313,11 +319,11 @@ function toggleProduct(p) {
 // =====================================================
 const allChecked = computed(
   () =>
-    filteredProducts.value.length > 0 && filteredProducts.value.every(isFull),
+    pagedProducts.value.length > 0 && pagedProducts.value.every(isFull),
 );
 
 function toggleAll() {
-  const ids = filteredProducts.value.flatMap((p) =>
+  const ids = pagedProducts.value.flatMap((p) =>
     p.variants.map((x) => x.id),
   );
 
@@ -469,6 +475,10 @@ onBeforeRouteLeave(() => {
     "Bạn có thông tin chưa lưu. Bạn có chắc chắn muốn rời khỏi trang không?",
   );
 });
+
+const chosenPagination = useCampaignPagination(shownRows);
+const { page: chosenPage, offset: chosenOffset, visibleRows: pagedChosenRows } = chosenPagination;
+watch(listFilter, chosenPagination.reset);
 </script>
 
 <template>
@@ -733,6 +743,9 @@ onBeforeRouteLeave(() => {
                     <input
                       type="checkbox"
                       :checked="allChecked"
+                      v-indeterminate="!allChecked && pagedProducts.some(isChosen)"
+                      title="Chọn tất cả sản phẩm trên trang này"
+                      aria-label="Chọn tất cả sản phẩm trên trang này"
                       @change="toggleAll"
                     />
                   </th>
@@ -746,7 +759,7 @@ onBeforeRouteLeave(() => {
               </thead>
 
               <tbody>
-                <tr v-for="(p, i) in filteredProducts" :key="p.code">
+                <tr v-for="(p, i) in pagedProducts" :key="p.code">
                   <td class="c">
                     <input
                       type="checkbox"
@@ -757,7 +770,7 @@ onBeforeRouteLeave(() => {
                   </td>
 
                   <td class="c">
-                    {{ i + 1 }}
+                    {{ productOffset + i + 1 }}
                   </td>
 
                   <td>
@@ -779,6 +792,7 @@ onBeforeRouteLeave(() => {
               </tbody>
             </table>
           </div>
+          <CampaignPagination v-if="!loadingProducts" :page="productPage" :total="filteredProducts.length" @change="productPagination.setPage" />
         </section>
       </div>
 
@@ -845,9 +859,9 @@ onBeforeRouteLeave(() => {
             </thead>
 
             <tbody>
-              <tr v-for="(x, i) in shownRows" :key="x.id">
+              <tr v-for="(x, i) in pagedChosenRows" :key="x.id">
                 <td class="c">
-                  {{ i + 1 }}
+                  {{ chosenOffset + i + 1 }}
                 </td>
                   <td>
                     <ProductThumbnail
@@ -911,6 +925,7 @@ onBeforeRouteLeave(() => {
             </tbody>
           </table>
         </div>
+          <CampaignPagination :page="chosenPage" :total="shownRows.length" label="biến thể" @change="chosenPagination.setPage" />
       </section>
     </main>
   </AdminLayout>

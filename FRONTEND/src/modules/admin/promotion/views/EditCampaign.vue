@@ -1,4 +1,6 @@
 <script setup>
+import CampaignPagination from '../components/CampaignPagination.vue';
+import { useCampaignPagination } from '../composables/useCampaignPagination';
 import ProductThumbnail from '../../product/components/ProductThumbnail.vue';
 import { variantService } from '../../product/services/productService';
 
@@ -240,6 +242,10 @@ const filteredProducts = computed(() => {
 // ======================================
 // CHỌN SẢN PHẨM
 // ======================================
+const productPagination = useCampaignPagination(filteredProducts);
+const { page: productPage, offset: productOffset, visibleRows: pagedProducts } = productPagination;
+watch(draft, productPagination.reset);
+
 const selected = ref([]);
 
 const originalData = ref("");
@@ -311,12 +317,12 @@ function toggleProduct(p) {
 // Kiểm tra đã chọn tất cả sản phẩm đang hiển thị
 const allChecked = computed(
   () =>
-    filteredProducts.value.length > 0 && filteredProducts.value.every(isFull),
+    pagedProducts.value.length > 0 && pagedProducts.value.every(isFull),
 );
 
 // Chọn hoặc bỏ chọn tất cả biến thể đang hiển thị
 function toggleAll() {
-  const ids = filteredProducts.value.flatMap((p) =>
+  const ids = pagedProducts.value.flatMap((p) =>
     p.variants.map((x) => x.id),
   );
 
@@ -542,6 +548,10 @@ onBeforeRouteLeave(() => {
 });
 
 onMounted(loadEditData);
+
+const chosenPagination = useCampaignPagination(chosenRows);
+const { page: chosenPage, offset: chosenOffset, visibleRows: pagedChosenRows } = chosenPagination;
+
 </script>
 
 <template>
@@ -726,6 +736,9 @@ onMounted(loadEditData);
                       <input
                         type="checkbox"
                         :checked="allChecked"
+                      v-indeterminate="!allChecked && pagedProducts.some(isChosen)"
+                      title="Chọn tất cả sản phẩm trên trang này"
+                      aria-label="Chọn tất cả sản phẩm trên trang này"
                         @change="toggleAll"
                       />
                     </th>
@@ -736,7 +749,7 @@ onMounted(loadEditData);
                 </thead>
 
                 <tbody>
-                  <tr v-for="(p, i) in filteredProducts" :key="p.code">
+                  <tr v-for="(p, i) in pagedProducts" :key="p.code">
                     <td class="c">
                       <input
                         type="checkbox"
@@ -746,7 +759,7 @@ onMounted(loadEditData);
                       />
                     </td>
 
-                    <td class="c">{{ i + 1 }}</td>
+                    <td class="c">{{ productOffset + i + 1 }}</td>
                     <td>{{ p.code }}</td>
                     <td>{{ p.name }}</td>
                   </tr>
@@ -760,6 +773,7 @@ onMounted(loadEditData);
                 </tbody>
               </table>
             </div>
+          <CampaignPagination v-if="!loadingProducts" :page="productPage" :total="filteredProducts.length" @change="productPagination.setPage" />
           </section>
         </div>
 
@@ -836,8 +850,8 @@ onMounted(loadEditData);
               </thead>
 
               <tbody>
-                <tr v-for="(x, i) in chosenRows" :key="x.id">
-                  <td class="c">{{ i + 1 }}</td>
+                <tr v-for="(x, i) in pagedChosenRows" :key="x.id">
+                  <td class="c">{{ chosenOffset + i + 1 }}</td>
                   <td>
                     <ProductThumbnail
                       :url="selectedProductVisual(x.id).anhChinh"
@@ -889,6 +903,7 @@ onMounted(loadEditData);
               </tbody>
             </table>
           </div>
+          <CampaignPagination :page="chosenPage" :total="chosenRows.length" label="biến thể" @change="chosenPagination.setPage" />
         </section>
       </template>
     </main>

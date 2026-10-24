@@ -203,6 +203,9 @@ public class SalesService {
                         .getResultList()) {
             if (phieuUngVien.getHinhThucPhieu() == null
                     || !Set.of(1, 2).contains(phieuUngVien.getHinhThucPhieu())) continue;
+            // Không đưa phiếu hết lượt vào cả nhóm hợp lệ lẫn nhóm chưa đủ điều kiện.
+            if (phieuUngVien.getSoLuong() != null && Optional.ofNullable(phieuUngVien.getSoLuongDaDung()).orElse(0)
+                    >= phieuUngVien.getSoLuong()) continue;
             if (Integer.valueOf(2).equals(phieuUngVien.getHinhThucPhieu())) {
                 if (duLieu.khachHang() == null) continue;
                 var links =
@@ -219,7 +222,7 @@ public class SalesService {
                                         a.getIdKhachHang() != null
                                                 && Objects.equals(
                                                 a.getIdKhachHang().getId(),
-                                                idKhachDuocChon))) continue;
+                                                idKhachDuocChon) && a.getNgaySuDung() == null)) continue;
             }
             try {
                 var valid =
@@ -423,6 +426,29 @@ public class SalesService {
         return h;
     }
 
+    /** Ghi mốc mở xác nhận; chưa thu tiền nên vẫn giữ giỏ POS để quay lại/chỉnh sửa. */
+    @Transactional
+    public Long ghiNhanChoXacNhanThanhToan(Long invoiceId, Long revision) {
+        khoaThanhToan();
+        var h = hoaDonThuocNhanVien(invoiceId, true);
+        if (PosDayRules.expired(h, PosDayRules.startToday()))
+            throw AppException.conflict("Hóa đơn chờ đã qua ngày; hãy tải lại POS");
+        if (!entityManager.createQuery("select p from LichSuThanhToan p where p.idHoaDon=:h", LichSuThanhToan.class)
+                .setParameter("h", h).getResultList().isEmpty())
+            throw AppException.conflict("Hóa đơn có khoản thu cần đối soát");
+        var latest = entityManager.createQuery("select l from LichSuHoaDon l where l.idHoaDon.id=:id order by l.id desc", LichSuHoaDon.class)
+                .setParameter("id", invoiceId).setMaxResults(1).getResultList();
+        var last = latest.isEmpty() ? null : latest.get(0);
+        if (revision == null || last == null || !Objects.equals(last.getId(), revision))
+            throw AppException.conflict("Hóa đơn đã thay đổi; tải lại và xác nhận lại");
+        String marker = com.smashstep.datn.invoice.rules.PosHistoryRules.HOAN_TAT + "Chờ xác nhận thanh toán tại POS";
+        if (Integer.valueOf(0).equals(last.getTrangThai()) && marker.equals(last.getGhiChu())) return last.getId();
+        var row = new LichSuHoaDon(); row.setIdHoaDon(h); row.setNguoiTao(PosActor.idNhanVien());
+        row.setTrangThai(0); row.setNgayTao(LocalDateTime.now()); row.setGhiChu(marker);
+        entityManager.persist(row); entityManager.flush();
+        return row.getId();
+    }
+
     @Transactional
     public void baoVeKhoanThu(SalesRequest request) {
         khoaThanhToan();
@@ -608,7 +634,9 @@ public class SalesService {
         h.setTienGiamGia(duLieu.ketQuaTinhTien().getTienGiam());
         h.setThanhTien(thanhTien);
         DeliveryRules.apDung(h, giaoHang, yeuCau.getGhiChu());
-        h.setTrangThai(giaoHang.apDung() ? 0 : 5);
+        h.setTrangThai(giaoHang.apDung()
+                ? com.smashstep.datn.invoice.enums.TrangThaiHoaDon.DA_XAC_NHAN.getMa()
+                : com.smashstep.datn.invoice.enums.TrangThaiHoaDon.HOAN_THANH.getMa());
         h.setNgayThanhToan(thoiDiem);
         h.setNgayCapNhat(thoiDiem);
         if (ownHold) entityManager.remove(holds.get(0));
@@ -664,7 +692,7 @@ public class SalesService {
         ghiLichSu.setGhiChu(
                 com.smashstep.datn.invoice.rules.PosHistoryRules.HOAN_TAT
                         + (giaoHang.apDung()
-                        ? "Đã thanh toán tại POS - giao hàng chờ xác nhận"
+                        ? "Đã thanh toán tại POS - đã xác nhận đơn giao hàng"
                         : "Đã thanh toán và nhận hàng tại quầy"));
         entityManager.persist(ghiLichSu);
         entityManager.flush();

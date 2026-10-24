@@ -975,6 +975,11 @@ onUnmounted(() => {
 
         <div class="product-table-wrap">
           <table class="product-table table table-hover align-middle mb-0">
+            <colgroup>
+              <col style="width:4%" /><col style="width:11%" /><col style="width:6%" />
+              <col style="width:24%" /><col style="width:9%" /><col style="width:5%" /><col style="width:7%" />
+              <col style="width:11%" /><col style="width:10%" /><col style="width:13%" />
+            </colgroup>
             <thead>
               <tr>
                 <th>STT</th>
@@ -987,7 +992,6 @@ onUnmounted(() => {
                 <th>Thời gian</th>
                 <th>Giảm giá</th>
                 <th>Đơn giá</th>
-                <th>Thành tiền</th>
               </tr>
             </thead>
             <tbody>
@@ -1022,12 +1026,11 @@ onUnmounted(() => {
                   {{ invoice.date?.split(' ')[1] || invoice.date }}
                   <small>{{ invoice.date?.split(' ')[0] || '' }}</small>
                 </td>
-                <td><div v-if="item.discountPercent != null" class="line-discount"><span>{{ item.discountPercent }}%</span><small v-if="item.originalPrice > item.price">−{{ money((item.originalPrice - item.price) * item.quantity) }}</small></div><span v-else class="discount-empty">—</span></td>
+                <td><div v-if="Number(item.discountPercent) > 0" class="line-discount"><span>{{ item.discountPercent }}%</span><small v-if="item.originalPrice > item.price">−{{ money((item.originalPrice - item.price) * item.quantity) }}</small></div><span v-else class="discount-empty">—</span></td>
                 <td class="nowrap"><del v-if="item.originalPrice > item.price" class="historical-price">{{ money(item.originalPrice) }}</del><strong :class="{ 'historical-sale': item.originalPrice > item.price }">{{ money(item.price) }}</strong></td>
-                <td class="product-total">{{ money(item.lineTotal) }}</td>
               </tr>
               <tr v-if="!filteredItems.length">
-                <td colspan="11" class="empty-products">
+                <td colspan="10" class="empty-products">
                   {{ invoice.items?.length ? 'Không có sản phẩm phù hợp với bộ lọc.' : 'Không có sản phẩm.' }}
                 </td>
               </tr>
@@ -1654,7 +1657,9 @@ onUnmounted(() => {
 .product-reset-button:hover{background:#edf8fd}
 
 .product-table-wrap{
-  width:100%;
+  width:calc(100% - 40px);
+  margin:0 20px 16px;
+  border-radius:10px;
   overflow-x:auto;
   overflow-y:hidden;
   scrollbar-width:thin;
@@ -1719,6 +1724,41 @@ onUnmounted(() => {
 .product-total{color:#1681c3!important;font-weight:750}
 .nowrap{white-space:nowrap!important}
 .empty-products{text-align:center!important;color:#91a0a8!important;padding:22px!important}
+
+/* Cột cố định cho số liệu, phần còn lại dành cho tên và thuộc tính sản phẩm. */
+.product-table{table-layout:fixed;min-width:1320px}
+.product-table th{height:46px;background:#edf5fa;padding:10px 12px;font-size:11px;line-height:1.4}
+.product-table td{padding:16px 12px;font-size:12px;line-height:1.5}
+.product-table th:nth-child(1),.product-table td:nth-child(1),
+.product-table th:nth-child(3),.product-table td:nth-child(3),
+.product-table th:nth-child(6),.product-table td:nth-child(6),
+.product-table th:nth-child(7),.product-table td:nth-child(7){text-align:center}
+.product-table th:nth-child(9),.product-table td:nth-child(9),
+.product-table th:nth-child(10),.product-table td:nth-child(10),
+.product-table th:nth-child(11),.product-table td:nth-child(11){text-align:right;font-variant-numeric:tabular-nums}
+.product-table td.product-info-cell{min-width:0;white-space:normal;overflow-wrap:anywhere}
+.product-table .product-info-cell strong{font-size:12px;line-height:1.5}
+.product-table .product-info-cell small{font-size:10px;line-height:1.5;color:#8195a0}
+.product-table .product-thumb{width:48px;height:48px;margin:auto;border-radius:10px}
+.product-table .product-thumb img{object-fit:contain}
+.product-table .product-code{white-space:normal;overflow-wrap:anywhere;font-size:11px}
+.product-table .product-time{font-size:11px;font-variant-numeric:tabular-nums}
+.product-table .product-time small{font-size:10px}
+.product-table .line-discount{justify-items:end}
+.product-table .line-discount small{font-size:10px}
+.product-table .historical-price{font-size:11px}
+.product-table .product-total{font-size:12px}
+.product-table tbody tr:last-child td{border-bottom:0}
+
+/* Bảng sản phẩm: tất cả tiêu đề và giá trị căn trái theo yêu cầu. */
+.product-table{min-width:1170px}
+.product-table th,.product-table td{text-align:left!important}
+.product-table .product-thumb{margin-left:0;margin-right:0}
+.product-table .line-discount{justify-items:start;text-align:left}
+
+/* Chia đều phần rộng còn lại, không để riêng cột sản phẩm hút hết khoảng trống. */
+.product-table .line-discount>span{background:#fff0f3;color:#d32c50}
+.product-table .line-discount small{color:#d32c50}
 
 @media(max-width:1100px){
   .product-filter-box{grid-template-columns:1fr 1fr 1fr}

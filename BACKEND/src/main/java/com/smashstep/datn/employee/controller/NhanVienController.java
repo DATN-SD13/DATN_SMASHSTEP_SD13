@@ -53,7 +53,7 @@ public class NhanVienController {
         String username = auth != null ? auth.getName() : null;
         return ApiResponse.ok(
                 "Cập nhật thông tin cá nhân thành công",
-                nhanVienService.sua(username, request)
+                nhanVienService.suaThongTinCaNhan(username, request)
         );
     }
 

@@ -9,6 +9,7 @@ const props = defineProps({
   modelValue: { default: '' }, options: { type: Array, default: () => [] },
   placeholder: String, disabled: Boolean, multiple: Boolean,
   dropdownParentSelector: { type: String, default: '' },
+  dropdownClass: { type: String, default: '' },
   allowClear: { type: Boolean, default: true }, search: { type: Boolean, default: true }
 })
 const emit = defineEmits(['update:modelValue', 'change', 'blur'])
@@ -51,6 +52,7 @@ function initialize() {
     minimumResultsForSearch: props.search ? 0 : Infinity, dropdownParent: parent ? $(parent) : $(document.body),
     closeOnSelect: !props.multiple, language: { noResults: () => 'Không có kết quả' } })
   const instance = control.data('select2')
+  if (props.dropdownClass) instance.$dropdown.addClass(props.dropdownClass)
   keyTargets = [instance.$container[0], instance.$dropdown[0]]
   for (const target of keyTargets) target.addEventListener('keydown', closeDropdownOnEscape, true)
   control.on('change.productSelect2', () => {
@@ -67,23 +69,33 @@ function initialize() {
 }
 function refresh() {
   if (!select.value || disposed) return
-  const current = JSON.stringify([...select.value.options].map(option => [option.value, option.text, option.disabled])) + JSON.stringify([props.multiple, props.placeholder, props.search, props.allowClear, props.dropdownParentSelector])
+  const current = JSON.stringify([...select.value.options].map(option => [option.value, option.text, option.disabled])) + JSON.stringify([props.multiple, props.placeholder, props.search, props.allowClear, props.dropdownParentSelector, props.dropdownClass])
   if (current !== signature || !control) { signature = current; initialize() }
   else sync()
 }
 onMounted(refresh)
 onUpdated(refresh)
 watch(() => props.modelValue, async () => { await nextTick(); if (!disposed) sync() }, { deep: true })
-watch(() => [props.options, props.disabled, props.multiple, props.placeholder, props.search, props.allowClear, props.dropdownParentSelector], async () => {
+watch(() => [props.options, props.disabled, props.multiple, props.placeholder, props.search, props.allowClear, props.dropdownParentSelector, props.dropdownClass], async () => {
   await nextTick(); refresh()
 }, { deep: true })
 onBeforeUnmount(() => { disposed = true; destroy() })
 </script>
 <template>
-  <select ref="select" :multiple="multiple" :disabled="disabled">
+  <select class="select2-native" ref="select" :multiple="multiple" :disabled="disabled">
     <slot>
       <option v-if="!multiple" value="">{{ placeholder || 'Chọn...' }}</option>
       <option v-for="option in options" :key="String(option.id ?? option.value)" :value="option.value ?? option.id" :disabled="option.disabled">{{ option.text ?? option.ten ?? option.label }}</option>
     </slot>
   </select>
 </template>
+
+<style scoped>
+/* Vue cập nhật class validate có thể xóa class do jQuery thêm. Giữ select gốc ngoài luồng bố cục. */
+.select2-native {
+  position: absolute !important; width: 1px !important; height: 1px !important;
+  padding: 0 !important; margin: -1px !important; overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important; clip-path: inset(50%) !important;
+  white-space: nowrap !important; border: 0 !important;
+}
+</style>

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, onMounted, watch } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import api from '../utils/api'
@@ -150,6 +150,28 @@ async function openCaPanel() {
 }
 
 onMounted(loadCaData)
+
+let sessionTimer
+const refreshPermission = () => {
+  if (document.visibilityState === 'hidden' || !authStore.isAuthenticated) return
+  authStore.refreshSession().catch(() => {})
+}
+onMounted(() => {
+  refreshPermission()
+  sessionTimer = window.setInterval(refreshPermission, 10000)
+  window.addEventListener('focus', refreshPermission)
+  document.addEventListener('visibilitychange', refreshPermission)
+})
+onBeforeUnmount(() => {
+  clearInterval(sessionTimer)
+  window.removeEventListener('focus', refreshPermission)
+  document.removeEventListener('visibilitychange', refreshPermission)
+})
+watch(() => [authStore.role, route.fullPath], () => {
+  if (authStore.isAuthenticated && route.meta?.role && route.meta.role !== authStore.role)
+    router.replace(authStore.isAdmin ? '/thong-ke-tong-hop' : '/ban-hang')
+})
+
 
 // Menu quản trị cửa hàng
 const nav = [
