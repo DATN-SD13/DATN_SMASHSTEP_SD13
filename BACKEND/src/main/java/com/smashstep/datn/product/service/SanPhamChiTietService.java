@@ -211,6 +211,7 @@ public class SanPhamChiTietService {
                 .orElseThrow(() -> AppException.notFound("Không tìm thấy kích thước"));
         QuyTacSanPham.kiemTraThuocTinhHoatDong(mauSac.getTrangThai(),
                 chiTiet.getIdMauSac() == null ? null : chiTiet.getIdMauSac().getId(), mauSac.getId());
+        QuyTacSanPham.chuanHoaKichCo(kichThuoc.getGiaTri());
         QuyTacSanPham.kiemTraThuocTinhHoatDong(kichThuoc.getTrangThai(),
                 chiTiet.getIdKichThuoc() == null ? null : chiTiet.getIdKichThuoc().getId(), kichThuoc.getId());
         chiTiet.setMaChiTietSanPham(ma);
