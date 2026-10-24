@@ -47,6 +47,7 @@ public class HoaDonDetailDto {
 
     private Long idKhachHang;
     private String tenKhachHang;
+    private String tenNguoiTao;
     private String maKhachHang;
     private String email;
     private String soDienThoai;
@@ -196,6 +197,10 @@ public class HoaDonDetailDto {
                                 : null
                 )
                 .tenKhachHang(tenKhachHang)
+                .tenNguoiTao(Integer.valueOf(1).equals(hoaDon.getLoaiHoaDon())
+                        ? firstNotBlank(khachHang != null ? khachHang.getTenKhachHang() : null, "Khách hàng")
+                        : firstNotBlank(nhanVien != null ? nhanVien.getMaNhanVien() : null,
+                        nhanVien != null ? nhanVien.getTenNhanVien() : null, "Chưa cập nhật"))
                 .email(
                         khachHang != null
                                 ? khachHang.getEmail()

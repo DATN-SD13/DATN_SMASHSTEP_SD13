@@ -320,6 +320,7 @@ function mapInvoice(data) {
     id: data?.id,
     code: data?.maHoaDon || route.params.code,
     employee: data?.tenNhanVien || 'Chưa cập nhật',
+    creator: Number(data?.maLoaiHoaDon) === 1 ? 'Khách hàng' : (data?.tenNguoiTao || data?.maNhanVien || data?.tenNhanVien || 'Chưa cập nhật'),
     employeeId: data?.idNhanVien,
     employeeCode: data?.maNhanVien || '—',
     customer: data?.tenKhachHang || data?.hoTenNguoiNhan || 'Khách lẻ',
@@ -660,7 +661,7 @@ function historyStatusLabel(item) {
 }
 
 function historyActor(item) {
-  return item?.tenNhanVien || (item?.idNhanVien != null ? `Nhân viên #${item.idNhanVien}` : 'Hệ thống / chưa xác định')
+  return item?.tenKhachHang || item?.tenNhanVien || (item?.idNhanVien != null ? `Nhân viên #${item.idNhanVien}` : 'Hệ thống / chưa xác định')
 }
 
 function historyAction(item) {
@@ -728,7 +729,7 @@ onUnmounted(() => {
       <section v-if="invoice" class="invoice-summary-strip">
         <div><span>Mã Đơn Hàng:</span><strong>{{ invoice.code }}</strong></div>
         <div><span>Ngày Tạo:</span><strong>{{ invoice.date }}</strong></div>
-        <div><span>Tạo bởi:</span><strong>{{ invoice.employeeCode !== '—' ? invoice.employeeCode : invoice.employee }}</strong></div>
+        <div><span>Tạo bởi:</span><strong>{{ invoice.creator }}</strong></div>
         <div><span>Cập Nhật Gần Nhất:</span><strong>{{ invoice.updatedDate }}</strong></div>
         <div><span>Loại đơn:</span><strong>{{ invoice.orderType }}</strong></div>
         <div><span>Hình thức nhận:</span><strong>{{ invoice.receiveMethod }}</strong></div>
