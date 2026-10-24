@@ -360,11 +360,8 @@ public class HoaDonService {
         HinhThucNhan hinhThucNhan = HoaDonRules.resolveHinhThucNhan(hoaDon);
         final HinhThucNhan finalHinhThucNhan = hinhThucNhan;
 
-        return lichSuHoaDonRepository.findByIdHoaDonIdOrderByNgayTaoDesc(idHoaDon).stream()
-                .filter(
-                        lichSu ->
-                                com.smashstep.datn.invoice.rules.PosHistoryRules.hienThi(
-                                        hoaDon, lichSu))
+        return com.smashstep.datn.invoice.rules.PosHistoryRules.hienThiRutGon(
+                        hoaDon, lichSuHoaDonRepository.findByIdHoaDonIdOrderByNgayTaoDesc(idHoaDon)).stream()
                 // Đơn nhận tại quầy không có các trạng thái của quy trình giao hàng.
                 .filter(
                         lichSu ->
