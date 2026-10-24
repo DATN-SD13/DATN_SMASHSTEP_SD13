@@ -20,9 +20,14 @@ public class AddressMapService {
     public record Place(String label,String street,String ward,String province,double latitude,double longitude) {}
     private record Cached(Instant until,List<Place> places) {}
     public List<Place> search(String value){
-        String query=Objects.toString(value,"").trim();
-        if(query.length()<3 || query.length()>200 || query.codePoints().anyMatch(Character::isISOControl))throw AppException.badRequest("Nhập địa chỉ từ 3 đến 200 ký tự.");
-        return fetch("search:"+query.toLowerCase(Locale.ROOT),"api/?limit=5&countrycode=VN&q="+URLEncoder.encode(query,StandardCharsets.UTF_8));
+        String raw=Objects.toString(value,"");
+        if(raw.length()>200 || raw.codePoints().anyMatch(c->Character.isISOControl(c)||c=='<'||c=='>'||c==0x2028||c==0x2029))
+            throw AppException.badRequest("Địa chỉ tìm kiếm tối đa 200 ký tự, không chứa ký tự điều khiển hoặc < >.");
+        // Send the same query upstream for every capitalization and Unicode representation.
+        String query=java.text.Normalizer.normalize(raw,java.text.Normalizer.Form.NFC)
+                .replaceAll("\\p{Z}+"," ").strip().toLowerCase(Locale.ROOT);
+        if(query.length()<3)throw AppException.badRequest("Nhập ít nhất 3 ký tự để tìm địa chỉ.");
+        return fetch("search:"+query,"api/?limit=5&countrycode=VN&q="+URLEncoder.encode(query,StandardCharsets.UTF_8));
     }
     public List<Place> reverse(double lat,double lon){
         if(!Double.isFinite(lat)||!Double.isFinite(lon)||Math.abs(lat)>90||Math.abs(lon)>180)throw AppException.badRequest("Vị trí không hợp lệ");

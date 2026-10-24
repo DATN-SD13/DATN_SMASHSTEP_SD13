@@ -9,8 +9,7 @@ import { useLiveRefresh } from '../composables/useLiveRefresh'
 import { useToast } from '../composables/useToast'
 import { nameError, phoneError } from '../utils/accountValidation'
 import { money } from '../utils/money'
-import ProductImage from '../components/ProductImage.vue'
-import ProductPrice from '../components/ProductPrice.vue'
+import CheckoutSummary from '../components/CheckoutSummary.vue'
 import CheckoutReceiverForm from '../components/CheckoutReceiverForm.vue'
 import VoucherSelector from '../components/VoucherSelector.vue'
 const attempt = ref(null), auth = useAuthStore(), cart = useCartStore(), router = useRouter(), route = useRoute()
@@ -27,16 +26,15 @@ let requestId = crypto.randomUUID(), timer, version = 0, disposed = false
 watch(() => cart.owner, next => {
   if (next !== checkoutOwner) { version++; clearTimeout(timer); loading.value = true; quote.value = null; router.replace('/gio-hang') }
 }, { flush: 'sync' })
-const vnpayEnabled = ref(false), DEMO = 'DEMO', VNPAY = 'VNPAY_SANDBOX'
-const testPayment = computed(() => method.value === DEMO)
-const paymentMethods = computed(() => (quote.value?.methods || []).filter(method => method.supported && method.code !== 'CHUYEN_KHOAN'))
+const vnpayEnabled = ref(false), VNPAY = 'VNPAY_SANDBOX'
+// Manual bank QR is temporarily hidden until automatic confirmation is ready.
+const selectableMethod = method => method.supported && method.code !== 'CHUYEN_KHOAN'
+const paymentMethods = computed(() => (quote.value?.methods || []).filter(selectableMethod))
 const checkoutItems = computed(() => attempt.value?.items || cart.selectedItems)
-const checkoutCount = computed(() => checkoutItems.value.reduce((sum, i) => sum + i.quantity, 0))
 const checkoutLines = computed(() => checkoutItems.value.map(i => {
   const quoted = quote.value?.lines?.find(l => l.variant.variantId === i.variantId && l.quantity === i.quantity)
   return { ...i, variant: quoted?.variant || cart.lines.find(l => l.variantId === i.variantId)?.variant }
 }))
-const productSavings = computed(() => checkoutLines.value.reduce((sum, line) => sum + Math.max(0, Number(line.variant?.giaGoc || 0) - Number(line.variant?.giaSauGiam || 0)) * line.quantity, 0))
 const addresses = computed(() => profile.value?.addresses || [])
 const addressLocked = computed(() => submitting.value || !!attempt.value || addressSaving.value)
 function rememberAttempt() {
@@ -73,8 +71,8 @@ async function loadProfile(prefill = false) {
 function payload() {
   const r = Object.fromEntries(Object.entries(receiver.value).map(([key, value]) => [key, typeof value === 'string' ? value.trim() : value]))
   const point = r.point; delete r.point
-  return { items: cart.selectedItems.map(i => ({ ...i })), voucherCode: voucherCode.value || null, paymentMethodId: [DEMO, VNPAY].includes(method.value) ? null : method.value,
-    receiveOrderEmails: receiveOrderEmails.value, receiver: { ...r, email: null }, deliveryPoint: point ? { ...point } : null, note: note.value.trim(), saveAddress: !testPayment.value && saveAddress.value, makeDefaultAddress: !testPayment.value && saveAddress.value && makeDefaultAddress.value }
+  return { items: cart.selectedItems.map(i => ({ ...i })), voucherCode: voucherCode.value || null, paymentMethodId: method.value === VNPAY ? null : method.value,
+    receiveOrderEmails: receiveOrderEmails.value, receiver: { ...r, email: null }, deliveryPoint: point ? { ...point } : null, note: note.value.trim(), saveAddress: saveAddress.value, makeDefaultAddress: saveAddress.value && makeDefaultAddress.value }
 }
 function receiverError() {
   const r = receiver.value
@@ -90,12 +88,13 @@ async function refresh(feedback = false) {
     await cart.refresh()
     if (disposed || current !== version || cart.owner !== checkoutOwner || !cart.selectedItems.length) return
     const body = { ...payload(), voucherCode: selectedVoucher.value }, invalidReceiver = receiverError(); if (invalidReceiver) body.receiver = null
-    const next = await (method.value === VNPAY ? commerceService.vnpayQuote(body) : method.value === DEMO ? commerceService.demoQuote(body) : commerceService.quote(body))
+    const next = await (method.value === VNPAY ? commerceService.vnpayQuote(body) : commerceService.quote(body))
     if (disposed || cart.owner !== checkoutOwner || current !== version) return
     if (quote.value?.total != null && next.total != null && quote.value.total !== next.total)
       notice.value = 'Giá hoặc phí giao hàng vừa được cập nhật. Vui lòng kiểm tra tổng trước khi đặt hàng.'
     quote.value = invalidReceiver ? { ...next, message: invalidReceiver } : next; error.value = ''
-    if (method.value == null) method.value = next.methods.find(m => m.supported && m.code !== 'CHUYEN_KHOAN')?.id || null
+    if (method.value !== VNPAY && !next.methods.some(m => selectableMethod(m) && m.id === method.value))
+      method.value = next.methods.find(selectableMethod)?.id || null
     if (feedback === true) toast.success(next.voucherCode ? 'Đã áp dụng phiếu ' + next.voucherCode + ', giảm ' + money(next.discount) + '.' : 'Đã cập nhật đơn hàng. Hiện chưa có phiếu giảm giá đủ điều kiện.')
   } catch (e) { if (current === version) { error.value = commerceError(e); quote.value = null; if (feedback === true) toast.error(error.value) } }
   finally { if (current === version) updating.value = false }
@@ -111,7 +110,7 @@ watch([receiver, method, note, saveAddress, makeDefaultAddress, receiveOrderEmai
   }
 }, { deep: true, flush: 'sync' })
 async function saveAddressNow() {
-  if (addressLocked.value || addressResolving.value || testPayment.value) return
+  if (addressLocked.value || addressResolving.value) return
   const invalid = receiverError(); if (invalid) { error.value = invalid; toast.error(invalid); return }
   addressSaving.value = true; error.value = ''
   try {
@@ -132,20 +131,23 @@ async function placeOrder() {
   if (submitting.value || updating.value || addressSaving.value || (!attempt.value && addressResolving.value)) return
   const invalid = attempt.value ? '' : receiverError(); if (invalid) { error.value = invalid; toast.error(invalid); return }
   if (!attempt.value && (!quote.value?.canCheckout || cart.selectedInvalid)) return
+  if (!attempt.value && method.value !== VNPAY && !paymentMethods.value.some(m => m.id === method.value)) {
+    error.value = 'Vui lòng chọn phương thức thanh toán đang hoạt động.'; toast.error(error.value); return
+  }
   submitting.value = true; error.value = ''
   try {
-    if (!attempt.value) { attempt.value = { ...payload(), requestId, expectedTotal: quote.value.total, demo: method.value === DEMO, vnpay: method.value === VNPAY }; rememberAttempt() }
+    if (!attempt.value) { attempt.value = { ...payload(), requestId, expectedTotal: quote.value.total, vnpay: method.value === VNPAY }; rememberAttempt() }
     const sent = attempt.value
-    const { demo, vnpay, ...body } = sent
-    const order = await (vnpay ? commerceService.vnpayCreate(body) : demo ? commerceService.demoCreate(body) : commerceService.checkout(body))
+    const { demo: _legacyDemo, vnpay, ...body } = sent
+    const order = await (vnpay ? commerceService.vnpayCreate(body) : commerceService.checkout(body))
     if (vnpay && order.paymentUrl && new URL(order.paymentUrl).origin !== 'https://sandbox.vnpayment.vn') throw new Error('Địa chỉ VNPAY Sandbox không hợp lệ')
-    if (!demo && !vnpay) cart.purchased(sent.items, checkoutOwner)
+    if (!vnpay) cart.purchased(sent.items, checkoutOwner)
     attempt.value = null; rememberAttempt()
     if (disposed || cart.owner !== checkoutOwner) return
     if (vnpay) {
       if (order.paymentUrl) window.location.assign(order.paymentUrl)
       else await router.push('/thanh-toan-vnpay/phien/' + order.code)
-    } else await router.push((demo ? '/thanh-toan-thu/' : '/don-hang/') + order.code)
+    } else await router.push('/don-hang/' + order.code)
   } catch (e) {
     if (disposed || cart.owner !== checkoutOwner) return
     error.value = commerceError(e)
@@ -157,8 +159,9 @@ async function placeOrder() {
 onMounted(async () => {
   try {
     const saved = JSON.parse(sessionStorage.getItem(pendingKey) || 'null')
-    if (saved?.requestId && Array.isArray(saved.items) && saved.receiver) {
-      attempt.value = saved; receiver.value = { ...saved.receiver, point: saved.deliveryPoint || null }; method.value = saved.vnpay ? VNPAY : saved.demo ? DEMO : saved.paymentMethodId; note.value = saved.note || ''; receiveOrderEmails.value = saved.receiveOrderEmails === true
+    if (saved?.demo === true) sessionStorage.removeItem(pendingKey)
+    else if (saved?.requestId && Array.isArray(saved.items) && saved.receiver) {
+      attempt.value = saved; receiver.value = { ...saved.receiver, point: saved.deliveryPoint || null }; method.value = saved.vnpay ? VNPAY : saved.paymentMethodId; note.value = saved.note || ''; receiveOrderEmails.value = saved.receiveOrderEmails === true
       notice.value = 'Có phiên đặt hàng chưa xác định kết quả. Bấm thử lại cùng phiên để tránh tạo đơn trùng.'
     }
   } catch { try { sessionStorage.removeItem(pendingKey) } catch { /* Storage disabled. */ } }
@@ -166,8 +169,8 @@ onMounted(async () => {
   const [gatewayConfig] = await Promise.allSettled([commerceService.vnpayConfig()])
   vnpayEnabled.value = gatewayConfig.status === 'fulfilled' && gatewayConfig.value.enabled === true
   if (disposed || cart.owner !== checkoutOwner) return
-  if (!attempt.value && vnpayEnabled.value && ['vnpay', 'demo'].includes(route.query.payment)) method.value = VNPAY
-  if (!attempt.value && !vnpayEnabled.value && ['vnpay', 'demo'].includes(route.query.payment))
+  if (!attempt.value && vnpayEnabled.value && route.query.payment === 'vnpay') method.value = VNPAY
+  if (!attempt.value && !vnpayEnabled.value && route.query.payment === 'vnpay')
     notice.value = 'VNPAY đang tạm ngưng. Bạn có thể chọn phương thức thanh toán khác.'
   loading.value = false
   await refresh()
@@ -175,7 +178,7 @@ onMounted(async () => {
 onBeforeUnmount(() => { disposed = true; version++; clearTimeout(timer) })
 useLiveRefresh(refresh)
 </script>
-<template><div class="container shop-page"><header class="shop-heading"><span class="eyebrow">THE NEXT STEP</span><h1>Thanh toán</h1><p>Kiểm tra thông tin để đơn hàng đến đúng nơi.</p></header><p v-if="loading" class="shop-card" role="status">Đang chuẩn bị đơn hàng…</p><section v-else-if="!cart.selectedItems.length && !attempt" class="shop-card shop-empty"><h2>Bạn chưa chọn sản phẩm để thanh toán.</h2><RouterLink to="/gio-hang" class="button button-primary">Chọn sản phẩm trong giỏ</RouterLink></section><form v-else class="shop-columns" @submit.prevent="placeOrder"><div class="checkout-main"><p v-if="profileError" class="shop-alert" role="alert">{{ profileError }} <button type="button" class="text-button" :disabled="profileLoading" @click="loadProfile()">Tải lại hồ sơ</button></p><p v-if="error" class="shop-alert" role="alert">{{ error }}</p><p v-if="notice" class="shop-alert shop-alert--info" role="status">{{ notice }}</p><section class="shop-card"><h2>Chọn địa chỉ đã lưu</h2><p v-if="!addresses.length" class="shop-muted">Bạn chưa có địa chỉ đã lưu. Nhập thông tin bên dưới hoặc <RouterLink to="/tai-khoan">thêm vào sổ địa chỉ</RouterLink>.</p><label v-for="a in addresses" :key="a.id" class="address-option" :class="{ selected: selectedAddress === a.id }"><input type="radio" name="address" :checked="selectedAddress === a.id" :disabled="addressLocked" @change="chooseAddress(a)"><span><strong>{{ a.receiverName }} · {{ a.receiverPhone }}</strong> <small v-if="a.isDefault" class="shop-tag">Mặc định</small><small>{{ [a.street, a.ward, a.district, a.province].filter(Boolean).join(', ') }}</small></span></label><button class="text-button" type="button" :disabled="addressLocked" @click="chooseAddress(null)">+ Sử dụng địa chỉ khác</button></section><section class="shop-card"><h2>Thông tin người nhận</h2><label class="address-option checkout-email-choice"><input v-model="receiveOrderEmails" type="checkbox" :disabled="addressLocked"><span><strong>Bạn muốn nhận email cập nhật trạng thái đơn hàng?</strong><small v-if="receiveOrderEmails">Gửi xác nhận đặt hàng và các lần thay đổi trạng thái đến <strong>{{ profile?.email || auth.user?.email }}</strong>.</small><small v-else>Không chọn: đơn hàng này sẽ không gửi email thông báo.</small></span></label><fieldset :disabled="addressLocked"><CheckoutReceiverForm v-model="receiver" :disabled="addressLocked" @busy="addressResolving = $event" /></fieldset><div v-if="!testPayment" class="checkout-address-save"><label class="address-option"><input v-model="saveAddress" type="checkbox" :disabled="addressLocked"><span>Lưu địa chỉ này vào sổ địa chỉ khi đặt hàng thành công</span></label><label v-if="saveAddress" class="address-option"><input v-model="makeDefaultAddress" type="checkbox" :disabled="addressLocked || !addresses.length"><span>Đặt làm địa chỉ mặc định</span></label><button class="button button-outline" type="button" :disabled="addressLocked || addressResolving" @click="saveAddressNow">{{ addressSaving ? 'Đang lưu…' : 'Lưu địa chỉ ngay' }}</button></div><p v-else class="shop-muted">Địa chỉ được dùng cho đơn hàng này.</p></section><section class="shop-card"><h2>Phương thức thanh toán</h2><label v-for="m in paymentMethods" :key="m.id" class="address-option" :class="{ selected: method === m.id }"><input v-model="method" type="radio" :value="m.id" :disabled="!m.supported || submitting || !!attempt"><span><strong>{{ m.code === 'CHUYEN_KHOAN' ? 'Chuyển khoản ngân hàng bằng QR' : m.name }}</strong><small>{{ m.message }}</small></span></label><label v-if="vnpayEnabled" class="address-option demo-payment-choice" :class="{ selected: method === VNPAY }"><input v-model="method" type="radio" :value="VNPAY" :disabled="submitting || !!attempt"><span><strong>Thanh toán bằng VNPAY</strong></span></label><p v-if="quote && !paymentMethods.length && !vnpayEnabled" class="shop-error">Chưa có phương thức thanh toán đang hoạt động.</p></section><section class="shop-card"><label class="shop-label">Ghi chú giao hàng<textarea v-model="note" maxlength="900" rows="3" :disabled="addressLocked" placeholder="Ghi chú cho cửa hàng (không bắt buộc)"></textarea></label></section></div><aside class="shop-card shop-summary"><h2>Đơn hàng <span class="shop-muted">({{ checkoutCount }} sản phẩm)</span></h2><div v-for="line in checkoutLines" :key="line.variantId" class="summary-product"><ProductImage :src="line.variant?.image" :alt="line.variant?.name || 'Sản phẩm'" /><div><strong>{{ line.variant?.name || 'Đang tải sản phẩm…' }}</strong><small>{{ line.variant?.color }} · {{ line.variant?.size }} × {{ line.quantity }}</small><ProductPrice v-if="line.variant" :item="line.variant" /></div><span>{{ line.variant ? money(Number(line.variant.giaSauGiam) * line.quantity) : 'Đang tải…' }}</span></div><VoucherSelector :model-value="voucherCode" :subtotal="Number(quote?.subtotal ?? cart.selectedSubtotal)" :automatic="selectedVoucher === null" :disabled="addressLocked || updating" @select="chooseVoucher" /><dl><dt>{{ productSavings > 0 ? 'Tiền hàng sau giảm giá' : 'Tạm tính' }}</dt><dd>{{ money(quote?.subtotal ?? cart.selectedSubtotal) }}</dd><dt>Giảm voucher</dt><dd>−{{ money(quote?.discount || 0) }}</dd><dt>Phí vận chuyển GHN</dt><dd>{{ quote?.shipping == null ? 'Chưa tính được' : money(quote.shipping) }}</dd><dt class="summary-total">Tổng cộng</dt><dd class="summary-total">{{ money(attempt?.expectedTotal ?? quote?.total) }}</dd></dl><p v-if="quote?.message" class="shop-alert" role="status">{{ quote.message }}</p><button v-if="!attempt" type="button" class="text-button" :disabled="submitting || updating || addressResolving" @click="refresh(true)">Cập nhật giá và phí giao hàng</button><p v-if="updating" class="shop-muted" role="status">Đang kiểm tra giá, ưu đãi và phí vận chuyển…</p><button type="submit" class="button button-primary" :disabled="submitting || updating || addressSaving || (!attempt && addressResolving) || (!attempt && (!quote?.canCheckout || cart.selectedInvalid))">{{ submitting ? 'Đang xử lý…' : attempt ? 'Kiểm tra / thử lại phiên đặt hàng' : method === VNPAY ? 'Thanh toán bằng VNPAY' : method === DEMO ? 'Tiếp tục thanh toán thử →' : (quote?.methods?.find(m => m.id === method)?.code === 'CHUYEN_KHOAN' ? 'Đặt hàng và lấy mã QR' : 'Đặt hàng') }}</button><RouterLink to="/gio-hang" class="shop-continue">Quay lại giỏ hàng</RouterLink></aside></form></div></template>
+<template><div class="container shop-page"><header class="shop-heading"><span class="eyebrow">THE NEXT STEP</span><h1>Thanh toán</h1><p>Kiểm tra thông tin để đơn hàng đến đúng nơi.</p></header><p v-if="loading" class="shop-card" role="status">Đang chuẩn bị đơn hàng…</p><section v-else-if="!cart.selectedItems.length && !attempt" class="shop-card shop-empty"><h2>Bạn chưa chọn sản phẩm để thanh toán.</h2><RouterLink to="/gio-hang" class="button button-primary">Chọn sản phẩm trong giỏ</RouterLink></section><form v-else class="shop-columns" @submit.prevent="placeOrder"><div class="checkout-main"><p v-if="profileError" class="shop-alert" role="alert">{{ profileError }} <button type="button" class="text-button" :disabled="profileLoading" @click="loadProfile()">Tải lại hồ sơ</button></p><p v-if="error" class="shop-alert" role="alert">{{ error }}</p><p v-if="notice" class="shop-alert shop-alert--info" role="status">{{ notice }}</p><section class="shop-card"><h2>Chọn địa chỉ đã lưu</h2><p v-if="!addresses.length" class="shop-muted">Bạn chưa có địa chỉ đã lưu. Nhập thông tin bên dưới hoặc <RouterLink to="/tai-khoan">thêm vào sổ địa chỉ</RouterLink>.</p><label v-for="a in addresses" :key="a.id" class="address-option" :class="{ selected: selectedAddress === a.id }"><input type="radio" name="address" :checked="selectedAddress === a.id" :disabled="addressLocked" @change="chooseAddress(a)"><span><strong>{{ a.receiverName }} · {{ a.receiverPhone }}</strong> <small v-if="a.isDefault" class="shop-tag">Mặc định</small><small>{{ [a.street, a.ward, a.district, a.province].filter(Boolean).join(', ') }}</small></span></label><button class="text-button" type="button" :disabled="addressLocked" @click="chooseAddress(null)">+ Sử dụng địa chỉ khác</button></section><section class="shop-card"><h2>Thông tin người nhận</h2><label class="address-option checkout-email-choice"><input v-model="receiveOrderEmails" type="checkbox" :disabled="addressLocked"><span><strong>Bạn muốn nhận email cập nhật trạng thái đơn hàng?</strong><small v-if="receiveOrderEmails">Gửi xác nhận đặt hàng và các lần thay đổi trạng thái đến <strong>{{ profile?.email || auth.user?.email }}</strong>.</small><small v-else>Không chọn: đơn hàng này sẽ không gửi email thông báo.</small></span></label><fieldset :disabled="addressLocked"><CheckoutReceiverForm v-model="receiver" :disabled="addressLocked" @busy="addressResolving = $event" /></fieldset><div class="checkout-address-save"><label class="address-option"><input v-model="saveAddress" type="checkbox" :disabled="addressLocked"><span>Lưu địa chỉ này vào sổ địa chỉ khi đặt hàng thành công</span></label><label v-if="saveAddress" class="address-option"><input v-model="makeDefaultAddress" type="checkbox" :disabled="addressLocked || !addresses.length"><span>Đặt làm địa chỉ mặc định</span></label><button class="button button-outline" type="button" :disabled="addressLocked || addressResolving" @click="saveAddressNow">{{ addressSaving ? 'Đang lưu…' : 'Lưu địa chỉ ngay' }}</button></div></section><section class="shop-card"><h2>Phương thức thanh toán</h2><label v-for="m in paymentMethods" :key="m.id" class="address-option" :class="{ selected: method === m.id }"><input v-model="method" type="radio" :value="m.id" :disabled="!m.supported || submitting || !!attempt"><span><strong>{{ m.name }}</strong><small>{{ m.message }}</small></span></label><label v-if="vnpayEnabled" class="address-option demo-payment-choice" :class="{ selected: method === VNPAY }"><input v-model="method" type="radio" :value="VNPAY" :disabled="submitting || !!attempt"><span><strong>Thanh toán bằng VNPAY</strong></span></label><p v-if="quote && !paymentMethods.length && !vnpayEnabled" class="shop-error">Chưa có phương thức thanh toán đang hoạt động.</p></section><section class="shop-card"><label class="shop-label">Ghi chú giao hàng<textarea v-model="note" maxlength="900" rows="3" :disabled="addressLocked" placeholder="Ghi chú cho cửa hàng (không bắt buộc)"></textarea></label></section></div><CheckoutSummary :lines="checkoutLines" :subtotal="quote?.subtotal ?? cart.selectedSubtotal" :discount="quote?.discount || 0" :shipping="quote?.shipping" :total="attempt?.expectedTotal ?? quote?.total" :message="quote?.message" :submitting="submitting" :refreshing="updating" :pending="!!attempt" :vnpay="method === VNPAY" :refresh-disabled="submitting || updating || addressResolving" :confirm-disabled="submitting || updating || addressSaving || (!attempt && addressResolving) || (!attempt && (!quote?.canCheckout || cart.selectedInvalid))" @refresh="refresh(true)"><template #voucher><VoucherSelector :model-value="voucherCode" :subtotal="Number(quote?.subtotal ?? cart.selectedSubtotal)" :automatic="selectedVoucher === null" :disabled="addressLocked || updating" @select="chooseVoucher" /></template></CheckoutSummary></form></div></template>
 
 <style scoped>
 .checkout-email-choice{background:#f4f9ff;border:1px solid #d8e6f3;border-radius:10px;padding:14px;margin:14px 0 20px;align-items:flex-start}.checkout-email-choice input{accent-color:#176eaa;margin-top:3px}.checkout-email-choice small{line-height:1.65;margin-top:6px}

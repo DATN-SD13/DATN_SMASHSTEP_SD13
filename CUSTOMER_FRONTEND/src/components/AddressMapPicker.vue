@@ -1,20 +1,36 @@
 <script setup>
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { commerceService, commerceError } from '../services/commerceService'
 
 const props = defineProps({ address: String, point: Object, disabled: Boolean })
 const emit = defineEmits(['selected'])
+const open = ref(false)
 const canvas = ref(null), query = ref(props.address || ''), rows = ref([]), selected = ref(null)
 const busy = ref(false), locating = ref(false), searched = ref(false), expanded = ref(false)
 const error = ref(''), mapError = ref(''), tilesReady = ref(false), applied = ref(false)
 const locked = computed(() => props.disabled || busy.value || locating.value)
+const searchQuery = computed(() => query.value.normalize('NFC').replace(/\s+/gu, ' ').trim().toLowerCase())
 let map, tiles, marker, accuracyCircle, resizeObserver, loadingTimer, resizeFrame
 let version = 0, disposed = false
 const icon = L.divIcon({ className: 'delivery-pin', html: '<span aria-hidden="true">●</span>', iconSize: [30, 38], iconAnchor: [15, 34] })
 const validPoint = p => p && Number.isFinite(p.latitude) && Number.isFinite(p.longitude)
 
+async function show() {
+  if (props.disabled || open.value) return
+  open.value = true
+  await nextTick()
+  if (!disposed && open.value) initialize()
+}
+function hide() {
+  open.value = false; version++; busy.value = false; locating.value = false
+  clearTimeout(loadingTimer); cancelAnimationFrame(resizeFrame)
+  resizeObserver?.disconnect(); resizeObserver = null
+  map?.remove(); map = null; tiles = null; marker = null; accuracyCircle = null
+  tilesReady.value = false; mapError.value = ''; error.value = ''; rows.value = []; searched.value = false
+  expanded.value = false
+}
 function fitMap() {
   cancelAnimationFrame(resizeFrame)
   resizeFrame = requestAnimationFrame(() => map?.invalidateSize({ pan: false }))
@@ -73,7 +89,10 @@ function queryChanged() {
 }
 async function search() {
   if (locked.value) return
-  const value = query.value.trim()
+  const value = searchQuery.value
+  if (query.value.length > 200 || /[\u0000-\u001f\u007f-\u009f\u2028\u2029<>]/u.test(query.value)) {
+    error.value = 'Địa chỉ tìm kiếm tối đa 200 ký tự, không chứa ký tự điều khiển hoặc < >.'; return
+  }
   if (value.length < 3) { error.value = 'Nhập ít nhất 3 ký tự để tìm địa chỉ.'; return }
   const current = ++version; busy.value = true; error.value = ''; rows.value = []; searched.value = false
   try {
@@ -118,22 +137,23 @@ function locate() {
 function apply() {
   if (!selected.value || locked.value || applied.value) return
   applied.value = true; emit('selected', { ...selected.value })
+  hide()
 }
 watch(() => props.point, restorePoint, { deep: true })
 watch(() => props.disabled, value => { if (marker) { if (value) marker.dragging.disable(); else marker.dragging.enable() } })
-onMounted(initialize)
 onBeforeUnmount(() => {
-  disposed = true; version++; clearTimeout(loadingTimer); cancelAnimationFrame(resizeFrame)
-  resizeObserver?.disconnect(); map?.remove(); map = null
+  disposed = true; hide()
 })
 </script>
 
 <template>
-  <section class="address-map-picker" aria-label="Chọn địa chỉ trên bản đồ">
+  <div class="address-map-control">
+    <button type="button" class="button button-primary map-toggle" :disabled="disabled" :aria-expanded="open" @click="open ? hide() : show()"><span class="map-toggle-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3V6Z"/><path d="M9 3v15M15 6v15"/></svg></span><span class="map-toggle-text">{{ open ? 'Ẩn bản đồ' : point ? 'Đổi vị trí trên bản đồ' : 'Chọn địa chỉ trên bản đồ' }}</span><svg class="map-toggle-chevron" :class="{ rotated: open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+  <section v-if="open" class="address-map-picker" aria-label="Chọn địa chỉ trên bản đồ">
     <header class="map-heading"><div><strong>Chọn địa chỉ trên bản đồ</strong><p>Tìm địa điểm hoặc bấm vào bản đồ để ghim nơi nhận hàng.</p></div><span class="map-label">Bản đồ trực tiếp</span></header>
     <div class="map-search" role="search" aria-label="Tìm địa điểm giao hàng">
-      <input v-model="query" type="search" aria-label="Tìm địa chỉ trên bản đồ" maxlength="200" autocomplete="off" placeholder="Nhập số nhà, tên đường, địa điểm…" :disabled="disabled" @input="queryChanged" @keydown.enter.stop.prevent="search">
-      <button type="button" class="button button-primary" :disabled="locked || query.trim().length < 3" @click="search">{{ busy ? 'Đang tìm…' : 'Tìm địa chỉ' }}</button>
+      <input v-model="query" type="search" aria-label="Tìm địa chỉ trên bản đồ" maxlength="200" autocomplete="off" autocapitalize="off" :spellcheck="false" placeholder="Ví dụ: hoài đức, hà nội" :disabled="disabled" @input="queryChanged" @keydown.enter.stop.prevent="search">
+      <button type="button" class="button button-primary" :disabled="locked || searchQuery.length < 3" @click="search">{{ busy ? 'Đang tìm…' : 'Tìm địa chỉ' }}</button>
     </div>
     <ul v-if="rows.length" class="map-results" aria-label="Kết quả tìm địa chỉ"><li v-for="(place, index) in rows" :key="index"><button type="button" :disabled="disabled" @click="choosePlace(place)"><span class="result-pin" aria-hidden="true">⌖</span><span>{{ place.label }}<small>Chọn địa điểm này trên bản đồ</small></span><span aria-hidden="true">→</span></button></li></ul>
     <p v-else-if="searched" class="map-message" role="status">Không tìm thấy địa điểm phù hợp. Thử thêm tên tỉnh / thành phố hoặc chọn điểm trên bản đồ.</p>
@@ -148,9 +168,11 @@ onBeforeUnmount(() => {
     <div v-if="selected" class="map-selected" aria-live="polite"><div><strong>{{ selected.label }}</strong><small>{{ selected.latitude.toFixed(6) }}, {{ selected.longitude.toFixed(6) }}<template v-if="selected.accuracy"> · Sai số khoảng {{ Math.round(selected.accuracy) }} m</template></small><span>{{ applied ? 'Đã dùng vị trí này. Kiểm tra lại số nhà, tỉnh và phường ở dưới.' : 'Bấm “Dùng địa chỉ này” để điền vào thông tin nhận hàng.' }}</span></div><button type="button" class="button" :class="applied ? 'button-soft' : 'button-primary'" :disabled="locked || applied" @click="apply">{{ busy ? 'Đang tra địa chỉ…' : applied ? '✓ Đã chọn' : 'Dùng địa chỉ này' }}</button></div>
     <p class="map-privacy">Bạn vẫn có thể nhập địa chỉ bằng tay. Vị trí hiện tại chỉ được lấy khi bạn cho phép. Bản đồ: OpenStreetMap · Tìm địa chỉ: Photon.</p>
   </section>
+  </div>
 </template>
 
 <style scoped>
+.address-map-control{grid-column:1/-1;min-width:0}.map-toggle{width:100%;min-height:58px;justify-content:flex-start;gap:12px;padding:11px 16px;border:1px solid #1764c9;border-radius:11px;background:#246fd4;color:#fff;box-shadow:0 5px 13px #246fd428;font-size:14px;font-weight:750}.map-toggle:hover{background:#185db8}.map-toggle:disabled{opacity:.65}.map-toggle-icon{display:grid;place-items:center;width:36px;height:36px;flex-shrink:0;border-radius:9px;background:#ffffff26}.map-toggle-icon svg{width:23px;height:23px}.map-toggle-text{flex:1;text-align:left}.map-toggle-chevron{width:19px;height:19px;flex-shrink:0;transition:transform .18s}.map-toggle-chevron.rotated{transform:rotate(180deg)}.address-map-picker{margin-top:12px}
 .address-map-picker{grid-column:1/-1;min-width:0;padding:18px;border:1px solid #cbdff5;border-radius:14px;background:#f8fbff}
 .map-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.map-heading strong{font-size:14px;color:#143456}.map-heading p{font-size:12px;color:#64748b;margin-top:4px}.map-label{border:1px solid #d0e6f8;background:#edf7ff;color:#2672ad;border-radius:20px;padding:3px 9px;font-size:10px;white-space:nowrap}
 .map-search{display:flex;gap:8px;margin:14px 0 10px}.map-search input{min-width:0;flex:1;background:white;border:1px solid #cedcea;border-radius:8px;padding:11px 12px}.map-search .button{padding:10px 16px;white-space:nowrap}
