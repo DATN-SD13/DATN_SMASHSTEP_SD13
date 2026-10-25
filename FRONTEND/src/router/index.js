@@ -39,6 +39,7 @@ const router = createRouter({
     { path: '/khach-hang/dang-nhap',         component: CustomerLogin,      meta: { public: true, guestOnly: true } },
     { path: '/khach-hang/quen-mat-khau',     component: ForgotPassword, meta: { public: true, guestOnly: true } },
     { path: '/khach-hang/dat-lai-mat-khau',  component: ResetPassword,  meta: { public: true } },
+    { path: '/nhan-vien/dat-lai-mat-khau', component: ResetPassword, meta: { public: true } },
     { path: '/khach-hang/trang-chu',         component: CustomerHome,  meta: { requiresAuth: true, userType: 'KHACH_HANG' } },
 
     // ── Admin area (requiresAuth + NHAN_VIEN) ───────────

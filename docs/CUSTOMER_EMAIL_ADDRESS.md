@@ -5,24 +5,29 @@
 - Không gửi OTP, không xác minh hộp thư và không gọi dịch vụ ngoài khi đăng ký. Giữ kiểm tra định dạng họ tên/email/số điện thoại/mật khẩu và chống trùng email, số điện thoại. Nút tạo tài khoản không phụ thuộc trạng thái xác thực email.
 - Đã gỡ các API gửi/xác nhận OTP đăng ký và dịch vụ kiểm tra DNS/ZeroBounce. Không cần tạo tài khoản hoặc khóa API kiểm tra email.
 
-## Tùy chọn email theo từng đơn
+## Tự động gửi email theo từng đơn
 
-- Checkout có checkbox **Bạn muốn nhận email cập nhật trạng thái đơn hàng?**, mặc định bỏ chọn. Email nhận là email tài khoản lấy từ DB, không dùng email do request tự chỉ định.
-- Khi chọn: gửi xác nhận sau khi đơn thực sự được lưu và gửi tiếp khi trạng thái thay đổi. VNPAY chỉ lưu lựa chọn và tạo thông báo sau xác nhận thanh toán; phiên chưa thanh toán không gửi mail đặt hàng.
-- Khi không chọn hoặc request cũ không có receiveOrderEmails: không gửi email cho đơn này. Lựa chọn được giữ trong phiên checkout, biên nhận VNPAY và dấu kỹ thuật của từng đơn, không làm thay đổi dữ liệu hồ sơ hoặc đơn khác.
-- Request checkout có Boolean receiveOrderEmails. Giá trị true được gắn vào dấu nhận diện để không thể đổi lựa chọn trong một phiên chưa xác định kết quả; các request cũ vẫn tương thích.
-- Consent và các sự kiện nằm trong lịch sử hiện có với tiền tố [WEB-ORDER-MAIL:2]|. OPT_IN/OPT_OUT ghi lựa chọn. EVENT|QUEUED chuyển thành EVENT|SENT sau khi SMTP nhận thư. Không thay đổi schema/SQL. Mốc kỹ thuật phiên bản 1 và 2 được ẩn trong lịch sử giao diện. Những mốc phiên bản 1 không có lựa chọn rõ ràng không tự tiếp tục gửi thư.
+- Checkout hiển thị email tài khoản sẽ nhận thông báo và không còn checkbox nhận mail. Email nhận lấy từ DB, không dùng email do request tự chỉ định.
+- Mọi đơn online mới tự gửi xác nhận sau khi được lưu và gửi tiếp khi trạng thái thay đổi. VNPAY tạo thông báo sau khi thanh toán được xác nhận và hóa đơn được lưu; phiên chưa thanh toán không gửi mail đặt hàng.
+- Backend bật email khi tạo hóa đơn COD/QR hoặc ghi nhận hóa đơn VNPAY. Boolean receiveOrderEmails được giữ để tương thích biên nhận/phiên cũ, không còn là điều kiện gửi email cho đơn mới. Frontend mới gửi true và giữ payload của phiên cũ đang chờ kết quả để tránh tạo đơn trùng.
+- Các sự kiện nằm trong lịch sử hiện có với tiền tố [WEB-ORDER-MAIL:2]|. Đơn mới luôn ghi OPT_IN. EVENT|QUEUED chuyển thành EVENT|SENT sau khi SMTP nhận thư. Không thay đổi schema/SQL. Mốc kỹ thuật phiên bản 1 và 2 được ẩn trong lịch sử giao diện. Không tự phát lại email hàng loạt hoặc sửa dấu OPT_OUT của đơn cũ.
 - Trạng thái gửi tại GET /api/customer/shop/orders/{code}/email chỉ chủ đơn xem được: OPTED_OUT, NOT_REQUESTED, UNDELIVERABLE, QUEUED hoặc SENT. Mỗi sự kiện giữ trạng thái đã chốt lúc cập nhật, không lấy trạng thái mới hơn để thay thế nội dung email cũ.
 - Email chạy sau commit, lỗi gửi không hủy đơn hay thay đổi trạng thái nghiệp vụ; sự kiện chưa gửi được giữ để thử lại sau restart. API cập nhật cùng trạng thái không tạo thêm sự kiện mail. SMTP không bảo đảm exactly-once khi process dừng sau nhận thư nhưng trước lưu SENT.
-- Có thông báo cho cập nhật trạng thái quản trị, giao hàng thất bại/hàng trả/hoàn/hủy và khách hủy đơn. Đơn tại quầy không có lựa chọn nhận email sẽ không phát sinh mail.
+- Có thông báo cho cập nhật trạng thái quản trị, giao hàng thất bại/hàng trả/hoàn/hủy và khách hủy đơn. Đơn tại quầy không gọi luồng thông báo email online này.
 - Các sự kiện email kỹ thuật không được tính vào số lần giao hàng thất bại.
 
 ## Tài khoản gửi và mẫu mail
 
 - Dùng minhquang011007@gmail.com và Mật khẩu ứng dụng Gmail trong application-local.properties đã ignore hoặc MAIL_USERNAME/MAIL_PASSWORD. Không dùng khóa API bên thứ ba; không đưa thông tin đăng nhập vào Git.
-- Mẫu navy/cyan lấy theo mẫu phiếu giảm giá của Hùng, có mã đơn, trạng thái, sản phẩm, giảm giá, phí giao hàng, tổng tiền và thông tin nhận hàng. Cập nhật trạng thái có tiêu đề và nội dung riêng.
-- Link đơn hàng dùng localhost:5174. SENT chỉ có nghĩa SMTP nhận thư để chuyển tiếp, không bảo đảm Inbox; Gmail vẫn có thể tạo bounce nếu khách chọn nhận thư nhưng nhập email không nhận được. Không đọc hộp thư của chủ shop, không gửi thư thử hoặc tạo đơn thử trong lượt triển khai.
+- Mẫu navy/xanh dùng bảng HTML, hỗ trợ màn hình nhỏ, có bản text thay thế, mã đơn, trạng thái, sản phẩm/đơn giá/số lượng, giảm phiếu, phí vận chuyển, tổng thanh toán, người nhận và nút xem đơn. Nội dung người dùng được escape trước khi đưa vào HTML. Cập nhật trạng thái có tiêu đề/nội dung riêng. Giao diện nằm trong OrderEmailTemplate.
+- Link đơn hàng dùng localhost:5174. SENT có nghĩa SMTP nhận thư để chuyển tiếp, không bảo đảm Inbox. Không đọc hộp thư của chủ shop hoặc gửi lại email cũ hàng loạt.
 - Nếu thư hợp lệ vào Spam: người nhận chọn **Không phải thư rác** và có thể thêm địa chỉ gửi vào danh bạ. Không có cờ SMTP nào buộc Gmail chuyển thư vào Inbox/Chính; không giả mạo các header xác thực hoặc nhãn chống spam. Xem [Gmail Help](https://support.google.com/mail/answer/1366858?hl=vi).
+
+## Khách tự chọn phiếu giảm giá
+
+- Checkout mặc định chưa chọn phiếu. Khách mở danh sách để chọn, đổi hoặc bỏ phiếu; chỉ một phiếu được áp dụng cho mỗi đơn.
+- API quote/checkout và VNPAY coi voucherCode null/rỗng là không dùng phiếu. Không tự thay bằng phiếu giảm nhiều nhất, kể cả khi có phiếu hợp lệ. Danh sách vẫn sắp theo số tiền tiết kiệm để khách dễ so sánh.
+- Giảm giá sản phẩm theo campaign vẫn được tính trước khi đánh giá voucher. Phiếu được chọn phải còn đúng điều kiện, quyền sử dụng và số lượt khi đặt hàng.
 
 ## Đổi địa chỉ một lần
 

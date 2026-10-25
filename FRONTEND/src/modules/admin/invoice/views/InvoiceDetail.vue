@@ -2,12 +2,13 @@
 import GhnLogo from '../../../../components/GhnLogo.vue'
 import { useProductToast } from '../../product/composables/useProductToast'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import { invoiceService } from '../services/invoiceService'
 import api from '../../../../utils/api'
 import { imageUrl } from '../../product/services/imageUtils'
 import Select2Field from '../components/Select2Field.vue'
+import { confirmAction } from '../../../../utils/feedback'
 import { invoiceQrSvg } from '../services/invoiceQr'
 
 const route = useRoute()
@@ -97,6 +98,15 @@ const confirmSubmitting = ref(false)
 const showCancelModal = ref(false)
 const { show: showToast } = useProductToast()
 let invoiceLoadVersion = 0
+let printTimer
+let disposed = false
+function allowInvoiceNavigation() {
+  if (!updatingStatus.value && !confirmSubmitting.value) return true
+  showLocalToast('info', 'Đang xử lý', 'Vui lòng chờ thao tác hóa đơn hoàn tất trước khi chuyển trang.')
+  return false
+}
+onBeforeRouteLeave(allowInvoiceNavigation)
+onBeforeRouteUpdate(allowInvoiceNavigation)
 
 const deliverySteps = [
   { key: 'waiting', label: 'Chờ xác nhận', icon: 'bi-hourglass-split', value: 0 },
@@ -531,7 +541,7 @@ function closeCancelModal() {
 // }
 function showLocalToast(type, title, message) { showToast(type, message, title) }
 
-async function saveStatus() {
+async function saveStatus(confirmed = false) {
   if (updatingStatus.value || confirmSubmitting.value || !invoice.value) return
   const newCode = Number(selectedStatus.value)
   const currentCode = Number(invoice.value?.statusCode)
@@ -558,6 +568,17 @@ async function saveStatus() {
     return
   }
 
+  if (confirmed !== true) {
+    const code = invoice.value.code
+    const statusLabel = editableStatusOptions.value.find(option => option.value === newCode)?.label || 'trạng thái kế tiếp'
+    confirmAction(`Chuyển hóa đơn ${code} sang “${statusLabel}”?`, () => {
+      if (disposed || invoice.value?.code !== code || invoice.value?.statusCode !== currentCode || Number(selectedStatus.value) !== newCode) {
+        showLocalToast('error', 'Hóa đơn đã thay đổi', 'Vui lòng mở lại và xác nhận đúng hóa đơn cần cập nhật.'); return
+      }
+      return saveStatus(true)
+    }, { title: 'Xác nhận cập nhật hóa đơn', confirmText: 'Xác nhận' })
+    return
+  }
   updatingStatus.value = true
   try {
     const response = await invoiceService.updateStatus(invoice.value.code, {
@@ -585,8 +606,9 @@ async function saveStatus() {
 
     // Giữ yêu cầu cũ: khi chuyển sang Đã xác nhận thì mở hộp thoại in.
     if (newCode === 1 && currentCode !== 1) {
-      await new Promise(resolve => window.setTimeout(resolve, 150))
-      printInvoice()
+      const code = invoice.value.code
+      window.clearTimeout(printTimer)
+      printTimer = window.setTimeout(() => { if (!disposed && invoice.value?.code === code) printInvoice() }, 150)
     }
   } catch (error) {
     const message = error?.response?.data?.message || error?.message || 'Không thể cập nhật trạng thái hóa đơn.'
@@ -694,10 +716,12 @@ function stepDate(status) {
 }
 
 onMounted(async () => {
+  const code = route.params.code
   await loadInvoice()
-  if (route.query?.print === '1' && canPrintInvoice.value) { await nextTick(); printInvoice() }
+  if (!disposed && invoice.value?.code === code && route.query?.print === '1' && canPrintInvoice.value) { await nextTick(); printInvoice() }
 })
 watch(() => route.params.code, () => {
+  window.clearTimeout(printTimer)
   showEditOrderModal.value = false
   showCancelModal.value = false
   showHistoryModal.value = false
@@ -705,6 +729,8 @@ watch(() => route.params.code, () => {
   loadInvoice()
 })
 onUnmounted(() => {
+  disposed = true
+  window.clearTimeout(printTimer)
   invoiceLoadVersion += 1
   window.removeEventListener('afterprint', clearPrintMode)
   clearPrintMode()

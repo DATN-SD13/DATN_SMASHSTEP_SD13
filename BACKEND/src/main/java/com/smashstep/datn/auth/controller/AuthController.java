@@ -104,7 +104,8 @@ public class AuthController {
     public ResponseEntity<ApiResponse<Void>> quenMatKhau(
             @Valid @RequestBody ForgotPasswordRequest request
     ) {
-        passwordResetService.guiLinkDatLaiMatKhau(request.getEmail());
+        if (request.getUserType() == null) passwordResetService.guiLinkDatLaiMatKhau(request.getEmail());
+        else passwordResetService.guiLinkDatLaiMatKhau(request.getEmail(), request.getUserType());
         // Luôn trả thành công để tránh user enumeration
         return ResponseEntity.ok(ApiResponse.<Void>success(null));
     }

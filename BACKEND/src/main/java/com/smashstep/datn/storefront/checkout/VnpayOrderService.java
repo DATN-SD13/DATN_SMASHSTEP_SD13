@@ -126,7 +126,7 @@ public class VnpayOrderService {
         history(invoice, OnlineOrderInventory.PREFIX + entry.requestId() + "|" + entry.fingerprint(), now);
         history(invoice, "Đặt hàng online, đã thanh toán bằng VNPAY (Sandbox); chờ cửa hàng xác nhận", now);
         OrderLocation.save(em,invoice,request==null?null:request.deliveryPoint());
-        orderEmail.configure(invoice,request!=null && Boolean.TRUE.equals(request.receiveOrderEmails()));
+        orderEmail.configure(invoice,true);
         em.flush();
         return new Posted(invoice.getMaHoaDon(), entry.owner());
     }

@@ -5,6 +5,7 @@ import AvatarCard from '../../../../components/AvatarCard.vue'
 import { persistAvatar } from '../../../../utils/avatar'
 import employeeService from '../services/employeeService'
 import { confirmAction, showSuccess, showError } from '../../../../utils/feedback'
+import { accountRequestError } from '../../../../utils/accountValidation'
 
 import {
   computed,
@@ -36,6 +37,7 @@ const edit = computed(
 
 const roles = ref([])
 const saving = ref(false)
+const sendingReset = ref(false)
 const maxDob = computed(() => {
   const date = new Date()
   date.setFullYear(date.getFullYear() - 18)
@@ -164,6 +166,8 @@ async function loadRoles() {
 
 function validate() {
   const v = f.value
+  const invalid = accountRequestError({ method: edit.value ? 'put' : 'post', url: '/nhan-vien', data: buildPayload() })
+  if (invalid) return invalid
 
   if (
     !v.name.trim() ||
@@ -257,12 +261,14 @@ async function submit() {
 
   if (validationError) {
     err.value = validationError
+    showError(validationError)
     return
   }
 
   confirmAction(edit.value ? 'Xác nhận lưu thay đổi nhân viên?' : 'Xác nhận thêm nhân viên?', async () => {
   if (saving.value || changingStatus.value) return
-  if (validate()) { err.value = validate(); return }
+  const latestError = validate()
+  if (latestError) { err.value = latestError; showError(latestError); return }
   saving.value = true
 
   try {
@@ -351,9 +357,18 @@ function handleCccdScanned(data) {
 }
 
 function changePassword() {
-  showError(
-    'Chức năng đổi mật khẩu chưa được tích hợp.'
-  )
+  if (!edit.value || saving.value || changingStatus.value || sendingReset.value) return
+  const email = props.employee?.email?.trim()
+  if (!email) { showError('Nhân viên chưa có email nhận link đặt lại mật khẩu.'); return }
+  confirmAction(`Gửi link đặt lại mật khẩu đến ${email}? Nhân viên tự đặt mật khẩu qua link trong email.`, async () => {
+    if (saving.value || changingStatus.value || sendingReset.value) return
+    sendingReset.value = true
+    try {
+      await employeeService.sendPasswordReset(email)
+      showSuccess('Đã yêu cầu gửi link đặt lại mật khẩu. Nhân viên kiểm tra email và mục Thư rác. Link có hiệu lực 30 phút.')
+    } catch (error) { err.value = getErrorMessage(error); showError(err.value) }
+    finally { sendingReset.value = false }
+  }, { title: 'Đặt lại mật khẩu', confirmText: 'Gửi link' })
 }
 
 onMounted(() => {
@@ -362,7 +377,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="ss-split">
+  <fieldset class="ss-split employee-form-fields" :disabled="saving || changingStatus || sendingReset">
     <p v-if="addressError" class="ss-alert error" role="alert">{{ addressError }}</p>
 
     <div class="ss-stack">
@@ -400,15 +415,16 @@ onMounted(() => {
         <section class="ss-card">
 
           <h3 class="side-title">
-            Đổi mật khẩu
+            Đặt lại mật khẩu
           </h3>
 
           <button
             class="ss-btn block"
             type="button"
+            :disabled="saving || changingStatus || sendingReset"
             @click="changePassword"
           >
-            Đổi mật khẩu
+            {{ sendingReset ? 'Đang gửi…' : 'Gửi link đặt lại mật khẩu' }}
           </button>
 
         </section>
@@ -523,7 +539,7 @@ onMounted(() => {
               <span class="req">*</span>
             </label>
 
-            <span class="nhan-vien-select-field"><Select2NhanVien :allow-clear="false" aria-label="Vai trò" v-model="f.roleId">
+            <span class="nhan-vien-select-field"><Select2NhanVien :disabled="saving || changingStatus || sendingReset" :allow-clear="false" aria-label="Vai trò" v-model="f.roleId">
               <option value="">
                 Chọn vai trò
               </option>
@@ -544,7 +560,7 @@ onMounted(() => {
               <span class="req">*</span>
             </label>
 
-            <span class="nhan-vien-select-field"><Select2NhanVien :allow-clear="false" aria-label="Giới tính" v-model="f.gender">
+            <span class="nhan-vien-select-field"><Select2NhanVien :disabled="saving || changingStatus || sendingReset" :allow-clear="false" aria-label="Giới tính" v-model="f.gender">
               <option value="1">
                 Nam
               </option>
@@ -597,7 +613,7 @@ onMounted(() => {
               <span class="req">*</span>
             </label>
 
-            <span class="nhan-vien-select-field"><Select2NhanVien :allow-clear="false" aria-label="Tỉnh/Thành phố" v-model="f.province" :disabled="loadingProvinces" @change="changeProvince">
+            <span class="nhan-vien-select-field"><Select2NhanVien :allow-clear="false" aria-label="Tỉnh/Thành phố" v-model="f.province" :disabled="loadingProvinces || saving || changingStatus || sendingReset" @change="changeProvince">
               <option value="">Chọn tỉnh/thành</option>
               <option v-for="p in provinces" :key="p.code" :value="p.name">{{ p.name }}</option>
             </Select2NhanVien></span>
@@ -611,7 +627,7 @@ onMounted(() => {
               <span class="req">*</span>
             </label>
 
-            <span class="nhan-vien-select-field"><Select2NhanVien :allow-clear="false" aria-label="Phường/Xã" v-model="f.ward" :disabled="loadingWards || !f.province">
+            <span class="nhan-vien-select-field"><Select2NhanVien :allow-clear="false" aria-label="Phường/Xã" v-model="f.ward" :disabled="loadingWards || !f.province || saving || changingStatus || sendingReset">
               <option value="">Chọn phường/xã</option>
               <option v-for="w in wards" :key="w.code" :value="w.name">{{ w.name }}</option>
             </Select2NhanVien></span>
@@ -684,11 +700,12 @@ onMounted(() => {
 
     </div>
 
-  </div>
+  </fieldset>
   <CccdScanner v-if="showCccdScanner" @close="showCccdScanner = false" @scanned="handleCccdScanned" />
 </template>
 
 <style scoped>
+.employee-form-fields{border:0;padding:0;margin:0;min-width:0}
 .side-title {
   font-size: 12px;
   font-weight: 700;

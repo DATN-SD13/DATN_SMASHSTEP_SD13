@@ -8,6 +8,7 @@ import { useRouter } from 'vue-router'
 import { useAddressApi } from '../../../../composables/useAddressApi'
 import customerService from '../services/customerService'
 import { confirmAction, showSuccess, showError } from '../../../../utils/feedback'
+import { accountRequestError } from '../../../../utils/accountValidation'
 
 const router = useRouter()
 
@@ -119,6 +120,12 @@ function validateAge(dobValue) {
 async function save() {
   if (saving.value) return
   const v = f.value
+  const validate = () => accountRequestError({ method: 'post', url: '/khach-hang', data: {
+    ...v, gender: v.gender === '' ? null : Number(v.gender),
+    defaultAddress: { receiverName: v.rName, receiverPhone: v.rPhone, province: v.province, ward: v.ward, street: v.street, addressType: Number(v.addressType) }
+  } })
+  const validationError = validate()
+  if (validationError) { err.value = validationError; showError(validationError); return }
 
   if (
     !v.name.trim() ||
@@ -174,6 +181,8 @@ async function save() {
   }
   confirmAction('Xác nhận thêm khách hàng?', async () => {
   if (saving.value) return
+  const latestError = validate()
+  if (latestError) { err.value = latestError; showError(latestError); return }
   saving.value = true
   err.value = ''
 
@@ -258,7 +267,7 @@ async function save() {
         </button>
       </div>
 
-      <div class="ss-split">
+      <fieldset class="ss-split" :disabled="saving" style="border:0;padding:0;margin:0;min-width:0">
 
         <AvatarCard
           v-model:image="f.image"
@@ -338,7 +347,7 @@ async function save() {
                   Giới tính
                 </label>
 
-                <span class="khach-hang-select-field"><Select2KhachHang :allow-clear="false" aria-label="Giới tính" v-model="f.gender">
+                <span class="khach-hang-select-field"><Select2KhachHang :disabled="saving" :allow-clear="false" aria-label="Giới tính" v-model="f.gender">
                   <option value="">
                     -- Chọn giới tính --
                   </option>
@@ -437,7 +446,7 @@ async function save() {
                   <span class="req">*</span>
                 </label>
 
-                <span class="khach-hang-select-field"><Select2KhachHang :allow-clear="false" aria-label="Tỉnh/Thành phố" v-model="f.province" :disabled="loadingProvinces" @change="changeProvince">
+                <span class="khach-hang-select-field"><Select2KhachHang :allow-clear="false" aria-label="Tỉnh/Thành phố" v-model="f.province" :disabled="loadingProvinces || saving" @change="changeProvince">
               <option value="">Chọn tỉnh/thành</option>
               <option v-for="p in provinces" :key="p.code" :value="p.name">{{ p.name }}</option>
             </Select2KhachHang></span>
@@ -451,7 +460,7 @@ async function save() {
                   <span class="req">*</span>
                 </label>
 
-                <span class="khach-hang-select-field"><Select2KhachHang :allow-clear="false" aria-label="Phường/Xã" v-model="f.ward" :disabled="loadingWards || !f.province">
+                <span class="khach-hang-select-field"><Select2KhachHang :allow-clear="false" aria-label="Phường/Xã" v-model="f.ward" :disabled="loadingWards || !f.province || saving">
               <option value="">Chọn phường/xã</option>
               <option v-for="w in wards" :key="w.code" :value="w.name">{{ w.name }}</option>
             </Select2KhachHang></span>
@@ -464,7 +473,7 @@ async function save() {
                   Loại địa chỉ
                 </label>
 
-                <span class="khach-hang-select-field"><Select2KhachHang :allow-clear="false" aria-label="Loại địa chỉ" v-model="f.addressType">
+                <span class="khach-hang-select-field"><Select2KhachHang :disabled="saving" :allow-clear="false" aria-label="Loại địa chỉ" v-model="f.addressType">
 
                   <option :value="1">
                     Nhà riêng
@@ -529,7 +538,7 @@ async function save() {
           </section>
 
         </div>
-      </div>
+      </fieldset>
     </main>
   </AdminLayout>
 </template>

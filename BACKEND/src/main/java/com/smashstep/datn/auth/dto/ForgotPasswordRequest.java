@@ -16,4 +16,7 @@ public class ForgotPasswordRequest {
     @jakarta.validation.constraints.Size(max = 255)
     @AccountText(AccountRules.Kind.EMAIL)
     private String email;
+
+    @jakarta.validation.constraints.Pattern(regexp = "KHACH_HANG|NHAN_VIEN", message = "Loại tài khoản không hợp lệ")
+    private String userType;
 }
