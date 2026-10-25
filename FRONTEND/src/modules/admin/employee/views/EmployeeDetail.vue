@@ -3,7 +3,7 @@ import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import EmployeeForm from '../components/EmployeeForm.vue'
 import employeeService from '../services/employeeService'
 
-import { onMounted, ref } from 'vue'
+import { onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 const route = useRoute()
@@ -12,6 +12,7 @@ const router = useRouter()
 const employee = ref(null)
 const loading = ref(true)
 const error = ref('')
+let loadVersion = 0
 
 function getErrorMessage(err) {
   return (
@@ -22,23 +23,24 @@ function getErrorMessage(err) {
 }
 
 async function loadEmployee() {
+  const version = ++loadVersion
+  const code = route.params.code
   loading.value = true
   error.value = ''
+  employee.value = null
 
   try {
-    employee.value =
-      await employeeService.getEmployee(
-        route.params.code
-      )
+    const data = await employeeService.getEmployee(code)
+    if (version === loadVersion) employee.value = data
   } catch (err) {
-    console.error(err)
-    error.value = getErrorMessage(err)
+    if (version === loadVersion) error.value = getErrorMessage(err)
   } finally {
-    loading.value = false
+    if (version === loadVersion) loading.value = false
   }
 }
 
-onMounted(loadEmployee)
+watch(() => route.params.code, loadEmployee, { immediate: true })
+onBeforeUnmount(() => { loadVersion++ })
 </script>
 
 <template>

@@ -200,6 +200,16 @@ public class NhanVienService {
     // SỬA NHÂN VIÊN
     // =========================================================
     @Transactional
+    public NhanVienResponse suaCaNhan(String ma, NhanVienRequest request) {
+        if (request == null) throw AppException.badRequest("Dữ liệu nhân viên không hợp lệ");
+        lockEmployeeWrites();
+        NhanVien current = findByMa(ma);
+        // A personal profile update must retain the role assigned by management.
+        request.setRoleId(current.getIdVaiTro() == null ? null : current.getIdVaiTro().getId());
+        return sua(ma, request);
+    }
+
+    @Transactional
     public NhanVienResponse sua(
             String ma,
             NhanVienRequest request

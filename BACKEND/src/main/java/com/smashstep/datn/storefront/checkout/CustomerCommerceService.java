@@ -83,10 +83,9 @@ public class CustomerCommerceService {
                     || current.get(i).quantity()!=quoted.get(i).quantity()
                     || current.get(i).variant().giaSauGiam().compareTo(quoted.get(i).variant().giaSauGiam())!=0)
                 throw AppException.conflict("Giá sản phẩm vừa thay đổi. Vui lòng kiểm tra lại đơn hàng.");
-        var options=vouchers(customerId,offer.subtotal());
-        var selected=options.stream().filter(v->Objects.equals(v.code(),offer.voucherCode())).findFirst().orElse(null);
+        var selected=offer.voucherCode()==null?null:vouchers(customerId,offer.subtotal()).stream()
+                .filter(v->Objects.equals(v.code(),offer.voucherCode())).findFirst().orElse(null);
         if((offer.voucherCode()!=null && selected==null)
-                || (offer.voucherCode()==null && !options.isEmpty())
                 || (selected==null?BigDecimal.ZERO:selected.discount()).compareTo(offer.discount())!=0)
             throw AppException.conflict("Phiếu giảm giá vừa thay đổi hoặc không còn đủ điều kiện. Vui lòng kiểm tra lại đơn hàng.");
     }
@@ -107,15 +106,14 @@ public class CustomerCommerceService {
     }
     private Quote calculateQuote(Long customerId,Request r,boolean demo) {
         var c=customer(customerId); var lines=lines(r.items());
-        if(Boolean.TRUE.equals(r.receiveOrderEmails()) && (c.getEmail()==null || c.getEmail().isBlank() || com.smashstep.datn.common.validation.AccountRules.error(com.smashstep.datn.common.validation.AccountRules.Kind.EMAIL,c.getEmail())!=null))
+        if(c.getEmail()==null || c.getEmail().isBlank() || com.smashstep.datn.common.validation.AccountRules.error(com.smashstep.datn.common.validation.AccountRules.Kind.EMAIL,c.getEmail())!=null)
             throw AppException.badRequest("Tài khoản cần email hợp lệ để nhận xác nhận đơn hàng. Vui lòng liên hệ cửa hàng cập nhật email.");
         BigDecimal subtotal=lines.stream().map(Line::total).reduce(BigDecimal.ZERO,BigDecimal::add);
-        // Default to the largest actual saving; an explicit choice must remain eligible for this customer.
-        var options=vouchers(customerId,subtotal);
+        // No voucher is applied until the customer explicitly chooses one.
         String requestedCode=r.voucherCode()==null?"":r.voucherCode().trim();
-        String selectedCode=requestedCode.isEmpty() ? (options.isEmpty()?null:options.get(0).code())
-                : options.stream().filter(v->v.code().equalsIgnoreCase(requestedCode)).map(Voucher::code).findFirst()
-                    .orElseThrow(()->AppException.badRequest("Phiếu giảm giá đã chọn không còn đủ điều kiện cho đơn hàng này. Vui lòng chọn phiếu khác hoặc chọn tự động."));
+        String selectedCode=requestedCode.isEmpty() ? null
+                : vouchers(customerId,subtotal).stream().filter(v->v.code().equalsIgnoreCase(requestedCode)).map(Voucher::code).findFirst()
+                    .orElseThrow(()->AppException.badRequest("Phiếu giảm giá đã chọn không còn đủ điều kiện cho đơn hàng này. Vui lòng chọn phiếu khác hoặc bỏ phiếu."));
         var voucher=sales.tinhThuPhieu(c,subtotal,selectedCode);
         BigDecimal fee=null; String message="";
         try { fee=shipping.fee(r.receiver(),r.items().stream().mapToInt(Item::quantity).sum(),subtotal.subtract(voucher.tienGiam())); }
@@ -198,7 +196,7 @@ public class CustomerCommerceService {
         history(h,prefix+fingerprint); history(h,"CHUYEN_KHOAN".equals(method.getMaPhuongThuc())
                 ? "Khách hàng đặt hàng online; chờ chuyển khoản QR và cửa hàng đối soát" : "Khách hàng đặt hàng online; chờ xác nhận và thu COD");
         OrderLocation.save(em,h,r.deliveryPoint());
-        orderEmail.configure(h,Boolean.TRUE.equals(r.receiveOrderEmails()));
+        orderEmail.configure(h,true);
         em.flush(); return order(customerId,h.getMaHoaDon());
     }
     @Transactional(propagation=org.springframework.transaction.annotation.Propagation.MANDATORY)

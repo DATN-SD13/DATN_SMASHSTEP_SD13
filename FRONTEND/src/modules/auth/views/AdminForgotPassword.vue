@@ -10,10 +10,11 @@ const error   = ref('')
 const success = ref(false)
 
 async function handleSubmit() {
+  if (loading.value) return
   error.value   = ''
   loading.value = true
   try {
-    await api.post('/auth/quen-mat-khau', { email: email.value.trim() })
+    await api.post('/auth/quen-mat-khau', { email: email.value.trim(), userType: 'NHAN_VIEN' })
     success.value = true
   } catch (e) {
     error.value = e.response?.data?.message || 'Đã có lỗi xảy ra. Vui lòng thử lại.'

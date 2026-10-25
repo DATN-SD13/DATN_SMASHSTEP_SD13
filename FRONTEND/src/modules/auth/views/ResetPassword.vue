@@ -6,6 +6,9 @@ import api from '../../../utils/api'
 
 const route  = useRoute()
 const router = useRouter()
+const employeeAccount = route.path.startsWith('/nhan-vien/')
+const loginPath = employeeAccount ? '/dang-nhap' : '/khach-hang/dang-nhap'
+const forgotPath = employeeAccount ? '/quen-mat-khau-quan-ly' : '/khach-hang/quen-mat-khau'
 
 const token       = typeof route.query.token === 'string' ? route.query.token : ''
 const newPassword = ref('')
@@ -89,11 +92,11 @@ async function handleSubmit() {
           Link đặt lại mật khẩu đã hết hạn hoặc không hợp lệ.<br/>
           Vui lòng gửi lại yêu cầu.
         </p>
-        <button class="btn" @click="router.push('/khach-hang/quen-mat-khau')">
+        <button class="btn" @click="router.push(forgotPath)">
           Gửi lại yêu cầu
         </button>
         <p class="back-link">
-          <RouterLink to="/khach-hang/dang-nhap">
+          <RouterLink :to="loginPath">
             <i class="bi bi-arrow-left"></i> Về trang đăng nhập
           </RouterLink>
         </p>
@@ -106,7 +109,7 @@ async function handleSubmit() {
         <p class="sub">
           Mật khẩu của bạn đã được cập nhật. Bạn có thể đăng nhập ngay bây giờ.
         </p>
-        <button class="btn" @click="router.push('/khach-hang/dang-nhap')">
+        <button class="btn" @click="router.push(loginPath)">
           Đăng nhập ngay
         </button>
       </template>

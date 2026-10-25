@@ -62,10 +62,10 @@ public class OrderEmailNotifications {
         var rows=em.createQuery("select l.ghiChu from LichSuHoaDon l where l.idHoaDon.id=:id and locate(:prefix,l.ghiChu)=1 order by l.id",String.class)
                 .setParameter("id",invoice.getId()).setParameter("prefix",PREFIX).getResultList();
         if(rows.contains(PREFIX+"OPT_OUT"))return new Status(null,"OPTED_OUT","Bạn đã chọn không nhận email thông báo cho đơn hàng này.");
-        if(rows.contains(PREFIX+"UNDELIVERABLE"))return new Status(null,"UNDELIVERABLE","Đã đăng ký nhận email nhưng email tài khoản không hợp lệ. Đơn hàng vẫn được lưu; vui lòng liên hệ cửa hàng.");
+        if(rows.contains(PREFIX+"UNDELIVERABLE"))return new Status(null,"UNDELIVERABLE","Email tài khoản không hợp lệ nên chưa gửi được thông báo. Đơn hàng vẫn được lưu; vui lòng liên hệ cửa hàng cập nhật email.");
         String email=recipient(invoice);if(email==null)return new Status(null,"NOT_REQUESTED","Đơn này không đăng ký nhận email cập nhật trạng thái.");
         boolean queued=rows.stream().anyMatch(n->n.startsWith(QUEUED));
-        return new Status(email,queued?"QUEUED":"SENT",queued?"Bạn đã đăng ký nhận email. Thông báo đơn hàng đang được gửi đến "+email+"."
+        return new Status(email,queued?"QUEUED":"SENT",queued?"Thông báo đơn hàng đang được tự động gửi đến "+email+"."
                 :"Đã gửi email thông báo đến "+email+". Vui lòng kiểm tra cả thư mục Spam / Thư rác.");
     }
     private void poll(){

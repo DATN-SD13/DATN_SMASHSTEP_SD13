@@ -33,35 +33,19 @@ public class EmailService {
     public void sendOrderConfirmationEmail(String to,OrderEmail order) {sendOrderEmail(to,order,false);}
     public void sendOrderStatusEmail(String to,OrderEmail order) {sendOrderEmail(to,order,true);}
     private void sendOrderEmail(String to,OrderEmail order,boolean update) {
-        var rows=new StringBuilder();
-        for(var line:order.lines())rows.append("<tr><td style=\"padding:12px 4px;border-bottom:1px solid #edf2f7\"><b>").append(escape(line.name()))
-                .append("</b><br><small>").append(escape(line.variant())).append(" · SL ").append(line.quantity()).append("</small></td><td style=\"padding:12px 4px;text-align:right;border-bottom:1px solid #edf2f7;white-space:nowrap\">")
-                .append(escape(line.total())).append("</td></tr>");
-        String link=isSafeHttpUrl(order.url())?"<p style=\"text-align:center;margin:24px 0\"><a style=\"display:inline-block;padding:13px 28px;border-radius:24px;background:#079fc9;color:white;text-decoration:none;font-weight:bold\" href=\""+escape(order.url())+"\">Xem đơn hàng →</a></p>":"";
-        String content="<p>Chào <b>"+escape(order.customer())+"</b>, "+(update?"đơn hàng của bạn vừa được cập nhật trạng thái.":"cảm ơn bạn đã đặt hàng tại SmashStep.")+"</p>"
-                +"<div style=\"padding:16px;background:#f0faff;border-left:4px solid #08bfe5;border-radius:8px\"><b>Đơn hàng #"+escape(order.code())+"</b><br><span>"+escape(order.status())+"</span><br>"+(order.paid()?"Đã ghi nhận thanh toán":"Chưa thanh toán — "+escape(order.method()))+"</div>"
-                +"<table style=\"width:100%;border-collapse:collapse;font-size:13px;margin:16px 0\">"+rows+"</table>"
-                +"<p>Tiền hàng: <b>"+escape(order.subtotal())+"</b><br>Giảm voucher: −"+escape(order.discount())+"<br>Phí vận chuyển: "+escape(order.shipping())+"</p>"
-                +"<p style=\"font-size:20px;color:#087fa8\">Tổng cộng: <b>"+escape(order.total())+"</b></p>"
-                +"<div style=\"padding:16px;background:#f8fafc;border-radius:8px\"><b>Thông tin nhận hàng</b><p>"+escape(order.receiver())+" · "+escape(order.phone())+"<br>"+escape(order.address())+"</p></div>"
-                +link+"<p style=\"font-size:12px;color:#718096\">Bạn có thể yêu cầu đổi thông tin nhận hàng tối đa một lần khi đơn còn chờ xác nhận. Không gửi mật khẩu hoặc OTP cho bất kỳ ai.</p>";
-        sendBranded(to,"SmashStep - "+(update?"Cập nhật đơn hàng ":"Xác nhận đơn hàng ")+order.code(),update?"Cập nhật trạng thái đơn hàng":"Đặt hàng thành công",content,
-                "Đơn hàng SmashStep "+order.code()+" - "+order.status()+". Tổng tiền "+order.total()+". "+(order.paid()?"Đã ghi nhận thanh toán.":"Chưa thanh toán.")+" Giao đến: "+order.address()+". Theo dõi: "+order.url());
+        var content=OrderEmailTemplate.render(order,update);
+        sendBranded(to,"SmashStep - "+(update?"Cập nhật đơn hàng ":"Xác nhận đơn hàng ")+order.code(),content.html(),content.text());
     }
 
-    private void sendBranded(String to,String subject,String title,String content,String text) {
+    private void sendBranded(String to,String subject,String html,String text) {
         var sender=senderFor(to);
         try {
             var message=sender.createMimeMessage();var helper=new MimeMessageHelper(message,true,"UTF-8");
-            helper.setFrom(from,"SmashStep");helper.setTo(to);helper.setSubject(subject);
-            // Same navy/cyan header, logo lettering, white card and footer as the voucher emails.
-            String html="<!doctype html><html lang=\"vi\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"></head><body style=\"margin:0;padding:24px 10px;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;color:#10243a\">"
-                    +"<div style=\"max-width:560px;margin:auto;background:white;border:1px solid #dce5ed;border-radius:12px;overflow:hidden\"><div style=\"padding:20px;text-align:center;background:#071b32\"><div style=\"font-size:25px;font-weight:900;letter-spacing:1px;color:white\">SMASH<span style=\"color:#20d5f5\">STEP</span></div><div style=\"margin-top:5px;font-size:10px;letter-spacing:3px;color:#b9eefa\">STEP INTO YOUR STYLE</div></div>"
-                    +"<div style=\"padding:24px 22px;font-size:14px;line-height:1.7\"><h1 style=\"font-size:22px;text-align:center;color:#0b2540\">"+escape(title)+"</h1>"+content+"</div><div style=\"height:5px;background:#20d5f5\"></div></div></body></html>";
+            helper.setFrom(from,"SmashStep");helper.setReplyTo(from,"SmashStep");helper.setTo(to);helper.setSubject(subject);
+            helper.setSentDate(new java.util.Date());
             helper.setText(text,html);sender.send(message);
         } catch(Exception e){throw new IllegalStateException("Không gửi được email SmashStep",e);}
     }
-
     public String configurationError() {
         if (host == null || host.isBlank() || "localhost".equalsIgnoreCase(host) || "127.0.0.1".equals(host)) {
             return "SMTP chưa hợp lệ: cấu hình MAIL_HOST=smtp.gmail.com.";

@@ -129,6 +129,13 @@ public class HoaDonService {
         if (ma == null || ma.isBlank()) {
             throw AppException.badRequest("Mã hóa đơn không được để trống");
         }
+        var authentication = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null
+                && authentication.getDetails() instanceof com.smashstep.datn.auth.security.JwtAuthFilter.AuthDetails actor
+                && "NHAN_VIEN".equals(actor.userType())) {
+            // Record the signed-in employee, not a client-supplied or previous invoice owner ID.
+            request.setIdNhanVien(actor.userId());
+        }
         if (dichVuMaHoaDon != null) dichVuMaHoaDon.lockInvoiceCreation();
         HoaDon hoaDon =
                 hoaDonRepository

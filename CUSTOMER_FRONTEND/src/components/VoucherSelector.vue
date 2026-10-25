@@ -1,8 +1,8 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, watch, onBeforeUnmount } from 'vue'
 import { commerceService, commerceError } from '../services/commerceService'
 import { money } from '../utils/money'
-const props = defineProps({ subtotal: Number, modelValue: String, disabled: Boolean, automatic: Boolean })
+const props = defineProps({ subtotal: Number, modelValue: String, disabled: Boolean })
 const emit = defineEmits(['select'])
 const open = ref(false), rows = ref([]), loading = ref(false), error = ref('')
 let version = 0
@@ -13,18 +13,19 @@ async function load() {
   finally { if (current === version) loading.value = false }
 }
 function toggle() { if (props.disabled) return; open.value = !open.value; if (open.value) load() }
-function select(code) { if (props.disabled || loading.value) return; emit('select', code) }
+function select(code) { if (props.disabled || loading.value) return; emit('select', code); open.value = false }
 watch([() => props.subtotal, () => props.modelValue], () => { if (open.value) load() })
+onBeforeUnmount(() => { version++ })
 </script>
 <template>
   <div class="voucher-selector">
     <button type="button" class="voucher-trigger" :disabled="disabled" :aria-expanded="open" @click="toggle">
-      <span>◇ {{ modelValue ? 'Đã áp dụng: ' + modelValue : 'Chọn phiếu giảm giá' }}</span><span>{{ open ? '−' : '+' }}</span>
+      <span>◇ {{ modelValue ? 'Phiếu đã chọn: ' + modelValue : 'Chọn phiếu giảm giá (không bắt buộc)' }}</span><span>{{ open ? '−' : '+' }}</span>
     </button>
-    <p class="shop-muted voucher-auto-note" role="status">{{ automatic ? 'Tự chọn phiếu hợp lệ giảm nhiều nhất. Bạn có thể đổi sang phiếu khác.' : 'Đang dùng phiếu bạn chọn. Mở danh sách để đổi phiếu hoặc chọn tự động.' }}</p>
+    <p class="shop-muted voucher-auto-note" role="status">{{ modelValue ? 'Bạn có thể đổi hoặc bỏ phiếu giảm giá đã chọn.' : 'Chưa sử dụng phiếu giảm giá. Mở danh sách để tự chọn ưu đãi.' }}</p>
     <div v-if="open" class="voucher-panel">
       <div class="voucher-panel-heading"><strong>Ưu đãi cho đơn hàng</strong><button class="text-button" type="button" @click="open = false">Đóng</button></div>
-      <button type="button" class="voucher-auto-choice" :disabled="disabled || loading || automatic" @click="select(null)">{{ automatic ? '✓ Đang tự chọn phiếu giảm nhiều nhất' : 'Tự chọn phiếu giảm nhiều nhất' }}</button>
+      <button type="button" class="voucher-clear-choice" :disabled="disabled || loading || !modelValue" @click="select('')">{{ modelValue ? 'Không sử dụng phiếu giảm giá' : '✓ Không sử dụng phiếu giảm giá' }}</button>
       <p v-if="loading" class="shop-muted" role="status">Đang kiểm tra ưu đãi…</p>
       <p v-else-if="error" class="shop-error" role="alert">{{ error }}</p>
       <p v-else-if="!rows.length" class="shop-muted">Hiện chưa có voucher phù hợp.</p>
@@ -43,5 +44,5 @@ watch([() => props.subtotal, () => props.modelValue], () => { if (open.value) lo
   </div>
 </template>
 <style scoped>
-.voucher-auto-note{font-size:11px;line-height:1.6;margin:9px 0}.voucher-option{cursor:default}.voucher-auto-choice,.voucher-select-button{border:1px solid #b9d6ed;border-radius:8px;background:#f2f8ff;color:#14588b;padding:9px 12px;font:inherit;font-size:12px;cursor:pointer}.voucher-auto-choice{width:100%;margin:10px 0}.voucher-select-button{margin-top:8px;align-self:flex-start}.voucher-select-button:disabled,.voucher-auto-choice:disabled{cursor:default;opacity:.65}
+.voucher-auto-note{font-size:11px;line-height:1.6;margin:9px 0}.voucher-option{cursor:default}.voucher-clear-choice,.voucher-select-button{border:1px solid #b9d6ed;border-radius:8px;background:#f2f8ff;color:#14588b;padding:9px 12px;font:inherit;font-size:12px;cursor:pointer}.voucher-clear-choice{width:100%;margin:10px 0}.voucher-select-button{margin-top:8px;align-self:flex-start}.voucher-select-button:disabled,.voucher-clear-choice:disabled{cursor:default;opacity:.65}
 </style>

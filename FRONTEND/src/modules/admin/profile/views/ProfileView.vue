@@ -6,11 +6,13 @@ import { useAuthStore } from '../../../../stores/auth'
 import { useAddressApi } from '../../../../composables/useAddressApi'
 import Select2KhachHang from '../../customer/components/Select2KhachHang.vue'
 import { showSuccess, showError } from '../../../../utils/feedback'
+import { accountRequestError, nameError, emailError, phoneError, passwordError } from '../../../../utils/accountValidation'
 
 const authStore = useAuthStore()
 
 // ── State ──────────────────────────────────────────────────
 const loading    = ref(true)
+const loadError = ref('')
 const saving     = ref(false)
 const savingPass = ref(false)
 const tab        = ref('info') // 'info' | 'password'
@@ -49,25 +51,15 @@ function clearErrors() {
 function validateField(field) {
   switch (field) {
     case 'name': {
-      const v = form.value.name?.trim()
-      errors.name = !v                  ? 'Vui lòng nhập họ tên.'
-                  : v.length > 255      ? 'Họ tên không được vượt quá 255 ký tự.'
-                  : ''
+      errors.name = nameError(form.value.name)
       break
     }
     case 'email': {
-      const v = form.value.email?.trim()
-      errors.email = !v                                          ? 'Vui lòng nhập email.'
-                   : !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)     ? 'Email không hợp lệ.'
-                   : v.length > 255                             ? 'Email không được vượt quá 255 ký tự.'
-                   : ''
+      errors.email = emailError(form.value.email)
       break
     }
     case 'phone': {
-      const v = form.value.phone?.trim()
-      errors.phone = !v                    ? 'Vui lòng nhập số điện thoại.'
-                   : !/^0\d{9}$/.test(v)  ? 'Số điện thoại gồm 10 chữ số, bắt đầu bằng 0.'
-                   : ''
+      errors.phone = phoneError(form.value.phone)
       break
     }
     case 'street': {
@@ -86,9 +78,7 @@ function validateField(field) {
         ? 'Vui lòng nhập mật khẩu hiện tại.' : ''
       break
     case 'matKhauMoi':
-      errors.matKhauMoi = !passForm.matKhauMoi        ? 'Vui lòng nhập mật khẩu mới.'
-                        : passForm.matKhauMoi.length < 6 ? 'Mật khẩu mới phải có ít nhất 6 ký tự.'
-                        : ''
+      errors.matKhauMoi = passwordError(passForm.matKhauMoi) || (passForm.matKhauMoi === passForm.matKhauCu ? 'Mật khẩu mới không được trùng mật khẩu hiện tại.' : '')
       break
     case 'xacNhan':
       errors.xacNhan = !passForm.xacNhan                          ? 'Vui lòng xác nhận mật khẩu mới.'
@@ -102,16 +92,21 @@ const avatarUploading = ref(false)
 const avatarInput = ref(null)
 
 // ── Load ───────────────────────────────────────────────────
-onMounted(async () => {
+async function loadProfile() {
+  loading.value = true
+  loadError.value = ''
   try {
     const res = await api.get('/nhan-vien/me')
     // FRONTEND api.js trả về response gốc, data nằm ở res.data?.data
     const data = res.data?.data ?? res.data ?? res
     fillProfile(data)
+  } catch (error) {
+    loadError.value = error?.response?.data?.message || 'Không thể tải thông tin tài khoản. Vui lòng thử lại.'
   } finally {
     loading.value = false
   }
-})
+}
+onMounted(loadProfile)
 
 function fillProfile(data) {
   Object.assign(profile, {
@@ -173,25 +168,20 @@ async function onAvatarChange(e) {
 }
 
 // ── Lưu thông tin ─────────────────────────────────────────
+function profilePayload() {
+  const value = form.value
+  return { ...value, name: value.name.trim(), email: value.email.trim(), phone: value.phone.trim(),
+    gender: value.gender == null || value.gender === '' ? null : Number(value.gender), roleId: Number(value.roleId),
+    province: value.province?.trim() || null, ward: value.ward?.trim() || null, street: value.street?.trim() || null, image: value.image || null }
+}
 async function saveInfo() {
   if (saving.value) return
   const err = validateInfo()
-  if (err) return
+  if (err) { showError(err); return }
 
   saving.value = true
   try {
-    const res = await api.put('/nhan-vien/me', {
-      name:     form.value.name.trim(),
-      email:    form.value.email.trim(),
-      phone:    form.value.phone.trim(),
-      gender:   form.value.gender,
-      dob:      form.value.dob,
-      roleId:   form.value.roleId,
-      province: form.value.province?.trim() || null,
-      ward:     form.value.ward?.trim()     || null,
-      street:   form.value.street?.trim()   || null,
-      image:    form.value.image            || null
-    })
+    const res = await api.put('/nhan-vien/me', profilePayload())
     const data = res.data?.data ?? res.data ?? res
     fillProfile(data)
     showSuccess('Cập nhật thông tin thành công!')
@@ -209,7 +199,8 @@ function validateInfo() {
   validateField('province')
   validateField('ward')
   validateField('street')
-  return errors.name || errors.email || errors.phone || errors.province || errors.ward || errors.street || null
+  return errors.name || errors.email || errors.phone || errors.province || errors.ward || errors.street
+    || accountRequestError({ method: 'put', url: '/nhan-vien/me', data: profilePayload() }) || null
 }
 
 // ── Đổi mật khẩu ──────────────────────────────────────────
@@ -258,6 +249,7 @@ function fmtDatetime(val) {
         <i class="bi bi-arrow-repeat spin"></i> Đang tải...
       </div>
 
+      <section v-else-if="loadError" class="ss-card"><p class="ss-hint warn" role="alert">{{ loadError }}</p><button class="ss-btn" type="button" @click="loadProfile">Tải lại thông tin</button></section>
       <template v-else>
         <div class="profile-layout">
 
