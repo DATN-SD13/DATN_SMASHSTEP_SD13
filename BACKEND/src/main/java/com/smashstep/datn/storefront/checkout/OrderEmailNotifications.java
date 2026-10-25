@@ -1,6 +1,7 @@
 package com.smashstep.datn.storefront.checkout;
 
 import com.smashstep.datn.invoice.entity.*;
+import com.smashstep.datn.invoice.enums.TrangThaiHoaDon;
 import com.smashstep.datn.promotion.service.EmailService;
 import com.smashstep.datn.common.validation.AccountRules;
 import jakarta.annotation.PreDestroy;
@@ -20,7 +21,7 @@ import java.util.concurrent.*;
 @Slf4j
 public class OrderEmailNotifications {
     public static final String PREFIX="[WEB-ORDER-MAIL:2]|";
-    private static final String EVENT=PREFIX+"EVENT|", QUEUED=EVENT+"QUEUED|", SENT=EVENT+"SENT|";
+    private static final String EVENT=PREFIX+"EVENT|", QUEUED=EVENT+"QUEUED|", SENT=EVENT+"SENT|", SKIPPED=EVENT+"SKIPPED|";
     private final EntityManager em;private final EmailService mail;private final TransactionTemplate tx;
     private final ScheduledExecutorService worker=Executors.newSingleThreadScheduledExecutor(r->{var t=new Thread(r,"customer-order-mail");t.setDaemon(true);return t;});
     @Value("${app.customer-website-url:http://localhost:5174}") private String site;
@@ -36,7 +37,9 @@ public class OrderEmailNotifications {
         note(invoice,PREFIX+"OPT_IN|"+email.trim().toLowerCase(Locale.ROOT));enqueue(invoice,"CREATED");
     }
     public void queueStatus(HoaDon invoice){
-        requireTransaction();if(recipient(invoice)==null)return;
+        requireTransaction();
+        if(!Integer.valueOf(TrangThaiHoaDon.DA_XAC_NHAN.getMa()).equals(invoice.getTrangThai()))return;
+        if(recipient(invoice)==null)return;
         var previous=em.createQuery("select l.trangThai from LichSuHoaDon l where l.idHoaDon.id=:id and locate(:prefix,l.ghiChu)=1 order by l.id desc",Integer.class)
                 .setParameter("id",invoice.getId()).setParameter("prefix",EVENT).setMaxResults(1).getResultList();
         if(!previous.isEmpty() && Objects.equals(previous.get(0),invoice.getTrangThai()))return;
@@ -82,17 +85,25 @@ public class OrderEmailNotifications {
             var delivery=tx.execute(status->{
                 var event=em.find(LichSuHoaDon.class,eventId);
                 if(event==null || event.getGhiChu()==null || !event.getGhiChu().startsWith(QUEUED))return null;
+                // Apply the policy to status emails already queued before this update too.
+                // Use the event snapshot: a confirmed email can arrive after the order advances.
+                if(event.getGhiChu().endsWith("|STATUS")
+                        && !Integer.valueOf(TrangThaiHoaDon.DA_XAC_NHAN.getMa()).equals(event.getTrangThai())){
+                    event.setGhiChu(SKIPPED+event.getGhiChu().substring(QUEUED.length()));
+                    return null;
+                }
                 var invoice=event.getIdHoaDon();String email=recipient(invoice);if(email==null)return null;
                 var lines=em.createQuery("select d from HoaDonChiTiet d join fetch d.idSanPhamChiTiet v join fetch v.idSanPham left join fetch v.idMauSac left join fetch v.idKichThuoc where d.idHoaDon.id=:id order by d.id",HoaDonChiTiet.class)
                         .setParameter("id",invoice.getId()).getResultList().stream().map(d->{var v=d.getIdSanPhamChiTiet();return new EmailService.OrderEmailLine(v.getIdSanPham().getTenSanPham(),
                                 (v.getIdMauSac()==null?"":v.getIdMauSac().getTenMauSac())+" · Size "+(v.getIdKichThuoc()==null?"":v.getIdKichThuoc().getGiaTri()),
-                                d.getSoLuong(),money(d.getDonGia()),money(d.getThanhTien()));}).toList();
+                                d.getSoLuong(),money(d.getDonGia()),money(d.getThanhTien()),productImage(v.getId(),v.getIdSanPham().getId()));}).toList();
                 String url=site!=null && site.matches("https?://(?:localhost|127\\.0\\.0\\.1):5174/?")?site.replaceAll("/+$","")+"/don-hang/"+invoice.getMaHoaDon():"";
                 var state=com.smashstep.datn.invoice.enums.TrangThaiHoaDon.tuMa(event.getTrangThai());
                 return new Delivery(email,new EmailService.OrderEmail(invoice.getMaHoaDon(),invoice.getIdKhachHang().getTenKhachHang(),invoice.getHoTenNguoiNhan(),
                         invoice.getSoDienThoaiNguoiNhan(),invoice.getDiaChiGiaoHang(),invoice.getIdPhuongThucThanhToan()==null?"":invoice.getIdPhuongThucThanhToan().getTenPhuongThuc(),
                         state==null?"Đã ghi nhận":state.getNhan(),OnlineBankPayment.hasReceipt(em,invoice),
-                        money(invoice.getTongTien()),money(invoice.getTienGiamGia()),money(invoice.getPhiVanChuyen()),money(invoice.getThanhTien()),lines,url),
+                        money(invoice.getTongTien()),money(invoice.getTienGiamGia()),money(invoice.getPhiVanChuyen()),money(invoice.getThanhTien()),lines,url,
+                        invoice.getIdPhieuGiamGia()!=null && invoice.getTienGiamGia()!=null && invoice.getTienGiamGia().signum()>0,invoice.getDonViVanChuyen()),
                         event.getGhiChu(),event.getGhiChu().endsWith("|STATUS"));
             });
             if(delivery==null)return;
@@ -100,6 +111,14 @@ public class OrderEmailNotifications {
             tx.executeWithoutResult(status->{var event=em.find(LichSuHoaDon.class,eventId,LockModeType.PESSIMISTIC_WRITE);
                 if(event!=null && delivery.marker().equals(event.getGhiChu()))event.setGhiChu(SENT+delivery.marker().substring(QUEUED.length()));});
         }catch(RuntimeException e){log.warn("Chưa gửi được email đơn hàng event={}; đơn đã lưu, email sẽ được thử lại.",eventId);}
+    }
+    private String productImage(Long variantId,Long productId){
+        return em.createQuery("select a.urlAnh from HinhAnhSanPham a left join a.idSanPhamChiTiet v where (v.id=:variant "
+                        + "or (a.idSanPham.id=:product and a.idSanPhamChiTiet is null)) and a.urlAnh is not null and trim(a.urlAnh)<>'' "
+                        + "order by case when v.id=:variant then 0 else 1 end, "
+                        + "case when a.isAnhChinh=true then 0 else 1 end, a.id",String.class)
+                .setParameter("variant",variantId).setParameter("product",productId).setMaxResults(1)
+                .getResultStream().findFirst().orElse(null);
     }
     private static void requireTransaction(){if(!TransactionSynchronizationManager.isSynchronizationActive())throw new IllegalStateException("Order email requires the order transaction");}
     private static String money(java.math.BigDecimal value){return java.text.NumberFormat.getNumberInstance(Locale.forLanguageTag("vi-VN")).format(value==null?java.math.BigDecimal.ZERO:value)+" đ";}

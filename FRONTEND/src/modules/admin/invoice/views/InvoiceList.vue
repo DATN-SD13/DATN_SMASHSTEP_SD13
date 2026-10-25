@@ -237,7 +237,6 @@ onUnmounted(() => {
       <div class="page-heading">
         <div class="breadcrumb small"><span>Trang chủ</span><b>/</b><strong>Hóa đơn</strong></div>
         <h1 class="fw-bold">Quản Lý Hóa Đơn</h1>
-        <button class="ss-btn" type="button" :disabled="loading" @click="loadInvoices(currentPage)"><i class="bi bi-arrow-clockwise"></i> Làm mới danh sách</button>
       </div>
 
       <InvoiceFilter @search="search" @reset="reset" />
