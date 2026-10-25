@@ -102,7 +102,7 @@ const router = createRouter({
 // ── Navigation Guard ──────────────────────────────────────
 router.beforeEach((to, _from, next) => {
   // Lazy import store để tránh circular dep trước khi app mount
-  import('../stores/auth').then(({ useAuthStore }) => {
+  import('../stores/auth').then(async ({ useAuthStore }) => {
     const auth = useAuthStore()
 
     // Trang chỉ dành cho guest: nếu đã login thì redirect đúng chỗ
@@ -119,6 +119,15 @@ router.beforeEach((to, _from, next) => {
         ? '/khach-hang/dang-nhap'
         : '/dang-nhap'
       return next({ path: loginPath, query: { redirect: to.fullPath } })
+    }
+
+    if (auth.userType === 'NHAN_VIEN') {
+      try { await auth.refreshSession() }
+      catch {
+        if (!auth.isAuthenticated) return next('/dang-nhap')
+        return next(false)
+      }
+      if (!auth.isAuthenticated) return next('/dang-nhap')
     }
 
     // Khách hàng cố vào khu vực admin → về trang khách hàng

@@ -84,8 +84,7 @@ public final class OrderEmailTemplate {
     private static String escape(String value) { return value == null ? "" : value.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace("\"","&quot;").replace("'","&#39;"); }
     private static boolean safeUrl(String value) {
         if (value == null || value.isBlank()) return false;
-        try { var uri = URI.create(value); return SetHolder.SCHEMES.contains(uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT)) && uri.getHost() != null && uri.getRawUserInfo() == null; }
+        try { var uri = URI.create(value); return ("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme())) && uri.getHost() != null && uri.getRawUserInfo() == null; }
         catch (IllegalArgumentException ignored) { return false; }
     }
-    private static final class SetHolder { static final java.util.Set<String> SCHEMES = java.util.Set.of("http","https"); }
 }

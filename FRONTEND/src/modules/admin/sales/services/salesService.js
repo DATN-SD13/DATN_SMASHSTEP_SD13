@@ -102,6 +102,7 @@ export default {
     }))
   },
   async tinhTien(duLieu) { return docKetQua(layDuLieu(await api.post('/ban-hang/tinh-tien', taoYeuCau(duLieu)))) },
+  async ghiNhanChoThanhToan(id, revision) { return layDuLieu(await api.post(`/ban-hang/hoa-don-cho/${id}/xac-nhan-thanh-toan`, null, { params: { revision } })) },
   async baoVeKhoanThu(duLieu) { return layDuLieu(await api.post('/ban-hang/thanh-toan/cho-doi-soat', taoYeuCau(duLieu))) },
   async thanhToan(duLieu) { return docKetQua(layDuLieu(await api.post('/ban-hang/thanh-toan', taoYeuCau(duLieu)))) }
 }

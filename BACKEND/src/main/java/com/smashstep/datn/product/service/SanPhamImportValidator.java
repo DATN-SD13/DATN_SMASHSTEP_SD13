@@ -42,10 +42,15 @@ public class SanPhamImportValidator {
     }
 
     private Long timId(String value, int column, Map<Integer, Map<String, List<Long>>> names, List<String> errors) {
-        String name = tenChuan(value);
+        String name = column == 11 && QuyTacSanPham.kichCoHopLe(value)
+                ? QuyTacSanPham.chuanHoaKichCo(value) : tenChuan(value);
         String label = SanPhamImportExcelReader.COT.get(column);
         if (name.isEmpty()) {
             errors.add(label + ": không được để trống");
+            return null;
+        }
+        if (column == 11 && !QuyTacSanPham.kichCoHopLe(value)) {
+            errors.add(label + ": chỉ nhận size 35–46, bước 0.5 (ví dụ 40 hoặc 40.5).");
             return null;
         }
         List<Long> matches = names.get(column).getOrDefault(name, List.of());

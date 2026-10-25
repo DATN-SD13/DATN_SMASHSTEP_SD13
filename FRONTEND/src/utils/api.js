@@ -35,14 +35,24 @@ api.interceptors.response.use(
     }
     return response
   },
-  error => {
+  async error => {
     const validation = error.response?.data?.errors
     if (validation && typeof validation === 'object') error.response.data.message = Object.values(validation).join(' · ')
-    if (error.response?.status === 401) {
-      // Lazy import để tránh circular dependency
-      import('../stores/auth').then(({ useAuthStore }) => {
-        useAuthStore().forceLogout()
-      })
+    const requestToken = error.config?.headers?.Authorization || error.config?.headers?.get?.('Authorization')
+    const activeToken = localStorage.getItem('ss_token')
+    // Phản hồi chậm của phiên cũ không được đăng xuất hoặc cập nhật phiên vừa đăng nhập.
+    if (activeToken && requestToken === `Bearer ${activeToken}` && error.config?.url !== '/auth/login') {
+      if (error.response?.status === 401) {
+        const { useAuthStore } = await import('../stores/auth')
+        const auth = useAuthStore()
+        if (auth.token === activeToken && localStorage.getItem('ss_token') === activeToken) await auth.forceLogout()
+      } else if (error.response?.status === 403 && !error.config?.skipSessionRefresh) {
+        try {
+          const { useAuthStore } = await import('../stores/auth')
+          const auth = useAuthStore()
+          if (auth.token === activeToken) await auth.refreshSession()
+        } catch { /* Giữ lỗi gốc; API luôn tự kiểm tra quyền hiện tại. */ }
+      }
     }
     return Promise.reject(error)
   }

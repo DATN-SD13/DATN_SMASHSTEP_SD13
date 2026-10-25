@@ -85,6 +85,11 @@ public class SalesController {
         return ApiResponse.ok(salesService.tinhTien(yeuCau));
     }
 
+    @PostMapping("/hoa-don-cho/{id}/xac-nhan-thanh-toan")
+    public ApiResponse<Long> ghiNhanChoThanhToan(@PathVariable Long id, @RequestParam Long revision) {
+        return ApiResponse.ok(salesService.ghiNhanChoXacNhanThanhToan(id, revision));
+    }
+
     @PostMapping("/thanh-toan/cho-doi-soat")
     public ApiResponse<Void> baoVeKhoanThu(@Valid @RequestBody SalesRequest request) {
         request.setIdNhanVien(PosActor.idNhanVien());

@@ -14,6 +14,16 @@ public final class QuyTacSanPham {
         return giaTri == null ? "" : giaTri.trim();
     }
 
+    public static boolean kichCoHopLe(String value) {
+        return boKhoangTrang(value).matches("(?:(?:3[5-9]|4[0-5])(?:[.,]5)?|46)");
+    }
+
+    public static String chuanHoaKichCo(String value) {
+        if (!kichCoHopLe(value))
+            throw AppException.badRequest("Kích cỡ từ 35 đến 46, chỉ nhận size nguyên hoặc nửa size .5 (ví dụ 40.5).");
+        return boKhoangTrang(value).replace(',', '.');
+    }
+
     public static String normalizeBusinessName(String value) {
         return boKhoangTrang(value).replaceAll("(?U)\\s+", " ").trim().toLowerCase(Locale.ROOT);
     }

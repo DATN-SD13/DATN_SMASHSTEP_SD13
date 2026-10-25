@@ -43,7 +43,7 @@ public class ThuocTinhSanPhamService {
         ketQua.put("collars", coGiayRepository.findAll(Sort.by("id")).stream().map(this::chuyenSangResponse).toList());
         ketQua.put("styles", kieuDangRepository.findAll(Sort.by("id")).stream().map(this::chuyenSangResponse).toList());
         ketQua.put("colors", mauSacRepository.findAll(Sort.by("id")).stream().map(this::chuyenSangResponse).toList());
-        ketQua.put("sizes", kichThuocRepository.findAll(Sort.by("id")).stream().map(this::chuyenSangResponse).toList());
+        ketQua.put("sizes", kichThuocRepository.findAll(Sort.by("id")).stream().filter(k -> QuyTacSanPham.kichCoHopLe(k.getGiaTri())).map(this::chuyenSangResponse).toList());
         return ketQua;
     }
 
@@ -165,13 +165,7 @@ public class ThuocTinhSanPhamService {
     }
 
     private String chuanHoaKichCo(String value) {
-        String size = QuyTacSanPham.boKhoangTrang(value);
-        if (size.isEmpty()) throw AppException.badRequest("Kích cỡ không được để trống.");
-        if (size.length() > 50) throw AppException.badRequest("Giá trị kích thước tối đa 50 ký tự");
-        if (!size.matches("[0-9]+(?:[.,][0-9]+)?") || new BigDecimal(size.replace(',', '.')).signum() <= 0)
-            throw AppException.badRequest("Kích cỡ chỉ được nhập số lớn hơn 0.");
-        // Keep existing string identity: 40 and 40.0 remain distinct values.
-        return size.replace(',', '.');
+        return QuyTacSanPham.chuanHoaKichCo(value);
     }
 
     public KiemTraTrungResponse.Attribute kiemTraTrung(String loai, ThuocTinhTrungRequest request) {
@@ -196,7 +190,7 @@ public class ThuocTinhSanPhamService {
     }
 
     private <T> KiemTraTrungResponse.Attribute timThuocTinhTrung(JpaSpecificationExecutor<T> repository,
-            String nameField, ThuocTinhTrungRequest request, boolean color, Function<T, ThuocTinhResponse> mapper) {
+                                                                 String nameField, ThuocTinhTrungRequest request, boolean color, Function<T, ThuocTinhResponse> mapper) {
         Specification<T> candidates = (root, query, cb) -> {
             Predicate name = cb.like(cb.lower(root.get(nameField)), QuyTacSanPham.businessNamePattern(request.getTen()), '\\');
             Predicate match = color ? cb.or(name, cb.equal(cb.lower(cb.trim(root.get("maMauHex"))),
@@ -297,6 +291,7 @@ public class ThuocTinhSanPhamService {
             }
             case "sizes" -> {
                 KichThuoc thuocTinh = kichThuocRepository.findById(id).orElseThrow(() -> AppException.notFound("Không tìm thấy thuộc tính"));
+                if (Integer.valueOf(1).equals(trangThai)) chuanHoaKichCo(thuocTinh.getGiaTri());
                 thuocTinh.setTrangThai(trangThai); thuocTinh.setNgayCapNhat(LocalDateTime.now());
                 return chuyenSangResponse(kichThuocRepository.save(thuocTinh));
             }
