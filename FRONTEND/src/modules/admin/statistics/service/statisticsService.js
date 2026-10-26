@@ -60,3 +60,13 @@ export const getStatisticsRevenueComparison = (params) => {
     { params }
   );
 };
+
+/**
+ * API gửi báo cáo tổng kết doanh thu qua email
+ */
+export const sendStatisticsReportEmail = (data) => {
+  return api.post(
+    "/thong-ke-tong-hop/gui-email-tong-ket",
+    data
+  );
+};

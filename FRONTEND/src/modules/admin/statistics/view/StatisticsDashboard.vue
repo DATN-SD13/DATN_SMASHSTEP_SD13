@@ -12,6 +12,7 @@ import {
   getStatisticsProduct,
   getStatisticsBrands,
   getStatisticsRevenueComparison,
+  sendStatisticsReportEmail,
 } from "../service/statisticsService";
 
 import { Bar, Line, Pie } from "vue-chartjs";
@@ -101,6 +102,17 @@ async function loadBrands() {
 
     brandOptions.value = [];
   }
+}
+
+// ===== CHUYEN GIAO DIEN THONG KE =====
+// overview: Thống kê tổng quan
+// comparison: So sánh doanh thu
+// email: Gửi báo cáo tổng kết
+
+const activeStatisticsView = ref("overview");
+
+function changeStatisticsView(view) {
+  activeStatisticsView.value = view;
 }
 
 const dashboardSummary = ref(null);
@@ -1162,6 +1174,90 @@ const revenueComparisonRows = computed(() => {
   }));
 });
 
+/* ===== GUI EMAIL BAO CAO TONG KET ===== */
+
+// Email người nhận
+const reportEmail = ref("");
+
+// Ngày bắt đầu và kết thúc báo cáo
+const reportFromDate = ref(fromDate.value);
+const reportToDate = ref(toDate.value);
+
+// Trạng thái gửi email
+const sendingReportEmail = ref(false);
+const reportEmailError = ref("");
+const reportEmailSuccess = ref("");
+
+// Gửi báo cáo doanh thu qua email
+async function sendRevenueReport() {
+  reportEmailError.value = "";
+  reportEmailSuccess.value = "";
+
+  const email = reportEmail.value.trim();
+
+  // Kiểm tra email
+  if (!email) {
+    reportEmailError.value = "Vui lòng nhập email người nhận.";
+    return;
+  }
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    reportEmailError.value = "Địa chỉ email không hợp lệ.";
+    return;
+  }
+
+  // Kiểm tra thời gian
+  if (!reportFromDate.value || !reportToDate.value) {
+    reportEmailError.value = "Vui lòng chọn đầy đủ khoảng ngày.";
+    return;
+  }
+
+  if (reportFromDate.value > reportToDate.value) {
+    reportEmailError.value = "Ngày bắt đầu không được lớn hơn ngày kết thúc.";
+    return;
+  }
+
+  // Giới hạn khoảng thời gian giống Backend
+  const from = new Date(reportFromDate.value + "T00:00:00");
+  const to = new Date(reportToDate.value + "T00:00:00");
+
+  const days = Math.round((to.getTime() - from.getTime()) / 86400000);
+
+  if (days > 366) {
+    reportEmailError.value =
+      "Khoảng thời gian báo cáo không được vượt quá 367 ngày.";
+    return;
+  }
+
+  if (sendingReportEmail.value) return;
+
+  sendingReportEmail.value = true;
+
+  try {
+    const response = await sendStatisticsReportEmail({
+      email: email,
+      tuNgay: reportFromDate.value,
+      denNgay: reportToDate.value,
+    });
+
+    if (!response.data?.success) {
+      throw new Error(response.data?.message || "Không thể gửi báo cáo.");
+    }
+
+    reportEmailSuccess.value =
+      "Đã gửi báo cáo tổng kết thành công đến " + email;
+  } catch (error) {
+    console.error("Lỗi gửi báo cáo email:", error);
+
+    reportEmailError.value =
+      error.response?.data?.message ||
+      error.message ||
+      "Gửi email thất bại. Vui lòng thử lại.";
+  } finally {
+    sendingReportEmail.value = false;
+  }
+}
+
 onMounted(() => {
   loadBrands();
   loadCharts();
@@ -1244,24 +1340,225 @@ function number(value) {
 <template>
   <AdminLayout>
     <main class="statistics-page">
-      <!-- TIÊU ĐỀ THỐNG KÊ -->
+      <!-- TIÊU ĐỀ THỐNG KÊ - GIAO DIEN NEN SANG -->
       <header class="dashboard-hero">
-        <div>
-          <div class="dashboard-eyebrow">SMASHSTEP / ANALYTICS</div>
-
+        <div class="dashboard-hero-copy">
+          <div class="dashboard-eyebrow">Báo cáo kinh doanh</div>
           <h1>Thống kê tổng hợp</h1>
-
           <p>Theo dõi doanh thu, hiệu suất bán hàng và hoạt động kinh doanh.</p>
         </div>
 
         <div class="dashboard-hero-mark">
-          <i class="bi bi-bar-chart-line-fill"></i>
-          Báo cáo quản trị
+          <i class="bi bi-bar-chart-line"></i>
+          <span>{{
+            activeStatisticsView === 'overview'
+              ? 'Tổng quan cửa hàng'
+              : activeStatisticsView === 'comparison'
+                ? 'So sánh doanh thu'
+                : 'Gửi mail tổng kết'
+          }}</span>
         </div>
       </header>
 
+      <!-- Chuyen 3 chuc nang - giu cac API va noi dung da co -->
+      <nav class="statistics-view-navigation" aria-label="Chức năng thống kê">
+        <button
+          type="button"
+          :class="{ active: activeStatisticsView === 'overview' }"
+          :aria-pressed="activeStatisticsView === 'overview'"
+          @click="changeStatisticsView('overview')"
+        >
+          <i class="bi bi-speedometer2"></i>
+          Tổng quan
+        </button>
+        <button
+          type="button"
+          :class="{ active: activeStatisticsView === 'comparison' }"
+          :aria-pressed="activeStatisticsView === 'comparison'"
+          @click="changeStatisticsView('comparison')"
+        >
+          <i class="bi bi-bar-chart-line"></i>
+          So sánh doanh thu
+        </button>
+        <button
+          type="button"
+          :class="{ active: activeStatisticsView === 'email' }"
+          :aria-pressed="activeStatisticsView === 'email'"
+          @click="changeStatisticsView('email')"
+        >
+          <i class="bi bi-envelope"></i>
+          Gửi mail tổng kết
+        </button>
+      </nav>
+
+      <!-- ===== GUI EMAIL BAO CAO TONG KET ===== -->
+      <section
+        v-if="activeStatisticsView === 'email'"
+        class="report-email-section"
+      >
+        <div class="report-email-card">
+          <!-- TIEU DE -->
+          <div class="report-email-header">
+            <div class="report-email-heading">
+              <div class="report-email-icon">
+                <i class="bi bi-envelope-paper"></i>
+              </div>
+
+              <div>
+                <h3>Gửi mail tổng kết doanh thu</h3>
+                <p>
+                  Gửi báo cáo kết quả kinh doanh SmashStep trực tiếp đến email
+                  người nhận.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- FORM GUI EMAIL -->
+          <form class="report-email-form" @submit.prevent="sendRevenueReport">
+            <div class="report-email-field">
+              <label for="report-email">
+                <i class="bi bi-envelope"></i>
+                Email người nhận
+              </label>
+
+              <input
+                id="report-email"
+                v-model.trim="reportEmail"
+                type="email"
+                placeholder="Nhập địa chỉ email nhận báo cáo..."
+                autocomplete="email"
+                maxlength="254"
+                required
+                :disabled="sendingReportEmail"
+              />
+            </div>
+
+            <!-- CHON THOI GIAN -->
+            <div class="report-email-date-grid">
+              <div class="report-email-field">
+                <label for="report-from-date">
+                  <i class="bi bi-calendar3"></i>
+                  Từ ngày
+                </label>
+
+                <input
+                  id="report-from-date"
+                  v-model="reportFromDate"
+                  type="date"
+                  required
+                  :disabled="sendingReportEmail"
+                />
+              </div>
+
+              <div class="report-email-field">
+                <label for="report-to-date">
+                  <i class="bi bi-calendar-check"></i>
+                  Đến ngày
+                </label>
+
+                <input
+                  id="report-to-date"
+                  v-model="reportToDate"
+                  type="date"
+                  required
+                  :min="reportFromDate || undefined"
+                  :disabled="sendingReportEmail"
+                />
+              </div>
+            </div>
+
+            <!-- NOI DUNG BAO CAO -->
+            <div class="report-email-preview">
+              <h4>
+                <i class="bi bi-file-earmark-bar-graph"></i>
+                Nội dung báo cáo sẽ gửi
+              </h4>
+
+              <div class="report-email-preview-grid">
+                <span>
+                  <i class="bi bi-check-circle"></i>
+                  Doanh thu thực tế
+                </span>
+
+                <span>
+                  <i class="bi bi-check-circle"></i>
+                  Doanh thu dự kiến
+                </span>
+
+                <span>
+                  <i class="bi bi-check-circle"></i>
+                  Tiền mặt / chuyển khoản
+                </span>
+
+                <span>
+                  <i class="bi bi-check-circle"></i>
+                  Tổng số đơn hàng
+                </span>
+
+                <span>
+                  <i class="bi bi-check-circle"></i>
+                  Giá trị trung bình đơn (AOV)
+                </span>
+
+                <span>
+                  <i class="bi bi-check-circle"></i>
+                  Sản phẩm bán được và khách mới
+                </span>
+              </div>
+            </div>
+
+            <!-- THONG BAO LOI -->
+            <div
+              v-if="reportEmailError"
+              class="report-email-alert report-email-error"
+              role="alert"
+            >
+              <i class="bi bi-exclamation-triangle"></i>
+              {{ reportEmailError }}
+            </div>
+
+            <!-- THONG BAO THANH CONG -->
+            <div
+              v-if="reportEmailSuccess"
+              class="report-email-alert report-email-success"
+              role="status"
+            >
+              <i class="bi bi-check-circle"></i>
+              {{ reportEmailSuccess }}
+            </div>
+
+            <!-- NUT GUI -->
+            <div class="report-email-actions">
+              <span class="report-email-note">
+                <i class="bi bi-shield-check"></i>
+                Chỉ tài khoản Admin được phép gửi báo cáo.
+              </span>
+
+              <button
+                type="submit"
+                class="report-email-submit"
+                :disabled="sendingReportEmail"
+              >
+                <i
+                  :class="
+                    sendingReportEmail ? 'bi bi-hourglass-split' : 'bi bi-send'
+                  "
+                ></i>
+
+                {{
+                  sendingReportEmail
+                    ? "Đang gửi báo cáo..."
+                    : "Gửi mail tổng kết"
+                }}
+              </button>
+            </div>
+          </form>
+        </div>
+      </section>
+
       <!-- BỘ LỌC TỔNG QUAN -->
-      <section class="filter-card">
+      <section v-if="activeStatisticsView === 'overview'" class="filter-card">
         <div class="filter-header">
           <h3>
             <i class="bi bi-funnel"></i>
@@ -1352,7 +1649,10 @@ function number(value) {
       </section>
 
       <!-- THANH THÔNG TIN THỜI GIAN -->
-      <section class="information-bar">
+      <section
+        v-if="activeStatisticsView === 'overview'"
+        class="information-bar"
+      >
         <div class="information-left">
           <span class="blue-dot"></span>
           <span>
@@ -1362,13 +1662,20 @@ function number(value) {
         </div>
       </section>
 
-      <p v-if="dateValidationMessage" class="date-error" role="alert">
+      <p
+        v-if="activeStatisticsView === 'overview' && dateValidationMessage"
+        class="date-error"
+        role="alert"
+      >
         <i class="bi bi-exclamation-triangle"></i>
         {{ dateValidationMessage }}
       </p>
 
       <!-- 7 Ô DOANH THU -->
-      <section class="summary-section">
+      <section
+        v-if="activeStatisticsView === 'overview'"
+        class="summary-section"
+      >
         <!-- HÀNG TRÊN -->
 
         <!-- Trạng thái đang tải -->
@@ -1475,7 +1782,7 @@ function number(value) {
       </section>
 
       <!-- HAI BIỂU ĐỒ THỐNG KÊ -->
-      <section class="charts-grid">
+      <section v-if="activeStatisticsView === 'overview'" class="charts-grid">
         <!-- BIỂU ĐỒ SẢN PHẨM BÁN ĐƯỢC -->
         <div class="chart-card">
           <div class="chart-header">
@@ -1626,7 +1933,11 @@ function number(value) {
       </section>
 
       <!-- ===== BIỂU ĐỒ SO SÁNH DOANH THU ===== -->
-      <section class="revenue-comparison-card">
+
+      <section
+        v-if="activeStatisticsView === 'comparison'"
+        class="revenue-comparison-card"
+      >
         <div class="revenue-comparison-header">
           <h3>
             <i class="bi bi-bar-chart-line"></i>
@@ -1683,7 +1994,10 @@ function number(value) {
 
       <!-- ===== BANG DOI CHIEU DOANH THU ===== -->
 
-      <section class="revenue-comparison-card">
+      <section
+        v-if="activeStatisticsView === 'comparison'"
+        class="revenue-comparison-card"
+      >
         <div class="revenue-comparison-header">
           <h3>
             <i class="bi bi-table"></i>
@@ -1792,7 +2106,10 @@ function number(value) {
       </section>
 
       <!-- TỔNG QUAN THEO CHU KỲ THỜI GIAN -->
-      <section class="period-section">
+      <section
+        v-if="activeStatisticsView === 'overview'"
+        class="period-section"
+      >
         <div class="period-card">
           <div class="period-header">
             <h3>
@@ -1924,7 +2241,11 @@ function number(value) {
       </section>
 
       <!-- TỔNG QUAN DOANH THU NHÂN VIÊN -->
-      <section class="employee-section">
+
+      <section
+        v-if="activeStatisticsView === 'overview'"
+        class="employee-section"
+      >
         <div class="employee-card">
           <!-- TIÊU ĐỀ -->
           <div class="employee-header">
@@ -2067,7 +2388,11 @@ function number(value) {
       </section>
 
       <!-- ===== TỔNG QUAN SẢN PHẨM ===== -->
-      <section class="employee-section">
+
+      <section
+        v-if="activeStatisticsView === 'overview'"
+        class="employee-section"
+      >
         <div class="employee-card">
           <!-- TIÊU ĐỀ -->
 
@@ -3824,6 +4149,359 @@ function number(value) {
 
   .statistics-page .revenue-comparison-chart {
     height: 280px;
+  }
+}
+
+/* ===== CHUYEN CHE DO THONG KE ===== */
+
+.statistics-view-navigation {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.statistics-view-navigation button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 15px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.statistics-view-navigation button:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.statistics-view-navigation button.active {
+  background: #fff;
+  color: #2563eb;
+  border-color: #fff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+@media (max-width: 900px) {
+  .statistics-view-navigation {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .statistics-view-navigation button {
+    flex: 1;
+    min-width: 145px;
+  }
+}
+
+/* ===== GIAO DIEN GUI MAIL TONG KET ===== */
+
+.statistics-page .report-email-section {
+  margin-top: 22px;
+}
+
+.statistics-page .report-email-card {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 28px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  box-shadow: 0 5px 22px rgba(31, 41, 70, 0.06);
+}
+
+.statistics-page .report-email-header {
+  padding-bottom: 20px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.statistics-page .report-email-heading {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.statistics-page .report-email-icon {
+  width: 54px;
+  height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #eff6ff;
+  color: #2563eb;
+  font-size: 25px;
+  border-radius: 14px;
+}
+
+.statistics-page .report-email-heading h3 {
+  margin: 0 0 8px;
+  color: #1e293b;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.statistics-page .report-email-heading p {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.statistics-page .report-email-form {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.statistics-page .report-email-field {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.statistics-page .report-email-field label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.statistics-page .report-email-field label i {
+  color: #2563eb;
+  margin-right: 5px;
+}
+
+.statistics-page .report-email-field input {
+  width: 100%;
+  height: 44px;
+  padding: 10px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #1e293b;
+  font-size: 14px;
+  outline: none;
+}
+
+.statistics-page .report-email-field input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.statistics-page .report-email-date-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.statistics-page .report-email-preview {
+  padding: 20px;
+  background: #f8fbff;
+  border: 1px solid #dbeafe;
+  border-radius: 12px;
+}
+
+.statistics-page .report-email-preview h4 {
+  margin: 0 0 16px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #1e40af;
+}
+
+.statistics-page .report-email-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.statistics-page .report-email-preview-grid span {
+  font-size: 13px;
+  color: #475569;
+}
+
+.statistics-page .report-email-preview-grid i {
+  color: #2563eb;
+  margin-right: 7px;
+}
+
+.statistics-page .report-email-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 15px;
+}
+
+.statistics-page .report-email-note {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.statistics-page .report-email-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 12px 24px;
+  border: none;
+  border-radius: 10px;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.statistics-page .report-email-submit:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.statistics-page .report-email-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.statistics-page .report-email-alert {
+  padding: 13px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.statistics-page .report-email-error {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
+}
+
+.statistics-page .report-email-success {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #15803d;
+}
+
+@media (max-width: 680px) {
+  .statistics-page .report-email-card {
+    padding: 18px;
+  }
+
+  .statistics-page .report-email-date-grid,
+  .statistics-page .report-email-preview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .statistics-page .report-email-submit {
+    width: 100%;
+  }
+}
+
+/* ===== HEADER NEN SANG THEO GIAO DIEN THAM KHAO ===== */
+.statistics-page .dashboard-hero {
+  background: transparent;
+  box-shadow: none;
+  border: 0;
+  border-radius: 0;
+  color: #172b4d;
+  padding: 0;
+  margin-bottom: 20px;
+  overflow: visible;
+  min-height: 100px;
+}
+
+.statistics-page .dashboard-hero::after {
+  content: none;
+  display: none;
+}
+
+.statistics-page .dashboard-eyebrow {
+  color: #5a82ad;
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
+  font-weight: 600;
+  margin-bottom: 7px;
+}
+
+.statistics-page .dashboard-hero h1 {
+  color: #111827;
+  font-size: 26px;
+  font-weight: 750;
+  margin-bottom: 10px;
+}
+
+.statistics-page .dashboard-hero p {
+  color: #64748b;
+  font-size: 14px;
+}
+
+.statistics-page .dashboard-hero-mark {
+  display: inline-flex;
+  background: #eff8ff;
+  border: 1px solid #d7e8fa;
+  border-radius: 24px;
+  color: #5680a8;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.statistics-page .dashboard-hero-mark i {
+  color: #5680a8;
+  font-size: 15px;
+}
+
+.statistics-page .statistics-view-navigation {
+  justify-content: flex-start;
+  margin-bottom: 20px;
+  padding-bottom: 0;
+  gap: 10px;
+}
+
+.statistics-page .statistics-view-navigation button {
+  background: #ffffff;
+  border: 1px solid #dce4ee;
+  border-radius: 10px;
+  color: #52657a;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 2px 6px rgba(30, 60, 90, 0.03);
+}
+
+.statistics-page .statistics-view-navigation button:hover {
+  color: #2563eb;
+  border-color: #b7d4f9;
+  background: #f5faff;
+}
+
+.statistics-page .statistics-view-navigation button.active {
+  color: #2563eb;
+  background: #edf5ff;
+  border-color: #b8d6ff;
+  box-shadow: none;
+}
+
+@media (max-width: 680px) {
+  .statistics-page .dashboard-hero {
+    min-height: 0;
+    padding: 0;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .statistics-page .dashboard-hero h1 {
+    font-size: 23px;
+  }
+
+  .statistics-page .statistics-view-navigation button {
+    flex: 1 1 145px;
+    min-width: 0;
   }
 }
 </style>
