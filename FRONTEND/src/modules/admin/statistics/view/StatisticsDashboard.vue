@@ -11,6 +11,7 @@ import {
   getStatisticsEmployee,
   getStatisticsProduct,
   getStatisticsBrands,
+  getStatisticsRevenueComparison,
 } from "../service/statisticsService";
 
 import { Bar, Line, Pie } from "vue-chartjs";
@@ -19,6 +20,8 @@ import * as XLSX from "xlsx";
 
 import {
   Chart as ChartJS,
+  BarController,
+  LineController,
   CategoryScale,
   LinearScale,
   BarElement,
@@ -31,6 +34,8 @@ import {
 } from "chart.js";
 
 ChartJS.register(
+  BarController,
+  LineController,
   CategoryScale,
   LinearScale,
   BarElement,
@@ -701,7 +706,9 @@ const brandColors = [
 ];
 
 const sortedBrands = computed(() => {
-  return brandChartData.value.slice().sort(
+  return brandChartData.value
+    .slice()
+    .sort(
       (a, b) =>
         Number(b[brandChartSort.value] || 0) -
         Number(a[brandChartSort.value] || 0),
@@ -733,8 +740,8 @@ const brandLineChart = computed(() => ({
       data: sortedBrands.value.map((item) =>
         Number(item[brandChartSort.value] || 0),
       ),
-      borderColor: "#ef4444",
-      backgroundColor: "#ef4444",
+      borderColor: "#2563EB",
+      backgroundColor: "#2563EB",
       borderWidth: 2,
       tension: 0.35,
       pointRadius: 4,
@@ -905,6 +912,256 @@ async function loadCharts() {
   }
 }
 
+// ===== SO SÁNH DOANH THU THEO THÁNG / QUÝ / NĂM =====
+
+// Chế độ so sánh
+const comparisonMode = ref("month");
+const comparisonYear = ref(new Date().getFullYear());
+
+// Dữ liệu từ Backend
+const comparisonData = ref([]);
+const loadingComparison = ref(false);
+const comparisonError = ref("");
+
+let comparisonRequestId = 0;
+
+// Kiểm tra kỳ thống kê nằm trong tương lai
+function isFutureComparisonPeriod(period) {
+  const now = new Date();
+  const selectedYear = Number(comparisonYear.value);
+
+  if (comparisonMode.value === "month") {
+    const month = Number(String(period).match(/\d+/)?.[0]);
+
+    return (
+      selectedYear > now.getFullYear() ||
+      (selectedYear === now.getFullYear() && month > now.getMonth() + 1)
+    );
+  }
+
+  if (comparisonMode.value === "quarter") {
+    const quarter = Number(String(period).match(/\d+/)?.[0]);
+    const currentQuarter = Math.floor(now.getMonth() / 3) + 1;
+
+    return (
+      selectedYear > now.getFullYear() ||
+      (selectedYear === now.getFullYear() && quarter > currentQuarter)
+    );
+  }
+
+  const year = Number(String(period).match(/\d{4}/)?.[0]);
+
+  return year > now.getFullYear();
+}
+
+// Không hiển thị những kỳ chưa diễn ra
+const visibleComparisonData = computed(() =>
+  comparisonData.value.filter((item) => !isFutureComparisonPeriod(item.period)),
+);
+
+// Dữ liệu biểu đồ: cột doanh thu + đường tăng trưởng
+const revenueComparisonChart = computed(() => ({
+  labels: visibleComparisonData.value.map((item) => item.period),
+
+  datasets: [
+    {
+      type: "bar",
+      label: "Doanh thu thực tế",
+      data: visibleComparisonData.value.map((item) =>
+        Number(item.revenue || 0),
+      ),
+      backgroundColor: "#2563EB",
+      borderColor: "#1D4ED8",
+      borderWidth: 1,
+      borderRadius: 7,
+      maxBarThickness: 48,
+      yAxisID: "y",
+    },
+    {
+      type: "line",
+      label: "Tăng trưởng (%)",
+      data: visibleComparisonData.value.map((item) =>
+        item.growth == null ? null : Number(item.growth),
+      ),
+      borderColor: "#F59E0B",
+      backgroundColor: "#F59E0B",
+      tension: 0.3,
+      borderWidth: 3,
+      pointRadius: 4,
+      spanGaps: false,
+      yAxisID: "y1",
+    },
+  ],
+}));
+
+// Cấu hình 2 trục của biểu đồ
+const revenueComparisonOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+
+  interaction: {
+    mode: "index",
+    intersect: false,
+  },
+
+  plugins: {
+    legend: {
+      position: "bottom",
+    },
+    tooltip: {
+      enabled: true,
+    },
+  },
+
+  scales: {
+    y: {
+      position: "left",
+      beginAtZero: true,
+      title: {
+        display: true,
+        text: "Doanh thu (VNĐ)",
+      },
+      ticks: {
+        callback: (value) => Number(value).toLocaleString("vi-VN") + " đ",
+      },
+    },
+
+    y1: {
+      position: "right",
+      title: {
+        display: true,
+        text: "Tăng trưởng (%)",
+      },
+      ticks: {
+        callback: (value) => value + "%",
+      },
+      grid: {
+        drawOnChartArea: false,
+      },
+    },
+  },
+};
+
+// Gọi API so sánh doanh thu
+async function loadRevenueComparison() {
+  const requestId = ++comparisonRequestId;
+  const year = Number(comparisonYear.value);
+
+  if (!Number.isInteger(year) || year < 2000 || year > 2100) {
+    comparisonError.value = "Vui lòng nhập năm từ 2000 đến 2100.";
+    comparisonData.value = [];
+    loadingComparison.value = false;
+    return;
+  }
+
+  loadingComparison.value = true;
+  comparisonError.value = "";
+
+  try {
+    const response = await getStatisticsRevenueComparison({
+      nhomTheo: comparisonMode.value,
+      nam: year,
+    });
+
+    // Không cho API cũ ghi đè dữ liệu mới
+    if (requestId !== comparisonRequestId) return;
+
+    if (!response.data?.success) {
+      throw new Error(
+        response.data?.message || "Không thể tải so sánh doanh thu",
+      );
+    }
+
+    comparisonData.value = Array.isArray(response.data.data)
+      ? response.data.data
+      : [];
+  } catch (error) {
+    if (requestId !== comparisonRequestId) return;
+
+    comparisonError.value =
+      error.response?.data?.message ||
+      error.message ||
+      "Không thể tải dữ liệu so sánh doanh thu";
+
+    comparisonData.value = [];
+  } finally {
+    if (requestId === comparisonRequestId) {
+      loadingComparison.value = false;
+    }
+  }
+}
+
+// Tự tải lại khi thay đổi tháng / quý / năm
+watch([comparisonMode, comparisonYear], loadRevenueComparison);
+
+// ===== BẢNG ĐỐI CHIẾU DOANH THU =====
+
+// Chỉ lấy các kỳ đã diễn ra và kỳ hiện tại
+
+/* ===== XUAT EXCEL SO SANH DOANH THU ===== */
+
+function exportRevenueComparisonExcel() {
+  // Kiểm tra dữ liệu đang tải
+  if (loadingComparison.value) {
+    alert("Dữ liệu đang tải, vui lòng thử lại.");
+    return;
+  }
+
+  // Kiểm tra lỗi API
+  if (comparisonError.value) {
+    alert("Không thể xuất Excel vì dữ liệu đang bị lỗi.");
+    return;
+  }
+
+  // Kiểm tra dữ liệu rỗng
+  if (!revenueComparisonRows.value.length) {
+    alert("Không có dữ liệu doanh thu để xuất Excel.");
+    return;
+  }
+
+  // Chuyển dữ liệu sang Excel
+  const rows = revenueComparisonRows.value.map((item) => ({
+    STT: item.stt,
+    "Thời gian": item.period,
+    "Doanh thu thực tế (VNĐ)": item.revenue,
+    "Số đơn hàng": item.orders,
+    "Giá trị trung bình đơn - AOV (VNĐ)": item.aov,
+    "Tăng trưởng (%)": item.growth == null ? "—" : item.growth,
+  }));
+
+  const worksheet = XLSX.utils.json_to_sheet(rows);
+
+  // Định dạng độ rộng cột
+  worksheet["!cols"] = [
+    { wch: 8 },
+    { wch: 18 },
+    { wch: 28 },
+    { wch: 18 },
+    { wch: 38 },
+    { wch: 20 },
+  ];
+
+  const workbook = XLSX.utils.book_new();
+
+  XLSX.utils.book_append_sheet(workbook, worksheet, "So sanh doanh thu");
+
+  // Tên file theo chế độ thống kê
+  const fileName = `so-sanh-doanh-thu-${comparisonMode.value}-${comparisonYear.value}.xlsx`;
+
+  XLSX.writeFile(workbook, fileName);
+}
+
+const revenueComparisonRows = computed(() => {
+  return visibleComparisonData.value.map((item, index) => ({
+    stt: index + 1,
+    period: item.period,
+    revenue: Number(item.revenue || 0),
+    orders: Number(item.orders || 0),
+    aov: Number(item.aov || 0),
+    growth: item.growth == null ? null : Number(item.growth),
+  }));
+});
+
 onMounted(() => {
   loadBrands();
   loadCharts();
@@ -913,6 +1170,9 @@ onMounted(() => {
   loadOrderStatus();
   loadEmployee();
   loadProduct();
+
+  // Tải biểu đồ so sánh doanh thu
+  loadRevenueComparison();
 });
 
 watch([fromDate, toDate, groupBy, selectedBrand], () => {
@@ -987,7 +1247,7 @@ function number(value) {
       <!-- TIÊU ĐỀ THỐNG KÊ -->
       <header class="dashboard-hero">
         <div>
-          <div class="dashboard-eyebrow">Báo cáo kinh doanh</div>
+          <div class="dashboard-eyebrow">SMASHSTEP / ANALYTICS</div>
 
           <h1>Thống kê tổng hợp</h1>
 
@@ -995,8 +1255,8 @@ function number(value) {
         </div>
 
         <div class="dashboard-hero-mark">
-          <i class="bi bi-bar-chart-line"></i>
-          Tổng quan cửa hàng
+          <i class="bi bi-bar-chart-line-fill"></i>
+          Báo cáo quản trị
         </div>
       </header>
 
@@ -1030,38 +1290,59 @@ function number(value) {
         <div class="filter-grid">
           <div class="filter-field">
             <label for="stats-from-date">Từ ngày</label>
-            <input id="stats-from-date" v-model="fromDate" type="date" :aria-invalid="!!dateValidationMessage" />
+            <input
+              id="stats-from-date"
+              v-model="fromDate"
+              type="date"
+              :aria-invalid="!!dateValidationMessage"
+            />
           </div>
 
           <div class="filter-field">
             <label for="stats-to-date">Đến ngày</label>
-            <input id="stats-to-date" v-model="toDate" type="date" :aria-invalid="!!dateValidationMessage" />
+            <input
+              id="stats-to-date"
+              v-model="toDate"
+              type="date"
+              :aria-invalid="!!dateValidationMessage"
+            />
           </div>
 
           <div class="filter-field">
             <label>Nhóm thời gian biểu đồ</label>
-            <div class="stats-select"><StatisticsSelect v-model="groupBy" :allow-clear="false" aria-label="Nhóm thời gian biểu đồ">
-              <option value="day">Theo ngày</option>
-              <option value="month">Theo tháng</option>
-              <option value="year">Theo năm</option>
-            </StatisticsSelect></div>
+            <div class="stats-select">
+              <StatisticsSelect
+                v-model="groupBy"
+                :allow-clear="false"
+                aria-label="Nhóm thời gian biểu đồ"
+              >
+                <option value="day">Theo ngày</option>
+                <option value="month">Theo tháng</option>
+                <option value="year">Theo năm</option>
+              </StatisticsSelect>
+            </div>
           </div>
 
           <div class="filter-field">
             <label>Thương hiệu biểu đồ</label>
-            <div class="stats-select"><StatisticsSelect v-model="selectedBrand" :allow-clear="false" aria-label="Thương hiệu biểu đồ">
-              <option value="">Tất cả thương hiệu</option>
-
-              <option
-                v-for="brand in brandOptions"
-                :key="brand.id"
-                :value="brand.id"
+            <div class="stats-select">
+              <StatisticsSelect
+                v-model="selectedBrand"
+                :allow-clear="false"
+                aria-label="Thương hiệu biểu đồ"
               >
-                {{ brand.name }}
-              </option>
-            </StatisticsSelect></div>
-          </div>
+                <option value="">Tất cả thương hiệu</option>
 
+                <option
+                  v-for="brand in brandOptions"
+                  :key="brand.id"
+                  :value="brand.id"
+                >
+                  {{ brand.name }}
+                </option>
+              </StatisticsSelect>
+            </div>
+          </div>
 
           <button type="button" class="reset-button" @click="resetFilters">
             <i class="bi bi-arrow-repeat"></i>
@@ -1079,7 +1360,6 @@ function number(value) {
             <strong>{{ periodLabel }}</strong>
           </span>
         </div>
-
       </section>
 
       <p v-if="dateValidationMessage" class="date-error" role="alert">
@@ -1116,7 +1396,26 @@ function number(value) {
               <i class="bi bi-graph-up-arrow"></i>
             </div>
             <strong>{{ money(dashboardSummary?.totalRevenue) }}</strong>
-            <span>Tổng doanh thu</span>
+
+            <span>Doanh thu thực tế (đơn hoàn thành)</span>
+          </div>
+
+          <!-- DOANH THU DỰ KIẾN -->
+          <div class="stat-card stat-card-expected">
+            <div class="stat-icon blue">
+              <i class="bi bi-clock-history"></i>
+            </div>
+
+            <strong>
+              {{ money(dashboardSummary?.expectedRevenue) }}
+            </strong>
+
+            <span> Doanh thu dự kiến (đã xác nhận / chờ lấy hàng) </span>
+
+            <small>
+              {{ number(dashboardSummary?.expectedOrders) }}
+              đơn • theo ngày tạo
+            </small>
           </div>
 
           <div class="stat-card">
@@ -1255,10 +1554,16 @@ function number(value) {
                 </button>
               </div>
 
-              <div class="stats-select"><StatisticsSelect v-model="brandChartSort" :allow-clear="false" aria-label="Sắp xếp thương hiệu">
-                <option value="revenue">Theo doanh thu</option>
-                <option value="quantity">Theo số lượng</option>
-              </StatisticsSelect></div>
+              <div class="stats-select">
+                <StatisticsSelect
+                  v-model="brandChartSort"
+                  :allow-clear="false"
+                  aria-label="Sắp xếp thương hiệu"
+                >
+                  <option value="revenue">Theo doanh thu</option>
+                  <option value="quantity">Theo số lượng</option>
+                </StatisticsSelect>
+              </div>
             </div>
           </div>
 
@@ -1318,6 +1623,172 @@ function number(value) {
             <div v-else class="chart-empty">Chưa có dữ liệu thương hiệu</div>
           </div>
         </div>
+      </section>
+
+      <!-- ===== BIỂU ĐỒ SO SÁNH DOANH THU ===== -->
+      <section class="revenue-comparison-card">
+        <div class="revenue-comparison-header">
+          <h3>
+            <i class="bi bi-bar-chart-line"></i>
+            So sánh doanh thu và tăng trưởng
+          </h3>
+
+          <div class="revenue-comparison-filters">
+            <select v-model="comparisonMode">
+              <option value="month">Theo tháng</option>
+              <option value="quarter">Theo quý</option>
+              <option value="year">Theo năm</option>
+            </select>
+
+            <input
+              v-model.number="comparisonYear"
+              type="number"
+              min="2000"
+              max="2100"
+              aria-label="Năm thống kê"
+            />
+          </div>
+        </div>
+
+        <div v-if="loadingComparison" class="comparison-message">
+          Đang tải dữ liệu so sánh doanh thu...
+        </div>
+
+        <div
+          v-else-if="comparisonError"
+          class="comparison-message"
+          role="alert"
+        >
+          {{ comparisonError }}
+        </div>
+
+        <template v-else-if="visibleComparisonData.length">
+          <div class="revenue-comparison-chart">
+            <Bar
+              :data="revenueComparisonChart"
+              :options="revenueComparisonOptions"
+            />
+          </div>
+
+          <p class="comparison-note">
+            Doanh thu tính từ đơn hoàn thành. Kỳ hiện tại là số liệu tạm tính.
+            Các kỳ tương lai không hiển thị.
+          </p>
+        </template>
+
+        <div v-else class="comparison-message">
+          Chưa có dữ liệu so sánh doanh thu.
+        </div>
+      </section>
+
+      <!-- ===== BANG DOI CHIEU DOANH THU ===== -->
+
+      <section class="revenue-comparison-card">
+        <div class="revenue-comparison-header">
+          <h3>
+            <i class="bi bi-table"></i>
+            Bảng đối chiếu doanh thu
+          </h3>
+
+          <button
+            type="button"
+            class="period-export-btn"
+            :disabled="
+              loadingComparison ||
+              !!comparisonError ||
+              !revenueComparisonRows.length
+            "
+            @click="exportRevenueComparisonExcel"
+          >
+            <i class="bi bi-file-earmark-excel"></i>
+            Xuất Excel
+          </button>
+
+          <span class="comparison-note">
+            Dữ liệu theo
+            {{
+              comparisonMode === "month"
+                ? "tháng"
+                : comparisonMode === "quarter"
+                  ? "quý"
+                  : "năm"
+            }}
+          </span>
+        </div>
+
+        <!-- Đang tải -->
+        <div v-if="loadingComparison" class="comparison-message">
+          Đang tải bảng đối chiếu doanh thu...
+        </div>
+
+        <!-- Lỗi API -->
+        <div
+          v-else-if="comparisonError"
+          class="comparison-message"
+          role="alert"
+        >
+          {{ comparisonError }}
+        </div>
+
+        <!-- Bảng dữ liệu -->
+        <div v-else class="period-table-wrapper">
+          <table class="period-table">
+            <thead>
+              <tr>
+                <th>STT</th>
+                <th>Thời gian</th>
+                <th>Doanh thu thực tế</th>
+                <th>Số đơn</th>
+                <th>AOV</th>
+                <th>Tăng trưởng</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              <tr v-for="row in revenueComparisonRows" :key="row.period">
+                <td>{{ row.stt }}</td>
+
+                <td class="period-name">
+                  {{ row.period }}
+                </td>
+
+                <td>
+                  {{ money(row.revenue) }}
+                </td>
+
+                <td>
+                  {{ number(row.orders) }}
+                </td>
+
+                <td>
+                  {{ money(row.aov) }}
+                </td>
+
+                <td>
+                  <span
+                    :class="{
+                      'growth-positive': row.growth != null && row.growth > 0,
+                      'growth-negative': row.growth != null && row.growth < 0,
+                    }"
+                  >
+                    {{ growthText(row.growth) }}
+                  </span>
+                </td>
+              </tr>
+
+              <tr v-if="!revenueComparisonRows.length">
+                <td colspan="6" class="period-message">
+                  Chưa có dữ liệu đối chiếu doanh thu.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p class="comparison-note">
+          Doanh thu được tính từ đơn hoàn thành. Kỳ hiện tại là số liệu tạm
+          tính. Tăng trưởng được so với toàn bộ kỳ trước.
+        </p>
       </section>
 
       <!-- TỔNG QUAN THEO CHU KỲ THỜI GIAN -->
@@ -1481,12 +1952,18 @@ function number(value) {
               placeholder="Tìm tên hoặc mã nhân viên..."
             />
 
-            <div class="stats-select"><StatisticsSelect v-model="employeeSort" :allow-clear="false" aria-label="Sắp xếp nhân viên">
-              <option value="revenue">Doanh thu cao nhất</option>
-              <option value="totalOrders">Số đơn nhiều nhất</option>
-              <option value="productsSold">Sản phẩm bán nhiều nhất</option>
-              <option value="name">Tên nhân viên A-Z</option>
-            </StatisticsSelect></div>
+            <div class="stats-select">
+              <StatisticsSelect
+                v-model="employeeSort"
+                :allow-clear="false"
+                aria-label="Sắp xếp nhân viên"
+              >
+                <option value="revenue">Doanh thu cao nhất</option>
+                <option value="totalOrders">Số đơn nhiều nhất</option>
+                <option value="productsSold">Sản phẩm bán nhiều nhất</option>
+                <option value="name">Tên nhân viên A-Z</option>
+              </StatisticsSelect>
+            </div>
 
             <button
               type="button"
@@ -1625,18 +2102,30 @@ function number(value) {
               placeholder="Tìm mã hoặc tên sản phẩm..."
             />
 
-            <div class="stats-select"><StatisticsSelect v-model="productStockFilter" :allow-clear="false" aria-label="Lọc tồn kho">
-              <option value="all">Tất cả tồn kho</option>
-              <option value="inStock">Còn hàng</option>
-              <option value="outOfStock">Hết hàng</option>
-            </StatisticsSelect></div>
+            <div class="stats-select">
+              <StatisticsSelect
+                v-model="productStockFilter"
+                :allow-clear="false"
+                aria-label="Lọc tồn kho"
+              >
+                <option value="all">Tất cả tồn kho</option>
+                <option value="inStock">Còn hàng</option>
+                <option value="outOfStock">Hết hàng</option>
+              </StatisticsSelect>
+            </div>
 
-            <div class="stats-select"><StatisticsSelect v-model="productSort" :allow-clear="false" aria-label="Sắp xếp sản phẩm">
-              <option value="sold">Bán nhiều nhất</option>
-              <option value="revenue">Doanh thu cao nhất</option>
-              <option value="stock">Tồn kho nhiều nhất</option>
-              <option value="name">Tên sản phẩm A-Z</option>
-            </StatisticsSelect></div>
+            <div class="stats-select">
+              <StatisticsSelect
+                v-model="productSort"
+                :allow-clear="false"
+                aria-label="Sắp xếp sản phẩm"
+              >
+                <option value="sold">Bán nhiều nhất</option>
+                <option value="revenue">Doanh thu cao nhất</option>
+                <option value="stock">Tồn kho nhiều nhất</option>
+                <option value="name">Tên sản phẩm A-Z</option>
+              </StatisticsSelect>
+            </div>
 
             <button
               type="button"
@@ -1754,140 +2243,1587 @@ function number(value) {
 </template>
 
 <style scoped>
+/* ===== GIAO DIEN THONG KE SMASHSTEP ===== */
+
 .statistics-page {
-  --text: var(--ss-text, #17365f);
-  --muted: var(--ss-muted, #718096);
-  --border: var(--ss-border, #dde6f0);
-  --primary: var(--ss-primary, #2879e3);
-  padding: 22px 24px 40px;
-  background: var(--ss-bg, #f6f9fd);
+  --primary: #2563eb;
+  --primary-dark: #1d4ed8;
+  --text: #1e293b;
+  --muted: #64748b;
+  --border: #e7ebf2;
+  --shadow: 0 5px 22px rgba(31, 41, 70, 0.05);
+
+  min-height: 100vh;
+  padding: 26px;
+  background: #f4f6fa;
   color: var(--text);
-  font-family: var(--ss-font, "Inter", "Segoe UI", sans-serif);
+  font-family: "Segoe UI", Arial, sans-serif;
+}
+
+.statistics-page * {
+  box-sizing: border-box;
+}
+
+/* ===== HEADER ===== */
+
+.dashboard-hero {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  padding: 32px;
+  margin-bottom: 22px;
+  border-radius: 18px;
+
+  background: linear-gradient(110deg, #102a56 0%, #1d4ed8 65%, #3b82f6 100%);
+  color: white;
+  box-shadow: 0 10px 30px rgba(22, 32, 56, 0.13);
+}
+
+.dashboard-hero::after {
+  content: "";
+  position: absolute;
+  width: 250px;
+  height: 250px;
+  right: -60px;
+  top: -120px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow:
+    0 0 0 45px rgba(255, 255, 255, 0.025),
+    0 0 0 90px rgba(255, 255, 255, 0.02);
+  pointer-events: none;
+}
+
+.dashboard-eyebrow {
+  color: #bfdbfe;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  margin-bottom: 8px;
+}
+
+.dashboard-hero h1 {
+  font-size: 29px;
+  font-weight: 800;
+  color: white;
+  margin: 0 0 8px;
+}
+
+.dashboard-hero p {
+  color: #cbd5e1;
+  font-size: 13px;
+  margin: 0;
+}
+
+.dashboard-hero-mark {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+  padding: 12px 17px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  color: #f1f5f9;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.dashboard-hero-mark i {
+  color: #ff859b;
+  font-size: 19px;
+}
+
+/* ===== CARD CHUNG ===== */
+
+.filter-card,
+.chart-card,
+.period-card,
+.order-status-card,
+.employee-card {
+  min-width: 0;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+
+/* ===== TIEU DE CAC KHU VUC ===== */
+
+.filter-header,
+.chart-header,
+.period-header,
+.employee-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 17px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid #edf0f5;
+}
+
+.filter-header h3,
+.chart-header h3,
+.period-header h3,
+.employee-header h3 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 15px;
+  color: #1e293b;
+  font-weight: 800;
+}
+
+.filter-header h3 i,
+.chart-header h3 i,
+.period-header h3 i,
+.employee-header h3 i {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  width: 33px;
+  height: 33px;
+  border-radius: 10px;
+  background: #fff0f3;
+  color: #df2849;
+  font-size: 16px;
+}
+
+/* ===== BO LOC TONG QUAN ===== */
+
+.filter-card {
+  padding: 23px 25px;
+}
+
+.filter-header {
+  flex-wrap: wrap;
+}
+
+.quick-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.quick-filters button {
+  border: 1px solid #e5eaf1;
+  border-radius: 9px;
+  background: #f8fafc;
+  color: #64748b;
+  padding: 9px 13px;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.quick-filters button:hover {
+  background: #fff0f3;
+  color: #df2849;
+  border-color: #f4b8c6;
+}
+
+.filter-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+  gap: 13px;
+  align-items: end;
+}
+
+.filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   min-width: 0;
 }
-.statistics-page *, .statistics-page *::before, .statistics-page *::after { box-sizing: border-box; }
-.dashboard-hero { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:20px; }
-.dashboard-eyebrow { color:var(--primary); font-size:11px; font-weight:600; margin-bottom:5px; }
-.dashboard-hero h1 { color:var(--ss-ink, #0f172a); font-size:22px; font-weight:700; margin:0; line-height:1.35; }
-.dashboard-hero p { color:var(--muted); font-size:13px; line-height:1.6; margin:6px 0 0; }
-.dashboard-hero-mark { display:flex; align-items:center; gap:8px; color:var(--primary); border:1px solid #d2e5fc; background:var(--ss-primary-soft, #eaf4ff); border-radius:999px; padding:9px 14px; font-size:12px; white-space:nowrap; }
-.dashboard-hero-mark i { font-size:16px; }
-.filter-card,.chart-card,.period-card,.order-status-card,.employee-card,.stat-card { min-width:0; background:#fff; border:1px solid var(--border); border-radius:14px; box-shadow:0 3px 12px rgba(23,54,95,.025); }
-.filter-card,.chart-card,.period-card,.order-status-card,.employee-card { padding:20px; }
-.filter-header,.chart-header,.period-header,.employee-header { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; padding-bottom:16px; margin-bottom:16px; border-bottom:1px solid var(--ss-line, #eaf0f6); }
-.filter-header h3,.chart-header h3,.period-header h3,.employee-header h3 { display:flex; align-items:center; gap:10px; font-size:15px; font-weight:600; color:var(--text); line-height:1.4; margin:0; }
-.filter-header h3 i,.chart-header h3 i,.period-header h3 i,.employee-header h3 i { display:grid; place-items:center; flex:0 0 32px; width:32px; height:32px; border-radius:8px; background:var(--ss-primary-soft, #eaf4ff); color:var(--primary); font-size:16px; }
-.quick-filters,.chart-right,.chart-actions { display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
-.statistics-page button { font-family:inherit; font-size:12px; font-weight:600; cursor:pointer; transition:background-color .15s,border-color .15s; }
-.quick-filters button,.reset-button,.employee-reset-btn,.employee-page-buttons button { min-height:38px; border:1px solid var(--border); border-radius:8px; padding:0 13px; background:#fff; color:var(--text); }
-.quick-filters button:hover,.reset-button:hover,.employee-reset-btn:hover,.employee-page-buttons button:hover:not(:disabled) { color:var(--primary); background:var(--ss-primary-soft, #eaf4ff); border-color:#a7cdfa; }
-.statistics-page button:focus-visible { outline:2px solid var(--primary); outline-offset:3px; }
-.statistics-page button:disabled { opacity:.45; cursor:not-allowed; }
-.filter-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)) auto; gap:14px; align-items:end; }
-.filter-field { display:flex; flex-direction:column; gap:7px; min-width:0; }
-.filter-field label { color:var(--muted); font-size:12px; font-weight:500; }
-.filter-field input,.employee-filters input { width:100%; min-width:0; height:42px; padding:0 12px; background:var(--ss-surface, #f8fafc); color:var(--text); border:1px solid var(--border); border-radius:8px; font:inherit; font-size:13px; outline:none; }
-.filter-field input:focus,.employee-filters input:focus { border-color:var(--primary); background:#fff; box-shadow:0 0 0 3px rgba(40,121,227,.1); }
-.employee-filters input::placeholder { color:var(--ss-faint, #9aa8ba); }
-.reset-button,.employee-reset-btn { height:42px; white-space:nowrap; }
-.reset-button i,.employee-reset-btn i { margin-right:5px; }
-.stats-select { min-width:0; width:100%; }
-.stats-select :deep(.select2-container) { width:100% !important; min-width:0; font-family:inherit; font-size:13px; }
-.stats-select :deep(.select2-selection--single) { height:42px; min-height:42px; border:1px solid var(--border); border-radius:8px; background:var(--ss-surface, #f8fafc); }
-.stats-select :deep(.select2-selection--single .select2-selection__rendered) { display:block; line-height:40px; padding:0 32px 0 12px; color:var(--text) !important; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; }
-.stats-select :deep(.select2-selection--single .select2-selection__arrow) { height:40px; right:8px; }
-.stats-select :deep(.select2-container--open .select2-selection),.stats-select :deep(.select2-container--focus .select2-selection) { border-color:var(--primary); box-shadow:0 0 0 3px rgba(40,121,227,.1); }
-.information-bar { display:flex; align-items:center; padding:12px 16px; margin:16px 0; color:var(--muted); background:#eef5fe; border:1px solid #dceafb; border-radius:10px; font-size:12px; }
-.information-left { display:flex; align-items:center; gap:10px; line-height:1.6; }
-.information-left strong { color:var(--text); font-weight:600; }
-.blue-dot { width:7px; height:7px; flex:0 0 7px; border-radius:50%; background:var(--primary); box-shadow:0 0 0 4px #dceafb; }
-.date-error { margin:12px 0; padding:12px 16px; border:1px solid #ffd1d7; color:#b8262b; background:#fff3f4; border-radius:8px; font-size:13px; }
-.summary-section { display:flex; flex-direction:column; gap:14px; }
-.summary-grid { display:grid; gap:14px; }
-.top-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
-.bottom-grid { grid-template-columns:repeat(4,minmax(0,1fr)); }
-.stat-card { display:grid; grid-template-columns:42px minmax(0,1fr); align-content:center; column-gap:14px; row-gap:5px; padding:20px; min-height:112px; }
-.stat-icon { grid-column:1; grid-row:1 / 3; align-self:center; width:42px; height:42px; border-radius:10px; display:grid; place-items:center; font-size:20px; color:var(--primary); background:var(--ss-primary-soft, #eaf4ff); }
-.stat-card strong { grid-column:2; font-size:clamp(18px,1.55vw,26px); color:var(--ss-ink, #0f172a); font-weight:700; line-height:1.3; overflow-wrap:anywhere; font-variant-numeric:tabular-nums; }
-.stat-card > span { grid-column:2; color:var(--muted); font-size:12px; line-height:1.5; }
-.top-grid .stat-card:first-child { background:#f1f7ff; border-color:#bdd9fb; }
-.top-grid .stat-card:first-child strong { color:var(--primary); }
-.green { color:#148c4d; background:#edfcf2; }
-.purple { color:#7754b6; background:#f2edfc; }
-.yellow { color:#b77b16; background:#fff6e5; }
-.red { color:#bf5268; background:#fff0f3; }
-.charts-grid,.period-section { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(0,1fr); gap:16px; margin-top:18px; align-items:stretch; }
-.chart-right { gap:10px; }
-.chart-right .stats-select { width:165px; }
-.chart-actions { padding:3px; background:var(--ss-surface, #f8fafc); border:1px solid var(--border); border-radius:8px; gap:3px; }
-.chart-actions button { padding:7px 12px; color:var(--muted); border:0; background:transparent; border-radius:5px; }
-.chart-actions button.active { background:var(--ss-primary-soft, #eaf4ff); color:var(--primary); }
-.chart-content { min-height:335px; display:flex; align-items:center; justify-content:center; }
-.chart-canvas { height:320px; width:100%; position:relative; }
-.chart-canvas canvas { height:100% !important; width:100% !important; }
-.brand-chart-content { flex-direction:column; gap:16px; align-items:stretch; }
-.brand-chart-canvas { width:100%; height:220px; position:relative; }
-.chart-empty,.period-message { padding:28px 12px; width:100%; text-align:center; color:var(--muted); font-size:13px; }
-.period-error { color:#b8262b; }
-.brand-list,.order-status-list { display:flex; flex-direction:column; gap:8px; }
-.brand-list-item,.order-status-item { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 12px; background:var(--ss-surface, #f8fafc); border:1px solid var(--ss-line, #eaf0f6); border-radius:8px; font-size:12px; min-width:0; }
-.brand-name,.order-status-name { display:flex; align-items:center; gap:8px; min-width:0; line-height:1.5; }
-.brand-name > span:last-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.brand-dot,.order-status-dot { flex:0 0 8px; width:8px; height:8px; border-radius:50%; }
-.brand-list-item strong,.order-status-item strong { font-weight:600; white-space:nowrap; font-variant-numeric:tabular-nums; }
-.order-status-total { text-align:center; font-size:12px; color:var(--muted); margin:0 0 14px; }
-.order-status-total strong { color:var(--text); font-weight:700; font-size:20px; margin-left:6px; }
-.order-status-canvas { width:100%; height:210px; position:relative; margin:0 auto 18px; }
-.order-status-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
-.period-table-wrapper,.employee-table-wrapper { overflow-x:auto; width:100%; border:1px solid var(--border); border-radius:9px; }
-.period-table,.employee-table { width:100%; border-collapse:collapse; font-size:13px; white-space:nowrap; }
-.period-table th,.employee-table th { background:#f5f8fc; color:var(--muted); text-align:left; font-size:12px; font-weight:600; padding:13px 14px; border-bottom:1px solid var(--border); }
-.period-table td,.employee-table td { padding:15px 14px; color:var(--text); border-bottom:1px solid var(--ss-line, #eaf0f6); }
-.period-table tr:last-child td,.employee-table tr:last-child td { border-bottom:0; }
-.period-table tbody tr:hover,.employee-table tbody tr:hover { background:#fafcff; }
-.period-name,.employee-name { font-weight:600; }
-.growth-positive,.growth-negative { display:inline-block; padding:4px 8px; border-radius:6px; font-size:12px; font-weight:600; }
-.growth-positive { color:#148c4d; background:#edfcf2; }
-.growth-negative { color:#b8262b; background:#ffeded; }
-.employee-section { margin-top:18px; }
-.employee-filters { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
-.employee-filters input { flex:1 1 220px; }
-.employee-filters .stats-select { flex:0 1 210px; }
-.employee-export-btn,.period-export-btn { display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:38px; padding:0 13px; color:var(--primary); background:#fff; border:1px solid #cfe0f7; border-radius:8px; white-space:nowrap; }
-.employee-export-btn:hover,.period-export-btn:hover { background:var(--ss-primary-soft, #eaf4ff); border-color:var(--primary); }
-.employee-revenue { color:#148c4d !important; font-weight:600; }
-.employee-pagination { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; padding-top:16px; font-size:12px; color:var(--muted); }
-.employee-page-buttons { display:flex; align-items:center; gap:12px; }
-.summary-message { display:flex; align-items:center; justify-content:center; gap:10px; padding:25px; border:1px solid var(--border); border-radius:12px; color:var(--muted); background:#fff; font-size:13px; }
-.summary-message-error { background:#fff3f4; border-color:#ffd1d7; color:#b8262b; }
-.product-revenue-note { margin:0 0 16px; padding:11px 13px; background:#f2f7fe; border:1px solid #dceafb; border-radius:8px; color:var(--text); font-size:12px; line-height:1.65; }
-.product-revenue-note i { color:var(--primary); margin-right:6px; }
-@media (max-width:1280px) {
-  .filter-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
-  .reset-button { justify-self:start; }
-  .bottom-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
-  .charts-grid,.period-section { grid-template-columns:1fr; }
+
+.filter-field label {
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 700;
 }
-@media (max-width:820px) {
-  .statistics-page { padding:18px 16px 32px; }
-  .dashboard-hero-mark { display:none; }
-  .top-grid { grid-template-columns:1fr; }
-  .stat-card strong { font-size:23px; }
+
+.filter-field input,
+.filter-field select,
+.employee-filters input,
+.employee-filters select {
+  width: 100%;
+  min-width: 0;
+  height: 43px;
+  padding: 0 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fbfcfe;
+  outline: none;
+  color: #334155;
+  font-size: 13px;
+  transition: 0.2s;
 }
-@media (max-width:540px) {
-  .statistics-page { padding:16px 12px 28px; }
-  .dashboard-hero h1 { font-size:20px; }
-  .filter-card,.chart-card,.period-card,.order-status-card,.employee-card { padding:16px; }
-  .filter-grid,.bottom-grid { grid-template-columns:1fr; }
-  .reset-button { justify-self:stretch; }
-  .quick-filters { width:100%; }
-  .quick-filters button { flex:1 1 auto; }
-  .employee-filters input,.employee-filters .stats-select { flex:1 1 100%; width:100%; }
-  .employee-reset-btn { width:100%; }
-  .chart-right { width:100%; justify-content:space-between; }
-  .order-status-list { grid-template-columns:1fr; }
-  .chart-canvas { height:260px; }
-  .employee-pagination { align-items:flex-start; flex-direction:column; }
+
+.filter-field input:focus,
+.filter-field select:focus,
+.employee-filters input:focus,
+.employee-filters select:focus {
+  border-color: #e8758c;
+  background: white;
+  box-shadow: 0 0 0 3px rgba(223, 40, 73, 0.07);
 }
-@media (prefers-reduced-motion:reduce) { .statistics-page button { transition:none; } }
+
+.reset-button,
+.employee-reset-btn {
+  height: 43px;
+  padding: 0 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: white;
+  color: #475569;
+  font-weight: 700;
+  font-size: 12px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.reset-button:hover,
+.employee-reset-btn:hover {
+  color: #df2849;
+  background: #fff5f7;
+  border-color: #f4b8c6;
+}
+
+/* ===== THANH THONG TIN ===== */
+
+.information-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 17px;
+  padding: 14px 19px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.information-left,
+.information-right {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  flex-wrap: wrap;
+}
+
+.information-left strong {
+  color: #1e293b;
+  font-weight: 800;
+}
+
+.blue-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 0 4px #dcfce7;
+  flex-shrink: 0;
+}
+
+.refresh-button {
+  padding: 9px 14px;
+  border: 1px solid #f4c3cd;
+  border-radius: 9px;
+  background: #fff6f7;
+  color: #d32948;
+  font-size: 12px;
+}
+
+.refresh-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.date-error {
+  margin: 12px 0;
+  padding: 11px 15px;
+  background: #fff1f2;
+  color: #be123c;
+  border-radius: 9px;
+  font-size: 13px;
+}
+
+/* ===== 7 THE DOANH THU ===== */
+
+.summary-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.summary-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.top-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.bottom-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.stat-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  min-width: 0;
+  min-height: 156px;
+  gap: 7px;
+  padding: 22px;
+  overflow: hidden;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  transition:
+    transform 0.2s,
+    box-shadow 0.2s;
+}
+
+.stat-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 30px rgba(31, 41, 70, 0.1);
+}
+
+.stat-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 21px;
+  right: 21px;
+  height: 4px;
+  background: #e2e8f0;
+  border-radius: 0 0 4px 4px;
+}
+
+.top-grid .stat-card:first-child {
+  background: linear-gradient(120deg, #fff, #fff6f8);
+  border-color: #f4d7df;
+}
+
+.top-grid .stat-card:nth-child(1)::before {
+  background: #df2849;
+}
+
+.top-grid .stat-card:nth-child(2)::before {
+  background: #10b981;
+}
+
+.top-grid .stat-card:nth-child(3)::before {
+  background: #8b5cf6;
+}
+
+.bottom-grid .stat-card:nth-child(1)::before {
+  background: #0ea5e9;
+}
+
+.bottom-grid .stat-card:nth-child(2)::before {
+  background: #a78bfa;
+}
+
+.bottom-grid .stat-card:nth-child(3)::before {
+  background: #f59e0b;
+}
+
+.bottom-grid .stat-card:nth-child(4)::before {
+  background: #fb7185;
+}
+
+.stat-icon {
+  width: 42px;
+  height: 42px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-shrink: 0;
+  border-radius: 12px;
+  font-size: 20px;
+  margin-bottom: 6px;
+}
+
+.mint {
+  background: #ffe4ea;
+  color: #df2849;
+}
+
+.green {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.purple {
+  background: #f0eaff;
+  color: #7c3aed;
+}
+
+.blue {
+  background: #e0f2fe;
+  color: #0284c7;
+}
+
+.yellow {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+.red {
+  background: #ffe4e6;
+  color: #e11d48;
+}
+
+.stat-card strong {
+  width: 100%;
+  font-size: clamp(20px, 1.8vw, 27px);
+  font-weight: 800;
+  line-height: 1.25;
+  color: #172033;
+  letter-spacing: -0.5px;
+  overflow-wrap: anywhere;
+}
+
+.stat-card span {
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 650;
+}
+
+/* ===== BIEU DO ===== */
+
+.charts-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr);
+  gap: 19px;
+  margin-top: 20px;
+}
+
+.chart-card {
+  min-height: 490px;
+  padding: 23px 24px;
+}
+
+.chart-header {
+  flex-wrap: wrap;
+}
+
+.chart-right {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+
+.chart-actions {
+  display: inline-flex;
+  padding: 4px;
+  gap: 4px;
+  border: 1px solid #e9edf4;
+  border-radius: 10px;
+  background: #f5f7fb;
+}
+
+.chart-actions button {
+  padding: 8px 13px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.chart-actions button.active {
+  color: #df2849;
+  background: white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.09);
+}
+
+.chart-actions button:hover {
+  color: #df2849;
+}
+
+.chart-right select {
+  height: 38px;
+  padding: 0 11px;
+  max-width: 165px;
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+  background: white;
+  font-size: 12px;
+  color: #475569;
+}
+
+.chart-content {
+  min-height: 403px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chart-canvas {
+  width: 100%;
+  height: 363px;
+  position: relative;
+}
+
+.chart-canvas canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.chart-empty {
+  width: 100%;
+  padding: 30px 12px;
+  color: #94a3b8;
+  font-size: 13px;
+  text-align: center;
+}
+
+.brand-chart-content {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 17px;
+  padding-top: 8px;
+}
+
+.brand-chart-canvas {
+  width: 100%;
+  height: 242px;
+  position: relative;
+}
+
+.brand-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.brand-list-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 13px;
+  border: 1px solid #edf0f5;
+  border-radius: 10px;
+  background: #f9fafc;
+  font-size: 12px;
+}
+
+.brand-name {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 9px;
+  color: #475569;
+  font-weight: 650;
+}
+
+.brand-name > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.brand-dot {
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  border-radius: 4px;
+}
+
+.brand-list-item strong {
+  color: #1e293b;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+/* ===== CHU KY VA TRANG THAI DON ===== */
+
+.period-section {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+  align-items: stretch;
+  gap: 19px;
+  margin-top: 20px;
+}
+
+.period-card,
+.order-status-card {
+  padding: 23px 24px;
+}
+
+.period-table-wrapper,
+.employee-table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid #e9edf4;
+  border-radius: 11px;
+}
+
+.period-table,
+.employee-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.period-table th,
+.employee-table th {
+  background: #f5f7fb;
+  color: #64748b;
+  font-weight: 800;
+  font-size: 12px;
+  padding: 15px;
+  text-align: left;
+  border-bottom: 1px solid #e9edf4;
+}
+
+.period-table td,
+.employee-table td {
+  padding: 16px 15px;
+  border-bottom: 1px solid #edf0f5;
+  color: #475569;
+  background: white;
+}
+
+.period-table tbody tr:last-child td,
+.employee-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.period-table tbody tr:hover td,
+.employee-table tbody tr:hover td {
+  background: #fafbfe;
+}
+
+.period-name,
+.employee-name {
+  font-weight: 750 !important;
+  color: #1e293b !important;
+}
+
+.growth-positive {
+  display: inline-block;
+  padding: 5px 9px;
+  border-radius: 7px;
+  background: #dcfce7;
+  color: #15803d;
+  font-weight: 800;
+}
+
+.growth-negative {
+  display: inline-block;
+  padding: 5px 9px;
+  border-radius: 7px;
+  background: #ffe4e6;
+  color: #be123c;
+  font-weight: 800;
+}
+
+.period-message {
+  padding: 28px 15px;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.period-error {
+  color: #dc2626;
+}
+
+/* ===== CO CAU TRANG THAI DON HANG ===== */
+
+.order-status-total {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #64748b;
+  margin: 0 0 15px;
+  font-size: 13px;
+}
+
+.order-status-total strong {
+  color: #1e293b;
+  font-size: 21px;
+  font-weight: 850;
+}
+
+.order-status-canvas {
+  width: 100%;
+  height: 230px;
+  position: relative;
+  margin-bottom: 19px;
+}
+
+.order-status-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.order-status-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 39px;
+  padding: 10px 13px;
+  border: 1px solid #edf0f5;
+  border-radius: 10px;
+  background: #f9fafc;
+  font-size: 12px;
+}
+
+.order-status-name {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #475569;
+  font-weight: 650;
+}
+
+.order-status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.order-status-item strong {
+  color: #1e293b;
+  font-weight: 800;
+}
+
+/* ===== BANG NHAN VIEN VA SAN PHAM ===== */
+
+.employee-section {
+  margin-top: 20px;
+  margin-bottom: 0;
+}
+
+.employee-card {
+  padding: 23px 24px;
+}
+
+.employee-header {
+  flex-wrap: wrap;
+}
+
+.employee-filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 11px;
+  margin-bottom: 19px;
+}
+
+.employee-filters input {
+  flex: 1 1 230px;
+}
+
+.employee-filters select {
+  width: auto;
+  flex: 0 1 200px;
+  min-width: 175px;
+  cursor: pointer;
+}
+
+.employee-export-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 10px 16px;
+  border: 1px solid #16a34a;
+  border-radius: 10px;
+  background: #16a34a;
+  color: white;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.employee-export-btn:hover {
+  background: #15803d;
+  border-color: #15803d;
+  box-shadow: 0 5px 14px rgba(22, 163, 74, 0.2);
+}
+
+.employee-revenue {
+  color: #16a34a !important;
+  font-weight: 800 !important;
+}
+
+/* ===== PHAN TRANG ===== */
+
+.employee-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-top: 19px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.employee-page-buttons {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-weight: 700;
+}
+
+.employee-page-buttons button {
+  min-height: 35px;
+  padding: 8px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+  background: white;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.employee-page-buttons button:hover:not(:disabled) {
+  border-color: #f4b8c6;
+  color: #df2849;
+  background: #fff5f7;
+}
+
+.employee-page-buttons button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ===== RESPONSIVE ===== */
+
+@media (max-width: 1440px) {
+  .filter-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .reset-button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 1190px) {
+  .charts-grid,
+  .period-section {
+    grid-template-columns: 1fr;
+  }
+
+  .chart-card {
+    min-height: 0;
+  }
+}
+
+@media (max-width: 980px) {
+  .top-grid,
+  .bottom-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .top-grid .stat-card:first-child {
+    grid-column: span 2;
+  }
+
+  .dashboard-hero-mark {
+    display: none;
+  }
+}
+
+@media (max-width: 680px) {
+  .statistics-page {
+    padding: 14px 12px 28px;
+  }
+
+  .dashboard-hero {
+    padding: 23px 20px;
+    border-radius: 14px;
+  }
+
+  .dashboard-hero h1 {
+    font-size: 23px;
+  }
+
+  .filter-card,
+  .chart-card,
+  .period-card,
+  .order-status-card,
+  .employee-card {
+    padding: 18px 15px;
+    border-radius: 12px;
+  }
+
+  .filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .filter-grid > .filter-field:nth-child(4),
+  .filter-grid > .filter-field:nth-child(5) {
+    grid-column: span 2;
+  }
+
+  .top-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .top-grid .stat-card:first-child {
+    grid-column: auto;
+  }
+
+  .bottom-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .stat-card {
+    min-height: 135px;
+    padding: 16px;
+  }
+
+  .stat-card strong {
+    font-size: 19px;
+  }
+
+  .employee-filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .employee-filters input,
+  .employee-filters select,
+  .employee-reset-btn {
+    flex: none;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .employee-pagination {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .chart-header,
+  .employee-header {
+    align-items: flex-start;
+  }
+
+  .chart-canvas {
+    height: 280px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stat-card,
+  .statistics-page button {
+    transition: none;
+  }
+
+  .stat-card:hover {
+    transform: none;
+  }
+}
+
+/* ===== GIAO DIEN CHU KY VA TRANG THAI - ANH MAU ===== */
+
+.period-section {
+  grid-template-columns: minmax(0, 1.75fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.period-card,
+.order-status-card {
+  padding: 20px;
+  border-radius: 16px;
+  background: #fff;
+  border: 1px solid #edf0f5;
+  box-shadow: 0 3px 16px rgba(15, 23, 42, 0.04);
+  min-height: 0;
+}
+
+.period-card .period-header,
+.order-status-card .period-header {
+  margin-bottom: 16px;
+  padding-bottom: 15px;
+}
+
+.period-card .period-header h3,
+.order-status-card .period-header h3 {
+  font-size: 14px;
+  font-weight: 800;
+}
+
+/* BANG CHU KY GIONG ANH 1 */
+
+.period-card .period-table-wrapper {
+  border: none;
+  border-radius: 0;
+  overflow-x: auto;
+}
+
+.period-card .period-table {
+  border-collapse: separate;
+  border-spacing: 0 9px;
+}
+
+.period-card .period-table th {
+  background: transparent;
+  border: none;
+  padding: 11px 13px;
+  font-size: 12px;
+  color: #697386;
+  white-space: nowrap;
+}
+
+.period-card .period-table td {
+  background: #f7f9fc;
+  border: none;
+  padding: 18px 13px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.period-card .period-table tbody tr:hover td {
+  background: #eff3f9;
+}
+
+.period-card .period-table tbody td:first-child {
+  border-radius: 12px 0 0 12px;
+  font-weight: 800;
+}
+
+.period-card .period-table tbody td:last-child {
+  border-radius: 0 12px 12px 0;
+}
+
+.period-card .growth-positive {
+  background: #eafbf1;
+  color: #16a34a;
+  padding: 7px 12px;
+  border-radius: 20px;
+  font-weight: 800;
+}
+
+.period-card .growth-negative {
+  background: #fff0f2;
+  color: #e11d48;
+  padding: 7px 12px;
+  border-radius: 20px;
+  font-weight: 800;
+}
+
+/* BIEU DO TRANG THAI */
+
+.order-status-card .order-status-total {
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.order-status-card .order-status-canvas {
+  width: 100%;
+  max-width: 260px;
+  height: 205px;
+  margin: 0 auto 20px;
+}
+
+/* DANH SACH TRANG THAI CHIA 2 COT */
+
+.order-status-card .order-status-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.order-status-card .order-status-item {
+  min-width: 0;
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid #edf1f6;
+  background: #f7f9fc;
+  border-radius: 9px;
+  gap: 7px;
+}
+
+.order-status-card .order-status-name {
+  min-width: 0;
+  font-size: 12px;
+  overflow: hidden;
+}
+
+.order-status-card .order-status-name {
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.order-status-card .order-status-item strong {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: #172033;
+}
+
+@media (max-width: 1200px) {
+  .period-section {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .order-status-card .order-status-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ===== NÚT XUẤT EXCEL CHU KỲ ===== */
+
+.period-card .period-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.period-export-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 9px 14px;
+  border: 1px solid #fbd5df;
+  border-radius: 9px;
+  background: #fff6f8;
+  color: #e54870;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.period-export-btn:hover {
+  background: #ffe9ef;
+  border-color: #f4a9bc;
+}
+
+.period-export-btn i {
+  font-size: 14px;
+}
+
+/* TRẠNG THÁI TẢI DỮ LIỆU DOANH THU */
+
+.summary-message {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 95px;
+  padding: 20px;
+  border: 1px solid #e2e8f0;
+  border-radius: 13px;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.summary-message i {
+  font-size: 18px;
+}
+
+.summary-message-error {
+  background: #fff1f2;
+  border-color: #fecdd3;
+  color: #be123c;
+}
+
+.product-revenue-note {
+  margin: 0 0 16px;
+  padding: 12px 15px;
+  border: 1px solid #dbeafe;
+  border-radius: 10px;
+  background: #eff6ff;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.product-revenue-note i {
+  margin-right: 7px;
+  color: #2563eb;
+}
+
+/* ===== DONG BO MAU XANH DUONG ===== */
+
+/* Icon tiêu đề các khối */
+.statistics-page .filter-header h3 i,
+.statistics-page .chart-header h3 i,
+.statistics-page .period-header h3 i,
+.statistics-page .employee-header h3 i {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+/* Nút Xuất Excel chu kỳ */
+.statistics-page .period-export-btn {
+  background: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #bfdbfe;
+}
+
+.statistics-page .period-export-btn:hover {
+  background: #dbeafe;
+  border-color: #60a5fa;
+}
+
+/* Nút biểu đồ đang được chọn */
+.statistics-page .chart-actions button.active {
+  color: #2563eb;
+}
+
+/* Màu viền ô lọc khi chọn */
+.statistics-page .filter-field input:focus,
+.statistics-page .filter-field select:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+/* Hover bộ lọc nhanh */
+.statistics-page .quick-filters button:hover {
+  color: #2563eb;
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+/* ===== KPI THONG KE - TONG XANH DUONG ===== */
+
+/* Ô tổng doanh thu */
+.statistics-page .top-grid .stat-card:first-child {
+  background: linear-gradient(120deg, #ffffff, #eff6ff);
+  border-color: #bfdbfe;
+}
+
+/* Thanh màu phía trên 7 ô */
+.statistics-page .top-grid .stat-card:nth-child(1)::before {
+  background: #2563eb;
+}
+
+.statistics-page .top-grid .stat-card:nth-child(2)::before {
+  background: #3b82f6;
+}
+
+.statistics-page .top-grid .stat-card:nth-child(3)::before {
+  background: #60a5fa;
+}
+
+.statistics-page .bottom-grid .stat-card:nth-child(1)::before {
+  background: #1d4ed8;
+}
+
+.statistics-page .bottom-grid .stat-card:nth-child(2)::before {
+  background: #2563eb;
+}
+
+.statistics-page .bottom-grid .stat-card:nth-child(3)::before {
+  background: #0ea5e9;
+}
+
+.statistics-page .bottom-grid .stat-card:nth-child(4)::before {
+  background: #38bdf8;
+}
+
+/* Icon KPI */
+.statistics-page .stat-icon {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+/* Hiệu ứng khi rê chuột */
+.statistics-page .stat-card:hover {
+  border-color: #93c5fd;
+  box-shadow: 0 12px 28px rgba(37, 99, 235, 0.12);
+}
+
+/* ===== DONG BO BO LOC SANG XANH DUONG ===== */
+
+/* Nút lọc nhanh */
+.statistics-page .quick-filters button:hover {
+  color: #2563eb;
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+
+/* Nút Reset */
+.statistics-page .reset-button:hover,
+.statistics-page .employee-reset-btn:hover {
+  color: #2563eb;
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+
+/* Viền input và select khi chọn */
+.statistics-page .filter-field input:focus,
+.statistics-page .filter-field select:focus,
+.statistics-page .employee-filters input:focus,
+.statistics-page .employee-filters select:focus {
+  outline: none;
+  border-color: #2563eb;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+/* Nút chuyển đổi biểu đồ */
+.statistics-page .chart-actions button.active {
+  color: #2563eb;
+  background: #eff6ff;
+}
+
+/* Nút phân trang */
+.statistics-page .employee-page-buttons button:hover:not(:disabled) {
+  color: #2563eb;
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+/* Màu chủ đạo */
+.statistics-page {
+  --primary: #2563eb;
+  --primary-dark: #1d4ed8;
+}
+
+/* ===== SELECT2 TU MAIN - GIAO DIEN XANH DONG BO ===== */
+.statistics-page .stats-select {
+  min-width: 0;
+  width: 100%;
+}
+.statistics-page .stats-select :deep(.select2-container) {
+  width: 100% !important;
+  min-width: 0;
+  font-family: inherit;
+  font-size: 13px;
+}
+.statistics-page .stats-select :deep(.select2-selection--single) {
+  height: 43px;
+  min-height: 43px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fbfcfe;
+}
+.statistics-page
+  .stats-select
+  :deep(.select2-selection--single .select2-selection__rendered) {
+  display: block;
+  line-height: 41px;
+  padding: 0 32px 0 12px;
+  color: #334155 !important;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.statistics-page
+  .stats-select
+  :deep(.select2-selection--single .select2-selection__arrow) {
+  height: 41px;
+  right: 8px;
+}
+.statistics-page
+  .stats-select
+  :deep(.select2-container--open .select2-selection),
+.statistics-page
+  .stats-select
+  :deep(.select2-container--focus .select2-selection) {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+.statistics-page .employee-filters .stats-select {
+  flex: 0 1 200px;
+  min-width: 175px;
+}
+.statistics-page .chart-right .stats-select {
+  width: 165px;
+}
+.statistics-page .dashboard-hero-mark i {
+  color: #bfdbfe;
+}
+
+@media (max-width: 680px) {
+  .statistics-page .employee-filters .stats-select {
+    flex: none;
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+/* ===== DOANH THU DU KIEN ===== */
+
+/* 4 ô KPI hàng trên */
+.statistics-page .top-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+/* Thẻ doanh thu dự kiến */
+.statistics-page .top-grid .stat-card-expected {
+  background: linear-gradient(120deg, #f8fbff, #eaf3ff);
+
+  border: 1px solid #bfdbfe;
+}
+
+/* Thanh màu trên thẻ */
+.statistics-page .top-grid .stat-card-expected::before {
+  background: #0ea5e9;
+}
+
+/* Ghi chú số đơn */
+.statistics-page .stat-card-expected small {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+/* Laptop và tablet */
+@media (max-width: 1100px) {
+  .statistics-page .top-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .statistics-page .top-grid .stat-card:first-child {
+    grid-column: auto;
+  }
+}
+
+/* Điện thoại */
+@media (max-width: 680px) {
+  .statistics-page .top-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ===== BIEU DO SO SANH DOANH THU ===== */
+
+.statistics-page .revenue-comparison-card {
+  margin: 22px 0;
+  padding: 24px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  box-shadow: 0 5px 22px rgba(31, 41, 70, 0.05);
+}
+
+.statistics-page .revenue-comparison-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.statistics-page .revenue-comparison-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.statistics-page .revenue-comparison-header h3 i {
+  margin-right: 8px;
+  color: #2563eb;
+}
+
+.statistics-page .revenue-comparison-filters {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.statistics-page .revenue-comparison-filters select,
+.statistics-page .revenue-comparison-filters input {
+  height: 38px;
+  padding: 8px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  background: #ffffff;
+  color: #334155;
+  font-size: 13px;
+  outline: none;
+}
+
+.statistics-page .revenue-comparison-filters input {
+  width: 105px;
+}
+
+.statistics-page .revenue-comparison-filters select:focus,
+.statistics-page .revenue-comparison-filters input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.statistics-page .revenue-comparison-chart {
+  width: 100%;
+  height: 350px;
+  margin-top: 22px;
+  position: relative;
+}
+
+.statistics-page .comparison-note {
+  margin: 16px 0 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.statistics-page .comparison-message {
+  padding: 40px 16px;
+  text-align: center;
+  font-size: 14px;
+  color: #64748b;
+}
+
+@media (max-width: 680px) {
+  .statistics-page .revenue-comparison-card {
+    padding: 16px;
+  }
+
+  .statistics-page .revenue-comparison-filters {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .statistics-page .revenue-comparison-chart {
+    height: 280px;
+  }
+}
 </style>

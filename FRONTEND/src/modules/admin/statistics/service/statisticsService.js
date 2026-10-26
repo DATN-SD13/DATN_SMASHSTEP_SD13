@@ -48,3 +48,15 @@ export async function getStatisticsBrands() {
   } while (page < totalPages)
   return brands
 }
+
+/**
+ * API so sánh doanh thu theo tháng, quý hoặc năm
+ * nhomTheo: month | quarter | year
+ * nam: năm cần thống kê
+ */
+export const getStatisticsRevenueComparison = (params) => {
+  return api.get(
+    '/thong-ke-tong-hop/so-sanh-doanh-thu',
+    { params }
+  );
+};

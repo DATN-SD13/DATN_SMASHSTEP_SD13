@@ -19,6 +19,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.smashstep.datn.common.exception.AppException;
+import org.springframework.web.bind.annotation.RequestParam;
+
 @RestController
 @RequestMapping("/api/thong-ke-tong-hop")
 public class ThongKeChuKyController {
@@ -75,6 +78,82 @@ public class ThongKeChuKyController {
 
         return ApiResponse.ok(
                 "Lấy thống kê theo chu kỳ thành công",
+                result
+        );
+    }
+
+    @GetMapping("/so-sanh-doanh-thu")
+    @Transactional(readOnly = true)
+    public ApiResponse<List<Map<String, Object>>> soSanhDoanhThu(
+            @RequestParam(defaultValue = "month") String nhomTheo,
+            @RequestParam(required = false) Integer nam
+    ) {
+        int year = nam != null ? nam : LocalDate.now().getYear();
+
+        if (year < 2000 || year > 2100) {
+            throw AppException.badRequest("Năm thống kê không hợp lệ");
+        }
+
+        List<Map<String, Object>> result = new ArrayList<>();
+
+        switch (nhomTheo) {
+            case "month" -> {
+                // So sánh 12 tháng trong năm
+                for (int month = 1; month <= 12; month++) {
+                    LocalDate start = LocalDate.of(year, month, 1);
+                    LocalDate end = start.plusMonths(1);
+
+                    result.add(createPeriod(
+                            "Tháng " + month,
+                            start,
+                            end,
+                            start.minusMonths(1),
+                            start
+                    ));
+                }
+            }
+
+            case "quarter" -> {
+                // So sánh 4 quý trong năm
+                for (int quarter = 1; quarter <= 4; quarter++) {
+                    int firstMonth = (quarter - 1) * 3 + 1;
+
+                    LocalDate start = LocalDate.of(year, firstMonth, 1);
+                    LocalDate end = start.plusMonths(3);
+
+                    result.add(createPeriod(
+                            "Quý " + quarter,
+                            start,
+                            end,
+                            start.minusMonths(3),
+                            start
+                    ));
+                }
+            }
+
+            case "year" -> {
+                // So sánh 5 năm gần nhất tính đến năm được chọn
+                for (int y = year - 4; y <= year; y++) {
+                    LocalDate start = LocalDate.of(y, 1, 1);
+                    LocalDate end = start.plusYears(1);
+
+                    result.add(createPeriod(
+                            "Năm " + y,
+                            start,
+                            end,
+                            start.minusYears(1),
+                            start
+                    ));
+                }
+            }
+
+            default -> throw AppException.badRequest(
+                    "Chỉ hỗ trợ thống kê theo tháng, quý hoặc năm"
+            );
+        }
+
+        return ApiResponse.ok(
+                "Lấy dữ liệu so sánh doanh thu thành công",
                 result
         );
     }

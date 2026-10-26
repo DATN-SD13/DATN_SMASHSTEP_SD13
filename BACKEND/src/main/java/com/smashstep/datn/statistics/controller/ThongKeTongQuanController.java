@@ -9,6 +9,8 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import com.smashstep.datn.invoice.enums.TrangThaiHoaDon;
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
@@ -118,6 +120,36 @@ public class ThongKeTongQuanController {
         BigDecimal cashRevenue = amount(revenue[2]);
         BigDecimal transferRevenue = amount(revenue[3]);
 
+// DOANH THU DỰ KIẾN
+// Đơn đã xác nhận hoặc chờ lấy hàng.
+// Lọc theo ngày tạo đơn, chưa tính vào doanh thu thực tế.
+
+        Object[] expected = (Object[]) entityManager
+                .createNativeQuery("""
+            SELECT
+                COUNT_BIG(hd.id),
+                COALESCE(SUM(hd.thanh_tien), 0)
+            FROM hoa_don hd
+            WHERE hd.trang_thai IN (:confirmedStatus, :readyStatus)
+              AND hd.ngay_tao >= :fromTime
+              AND hd.ngay_tao < :toTime
+        """)
+                .setParameter(
+                        "confirmedStatus",
+                        TrangThaiHoaDon.DA_XAC_NHAN.getMa()
+                )
+                .setParameter(
+                        "readyStatus",
+                        TrangThaiHoaDon.CHO_GIAO_HANG.getMa()
+                )
+                .setParameter("fromTime", fromTime)
+                .setParameter("toTime", toTime)
+                .getSingleResult();
+
+        long expectedOrders = ((Number) expected[0]).longValue();
+
+        BigDecimal expectedRevenue = amount(expected[1]);
+
         // 2. Tổng số sản phẩm bán được
         Number productsSold = (Number) entityManager
                 .createNativeQuery("""
@@ -161,6 +193,10 @@ public class ThongKeTongQuanController {
         Map<String, Object> result = new LinkedHashMap<>();
 
         result.put("totalRevenue", totalRevenue);
+
+        result.put("expectedRevenue", expectedRevenue);
+        result.put("expectedOrders", expectedOrders);
+
         result.put("cashRevenue", cashRevenue);
         result.put("transferRevenue", transferRevenue);
         result.put("totalOrders", totalOrders);
