@@ -35,6 +35,7 @@ import java.util.Map;
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
+@lombok.extern.slf4j.Slf4j
 public class LichLamViecService {
 
     private final LichLamViecRepository lichLamViecRepository;
@@ -65,12 +66,210 @@ public class LichLamViecService {
     // ── Ca hôm nay của nhân viên ──────────────────────────
     public List<LichLamViecResponse> getCaHomNay(Long nhanVienId) {
         LocalDate today = LocalDate.now();
-        var pageable = PageRequest.of(0, 10);
-        var page = lichLamViecRepository.search(today, today, null, null, null, pageable);
-        return page.stream()
-                .filter(l -> l.getIdNhanVien().getId().equals(nhanVienId))
+        return lichLamViecRepository.findCaHomNayCuaNhanVien(nhanVienId, today)
+                .stream()
                 .map(l -> toResponse(l, false))
                 .toList();
+    }
+
+    // ── Ca sắp bắt đầu cần xác nhận giao ca ──────────────
+    /**
+     * Kiểm tra xem nhân viên có ca nào sắp bắt đầu hoặc đang trong ca chưa xác nhận (trangThai 0 hoặc 4).
+     * Nếu có, trả về thông tin ca đó kèm dữ liệu tổng hợp tiền mặt/chuyển khoản của ca trước.
+     * Trả về null nếu không có ca nào cần xác nhận.
+     */
+    @Transactional(readOnly = true)
+    public com.smashstep.datn.schedule.dto.GiaoCaResponse getCaSapBatDau(Long nhanVienId) {
+        LocalDate today   = LocalDate.now();
+        LocalTime nowTime = LocalTime.now();
+        
+        // Tìm ca hôm nay chưa nhận (trangThai 0 hoặc 4):
+        // - Ca sắp bắt đầu: gioBatDau trong khoảng (now - 30 phút) đến (now + 15 phút)
+        // - Cho phép hiện thông báo cho cả ca đã bắt đầu nhưng chưa xác nhận (trễ tối đa 30 phút)
+        LocalTime tuGio  = nowTime.minusMinutes(30).isBefore(LocalTime.MIN) ? LocalTime.MIN : nowTime.minusMinutes(30);
+        LocalTime denGio = nowTime.plusMinutes(15);
+
+        log.debug("[GiaoCa] Check nhanVienId={} now={} tuGio={} denGio={}", nhanVienId, nowTime, tuGio, denGio);
+
+        List<LichLamViec> caList =
+                lichLamViecRepository.findCaSapBatDau(nhanVienId, today, tuGio, denGio);
+
+        log.debug("[GiaoCa] Ket qua findCaSapBatDau: {} ca", caList.size());
+
+        if (caList.isEmpty()) return null;
+
+        LichLamViec ca      = caList.get(0);
+        
+        // Native query không auto-load associations, phải load thủ công
+        CaLamViec caEntity  = ca.getIdCaLamViec();
+        if (caEntity == null) {
+            log.warn("[GiaoCa] Ca entity is null for lich {}", ca.getId());
+            return null;
+        }
+        
+        // Trigger lazy loading trong transaction để tránh LazyInitializationException
+        String tenCa = caEntity.getTenCa();
+        LocalTime gioBatDau = caEntity.getGioBatDau();
+        LocalTime gioKetThuc = caEntity.getGioKetThuc();
+        
+        if (ca.getIdNhanVien() != null) {
+            ca.getIdNhanVien().getTenNhanVien(); // touch để load
+        }
+        
+        log.debug("[GiaoCa] Ca entity loaded: {}, gioBD={}", tenCa, gioBatDau);
+
+        // Tìm ca liền trước của nhân viên này
+        LichLamViec caTruoc =
+                lichLamViecRepository.findCaTruocNhat(nhanVienId, today, caEntity.getGioBatDau());
+
+        java.math.BigDecimal tienMat     = java.math.BigDecimal.ZERO;
+        java.math.BigDecimal chuyenKhoan = java.math.BigDecimal.ZERO;
+        String tenCaTruoc = null;
+
+        if (caTruoc != null) {
+            CaLamViec caEntTruoc = caTruoc.getIdCaLamViec();
+            tenCaTruoc = caEntTruoc.getTenCa();
+
+            LocalDate ngayTruoc   = caTruoc.getNgayLam();
+            LocalTime gioBD       = caEntTruoc.getGioBatDau();
+            LocalTime gioKT       = caEntTruoc.getGioKetThuc();
+
+            if (gioBD != null && gioKT != null) {
+                LocalDateTime batDau  = ngayTruoc.atTime(gioBD);
+                LocalDate ngayKT      = gioKT.isBefore(gioBD) ? ngayTruoc.plusDays(1) : ngayTruoc;
+                LocalDateTime ketThuc = ngayKT.atTime(gioKT);
+
+                java.math.BigDecimal tm = lichLamViecRepository.tinhDoanhThuTienMat(nhanVienId, batDau, ketThuc);
+                java.math.BigDecimal ck = lichLamViecRepository.tinhDoanhThuChuyenKhoan(nhanVienId, batDau, ketThuc);
+                tienMat     = tm != null ? tm : java.math.BigDecimal.ZERO;
+                chuyenKhoan = ck != null ? ck : java.math.BigDecimal.ZERO;
+            }
+        }
+
+        java.math.BigDecimal tongTien = tienMat.add(chuyenKhoan);
+
+        return com.smashstep.datn.schedule.dto.GiaoCaResponse.builder()
+                .lichLamViecId(ca.getId())
+                .tenCa(tenCa)
+                .gioBatDau(fmt(gioBatDau))
+                .gioKetThuc(fmt(gioKetThuc))
+                .tenCaTruoc(tenCaTruoc)
+                .tienMatCaTruoc(tienMat)
+                .chuyenKhoanCaTruoc(chuyenKhoan)
+                .tienMatDauCa(tienMat)
+                .chuyenKhoanDauCa(chuyenKhoan)
+                .tongTienDauCa(tongTien)
+                .build();
+    }
+
+    // ── Xác nhận nhận ca (trangThai → 1 = Đang làm) ──────
+    @Transactional
+    public LichLamViecResponse xacNhanNhanCa(Long id) {
+        LichLamViec llv = lichLamViecRepository.findById(id)
+                .orElseThrow(() -> AppException.notFound("Không tìm thấy lịch làm việc"));
+        llv.setTrangThai(1);
+        llv.setNgayCapNhat(LocalDateTime.now());
+        return toResponse(lichLamViecRepository.save(llv), false);
+    }
+
+    // ── Từ chối nhận ca (trangThai → 4 = Chưa nhận ca) ───
+    @Transactional
+    public LichLamViecResponse chuaNhanCa(Long id) {
+        LichLamViec llv = lichLamViecRepository.findById(id)
+                .orElseThrow(() -> AppException.notFound("Không tìm thấy lịch làm việc"));
+        llv.setTrangThai(4);
+        llv.setNgayCapNhat(LocalDateTime.now());
+        return toResponse(lichLamViecRepository.save(llv), false);
+    }
+
+    // ── Kiểm tra ca đang làm để hiện nút kết thúc ca ─────────
+    /**
+     * Kiểm tra xem nhân viên có đang trong ca làm việc không (trangThai = 1).
+     * Trả về thông tin ca để hiện nút "Kết thúc ca".
+     */
+    @Transactional(readOnly = true)
+    public com.smashstep.datn.schedule.dto.KetThucCaResponse getCaDangLam(Long nhanVienId) {
+        LocalDate today = LocalDate.now();
+        
+        // Tìm ca đang làm (trangThai = 1) hôm nay
+        List<LichLamViec> caList = lichLamViecRepository.findCaHomNayCuaNhanVien(nhanVienId, today)
+                .stream()
+                .filter(ca -> Integer.valueOf(1).equals(ca.getTrangThai()))
+                .toList();
+        
+        if (caList.isEmpty()) return null;
+        
+        LichLamViec ca = caList.get(0);
+        CaLamViec caEntity = ca.getIdCaLamViec();
+        
+        if (caEntity == null) return null;
+        
+        // Eager load
+        String tenCa = caEntity.getTenCa();
+        LocalTime gioBatDau = caEntity.getGioBatDau();
+        LocalTime gioKetThuc = caEntity.getGioKetThuc();
+        
+        // Tính thời gian ca
+        LocalDate ngayCa = ca.getNgayLam();
+        LocalDateTime batDau = ngayCa.atTime(gioBatDau);
+        LocalDate ngayKT = gioKetThuc.isBefore(gioBatDau) ? ngayCa.plusDays(1) : ngayCa;
+        LocalDateTime ketThuc = ngayKT.atTime(gioKetThuc);
+        
+        log.info("[KetThucCa] Calculating revenue for nhanVienId={}, batDau={}, now={}", 
+                 nhanVienId, batDau, LocalDateTime.now());
+        
+        // Tính doanh thu trong ca
+        BigDecimal tienMat = lichLamViecRepository.tinhDoanhThuTienMat(nhanVienId, batDau, LocalDateTime.now());
+        BigDecimal chuyenKhoan = lichLamViecRepository.tinhDoanhThuChuyenKhoan(nhanVienId, batDau, LocalDateTime.now());
+        
+        log.info("[KetThucCa] Revenue calculated - tienMat={}, chuyenKhoan={}", tienMat, chuyenKhoan);
+        
+        tienMat = tienMat != null ? tienMat : BigDecimal.ZERO;
+        chuyenKhoan = chuyenKhoan != null ? chuyenKhoan : BigDecimal.ZERO;
+        BigDecimal tongTien = tienMat.add(chuyenKhoan);
+        
+        return com.smashstep.datn.schedule.dto.KetThucCaResponse.builder()
+                .lichLamViecId(ca.getId())
+                .tenCa(tenCa)
+                .gioBatDau(fmt(gioBatDau))
+                .gioKetThuc(fmt(gioKetThuc))
+                .ngayLam(ngayCa)
+                .thoiGianBatDau(batDau)
+                .thoiGianKetThuc(ketThuc)
+                .tienMatCuoiCa(tienMat)
+                .chuyenKhoanCuoiCa(chuyenKhoan)
+                .tongTienCuoiCa(tongTien)
+                .doanhThuCa(tongTien)
+                .ghiChuKetCa(ca.getGhiChu())
+                .build();
+    }
+    
+    // ── Xác nhận kết thúc ca ─────────────────────────────────
+    /**
+     * Kết thúc ca làm việc - chuyển trangThai → 3 (Đã kết thúc).
+     */
+    @Transactional
+    public LichLamViecResponse ketThucCa(Long id, com.smashstep.datn.schedule.dto.KetThucCaRequest request) {
+        LichLamViec llv = lichLamViecRepository.findById(id)
+                .orElseThrow(() -> AppException.notFound("Không tìm thấy lịch làm việc"));
+        
+        // Kiểm tra ca đang làm
+        if (!Integer.valueOf(1).equals(llv.getTrangThai())) {
+            throw AppException.badRequest("Chỉ có thể kết thúc ca đang làm (trangThai = 1)");
+        }
+        
+        // Cập nhật trạng thái và ghi chú
+        llv.setTrangThai(3);  // Đã kết thúc
+        if (request.getGhiChuKetCa() != null && !request.getGhiChuKetCa().trim().isEmpty()) {
+            String ghiChuCu = llv.getGhiChu() != null ? llv.getGhiChu() : "";
+            String ghiChuMoi = ghiChuCu.isEmpty() 
+                ? "Kết ca: " + request.getGhiChuKetCa()
+                : ghiChuCu + " | Kết ca: " + request.getGhiChuKetCa();
+            llv.setGhiChu(ghiChuMoi);
+        }
+        llv.setNgayCapNhat(LocalDateTime.now());
+        
+        return toResponse(lichLamViecRepository.save(llv), false);
     }
 
     // ── Danh sách thường ───────────────────────────────────
@@ -155,8 +354,8 @@ public class LichLamViecService {
         LichLamViec llv = lichLamViecRepository.findById(id)
                 .orElseThrow(() -> AppException.notFound("Không tìm thấy lịch làm việc"));
 
-        if (request.getTrangThai() < 0 || request.getTrangThai() > 3) {
-            throw AppException.badRequest("Trạng thái không hợp lệ (0-3)");
+        if (request.getTrangThai() < 0 || request.getTrangThai() > 4) {
+            throw AppException.badRequest("Trạng thái không hợp lệ (0-4)");
         }
 
         llv.setTrangThai(request.getTrangThai());
@@ -923,9 +1122,10 @@ public class LichLamViecService {
         if (tt == null) return "";
         return switch (tt) {
             case 0 -> "Chờ giao ca";
-            case 1 -> "Giao ca";
+            case 1 -> "Đang làm";
             case 2 -> "Vắng mặt";
             case 3 -> "Đã kết thúc";
+            case 4 -> "Chưa nhận ca";
             default -> "Không xác định";
         };
     }

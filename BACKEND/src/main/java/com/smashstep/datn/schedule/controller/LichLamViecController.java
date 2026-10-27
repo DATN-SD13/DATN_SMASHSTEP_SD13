@@ -72,6 +72,60 @@ public class LichLamViecController {
                 lichLamViecService.getCaHomNay(details.userId()));
     }
 
+    /**
+     * Kiểm tra ca sắp bắt đầu trong 15 phút (trangThai 0 hoặc 4).
+     * Dùng cho popup giao ca tự động ở frontend.
+     * Trả về null trong data nếu không có ca nào cần xác nhận.
+     */
+    @GetMapping("/ca-sap-bat-dau")
+    public ApiResponse<com.smashstep.datn.schedule.dto.GiaoCaResponse> getCaSapBatDau(
+            org.springframework.security.core.Authentication authentication
+    ) {
+        com.smashstep.datn.auth.security.JwtAuthFilter.AuthDetails details =
+                (com.smashstep.datn.auth.security.JwtAuthFilter.AuthDetails) authentication.getDetails();
+        return ApiResponse.ok("Ca sắp bắt đầu",
+                lichLamViecService.getCaSapBatDau(details.userId()));
+    }
+
+    /** Xác nhận nhận ca — chuyển trangThai → 1 (Đang làm) */
+    @PostMapping("/{id}/xac-nhan-nhan-ca")
+    public ApiResponse<LichLamViecResponse> xacNhanNhanCa(@PathVariable Long id) {
+        return ApiResponse.ok("Xác nhận nhận ca thành công",
+                lichLamViecService.xacNhanNhanCa(id));
+    }
+
+    /** Từ chối nhận ca — chuyển trangThai → 4 (Chưa nhận ca) */
+    @PostMapping("/{id}/chua-nhan-ca")
+    public ApiResponse<LichLamViecResponse> chuaNhanCa(@PathVariable Long id) {
+        return ApiResponse.ok("Đã đánh dấu chưa nhận ca",
+                lichLamViecService.chuaNhanCa(id));
+    }
+
+    /**
+     * Kiểm tra ca đang làm của nhân viên (trangThai = 1).
+     * Dùng để hiển thị nút "Kết thúc ca" ở frontend.
+     * Trả về null trong data nếu không có ca đang làm.
+     */
+    @GetMapping("/ca-dang-lam")
+    public ApiResponse<com.smashstep.datn.schedule.dto.KetThucCaResponse> getCaDangLam(
+            org.springframework.security.core.Authentication authentication
+    ) {
+        com.smashstep.datn.auth.security.JwtAuthFilter.AuthDetails details =
+                (com.smashstep.datn.auth.security.JwtAuthFilter.AuthDetails) authentication.getDetails();
+        return ApiResponse.ok("Ca đang làm",
+                lichLamViecService.getCaDangLam(details.userId()));
+    }
+
+    /** Kết thúc ca — chuyển trangThai → 3 (Đã kết thúc) */
+    @PostMapping("/{id}/ket-thuc-ca")
+    public ApiResponse<LichLamViecResponse> ketThucCa(
+            @PathVariable Long id,
+            @Valid @RequestBody com.smashstep.datn.schedule.dto.KetThucCaRequest request
+    ) {
+        return ApiResponse.ok("Kết thúc ca thành công",
+                lichLamViecService.ketThucCa(id, request));
+    }
+
     /** Danh sách có phân trang + filter */
     @GetMapping
     public ApiResponse<PageResponse<LichLamViecResponse>> getAll(

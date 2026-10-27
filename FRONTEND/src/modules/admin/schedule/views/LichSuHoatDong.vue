@@ -381,7 +381,7 @@ function initials(name) {
 .ss-pill.info    { background: #e3f2fd; color: #1565c0; }
 .ss-pill.danger  { background: #fff5f5; color: #c62828; }
 .ss-pill.success { background: #e8f5e9; color: #2e7d32; }
-.ss-pill.active  { background: #fff3e0; color: #e65100; }
+.ss-pill.active  { background: #c8e6c9; color: #1b5e20; font-weight: 700; }
 
 /* Ghi chú */
 .note-cell {

@@ -1,9 +1,11 @@
 <script setup>
-import { computed, ref, onMounted, watch } from 'vue'
+import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import api from '../utils/api'
-import { showError } from '../utils/feedback'
+import { showError, showSuccess } from '../utils/feedback'
+import NhanCaModal from '../modules/admin/schedule/components/NhanCaModal.vue'
+import KetThucCaModal from '../modules/admin/schedule/components/KetThucCaModal.vue'
 
 const route     = useRoute()
 const router    = useRouter()
@@ -143,7 +145,144 @@ async function openCaPanel() {
   finally { caLoading.value = false }
 }
 
-onMounted(loadCaData)
+// ── Giao ca: polling kiểm tra ca sắp bắt đầu ──────────────
+const nhanCaData      = ref(null)   // dữ liệu ca sắp bắt đầu
+const dismissedIds    = ref(new Map()) // Map: lichLamViecId -> timestamp khi dismiss
+
+// ── Kết thúc ca: kiểm tra ca đang làm ──────────────────────
+const ketThucCaData   = ref(null)   // dữ liệu ca đang làm (trangThai=1)
+const showKetThucCaModal = ref(false)
+
+async function checkCaDangLam() {
+  if (!authStore.isAuthenticated || authStore.isCustomer) return
+  try {
+    const res = await api.get('/lich-lam-viec/ca-dang-lam')
+    const data = res.data?.data
+    console.log('[KetThucCa] API response:', res.data, '| data:', data)
+    ketThucCaData.value = data
+  } catch (e) {
+    console.warn('[KetThucCa] Lỗi khi check:', e)
+  }
+}
+
+function openKetThucCaModal() {
+  if (ketThucCaData.value) {
+    showKetThucCaModal.value = true
+  }
+}
+
+function closeKetThucCaModal() {
+  showKetThucCaModal.value = false
+}
+
+async function onKetThucCaConfirm(payload) {
+  if (!ketThucCaData.value) return
+  try {
+    await api.post(`/lich-lam-viec/${ketThucCaData.value.lichLamViecId}/ket-thuc-ca`, {
+      ghiChuKetCa: payload.ghiChu || null
+    })
+    showSuccess('Đã kết thúc ca thành công!')
+    showKetThucCaModal.value = false
+    ketThucCaData.value = null
+    // Reload dữ liệu ca
+    await Promise.all([
+      loadCaData(),
+      checkCaDangLam()
+    ])
+  } catch (err) {
+    showError(err.response?.data?.message || 'Không thể kết thúc ca', 'Lỗi')
+  }
+}
+
+async function checkGiaoCa() {
+  // Chỉ check khi đã đăng nhập và là nhân viên
+  if (!authStore.isAuthenticated || authStore.isCustomer) return
+  try {
+    const res = await api.get('/lich-lam-viec/ca-sap-bat-dau')
+    const data = res.data?.data
+    
+    // Xóa các dismissed quá 5 phút (cho phép hiện lại sau 5 phút)
+    const now = Date.now()
+    const fiveMinutes = 5 * 60 * 1000
+    for (const [id, timestamp] of dismissedIds.value.entries()) {
+      if (now - timestamp > fiveMinutes) {
+        dismissedIds.value.delete(id)
+      }
+    }
+    
+    console.log('[GiaoCa] API response:', res.data, '| data:', data, '| dismissed:', [...dismissedIds.value.keys()])
+    
+    // Chỉ tự động hiện popup nếu:
+    // 1. Có dữ liệu ca
+    // 2. Chưa bị dismissed (hoặc đã quá 5 phút)
+    // 3. Modal chưa đang mở (nhanCaData.value === null)
+    if (data && !dismissedIds.value.has(data.lichLamViecId) && nhanCaData.value === null) {
+      nhanCaData.value = data
+    } else if (!data) {
+      // Nếu không còn ca cần nhận, clear modal
+      nhanCaData.value = null
+    }
+    // Nếu nhanCaData đã có giá trị (modal đang mở), không làm gì cả
+  } catch (e) {
+    console.warn('[GiaoCa] Lỗi khi check:', e)
+  }
+}
+
+let giaoCaTimer = null
+
+onMounted(() => {
+  loadCaData()
+  checkGiaoCa()
+  checkCaDangLam()
+  // Poll mỗi 60 giây
+  giaoCaTimer = setInterval(() => {
+    checkGiaoCa()
+    checkCaDangLam()
+  }, 60_000)
+})
+
+onUnmounted(() => {
+  if (giaoCaTimer) clearInterval(giaoCaTimer)
+})
+
+function onNhanCaConfirmed() {
+  nhanCaData.value = null
+  showSuccess('Đã xác nhận nhận ca thành công!')
+  loadCaData()
+}
+
+function onNhanCaRejected() {
+  // Lưu timestamp khi dismiss - sẽ tự động hiện lại sau 5 phút
+  if (nhanCaData.value) {
+    dismissedIds.value.set(nhanCaData.value.lichLamViecId, Date.now())
+  }
+  nhanCaData.value = null
+}
+
+// Xem lại ca - xóa dismissed và force check ngay
+function forceCheckGiaoCa() {
+  dismissedIds.value.clear()  // Xóa tất cả dismissed
+  nhanCaData.value = null      // Reset modal để đảm bảo có thể hiện lại
+  checkGiaoCa()                // Check ngay lập tức
+}
+
+const formatDate = (dateStr) => {
+  if (!dateStr) return ''
+  const date = new Date(dateStr)
+  return date.toLocaleDateString('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  })
+}
+
+const formatMoney = (amount) => {
+  if (amount == null) return '0đ'
+  return new Intl.NumberFormat('vi-VN', {
+    style: 'decimal',
+    minimumFractionDigits: 0
+  }).format(amount) + 'đ'
+}
 
 // Menu quản trị cửa hàng
 const nav = [
@@ -259,6 +398,35 @@ const crumbs = computed(() => ({
             <span>Ca làm việc</span>
             <span v-if="caNhanVienCount > 0" class="ca-badge">{{ caNhanVienCount }}</span>
           </button>
+          
+          <!-- Nút xem lại ca (hiện khi có dismissed) -->
+          <button 
+            v-if="dismissedIds.size > 0" 
+            type="button" 
+            class="pill xem-lai-ca" 
+            @click="forceCheckGiaoCa"
+            title="Xem lại thông báo giao ca"
+          >
+            <i class="bi bi-bell-fill"></i>
+            <span>Xem lại ca</span>
+            <span class="ca-badge-notify">{{ dismissedIds.size }}</span>
+          </button>
+          
+          <!-- Nút kết thúc ca (hiện khi đang làm ca) -->
+          <button 
+            v-if="ketThucCaData" 
+            type="button" 
+            class="pill ket-thuc-ca" 
+            @click="openKetThucCaModal"
+            title="Kết thúc ca làm việc"
+          >
+            <i class="bi bi-stop-circle"></i>
+            <div class="ket-thuc-ca-info">
+              <span class="ket-thuc-ca-title">Kết thúc ca</span>
+              <span class="ket-thuc-ca-detail">{{ formatDate(ketThucCaData.ngayLam) }}</span>
+            </div>
+          </button>
+          
           <button type="button" class="bell" @click="openCaActivePanel" :title="caHienTaiSo ? 'Đang ở ca ' + caHienTaiSo : 'Ngoài giờ ca'">{{ caHienTaiSo || '—' }}</button>
 
           <!-- User dropdown -->
@@ -415,6 +583,22 @@ const crumbs = computed(() => ({
     </Transition>
   </Teleport>
 
+  <!-- Modal giao ca tự động -->
+  <NhanCaModal
+    v-if="nhanCaData"
+    :data="nhanCaData"
+    @confirmed="onNhanCaConfirmed"
+    @rejected="onNhanCaRejected"
+  />
+
+  <!-- Modal kết thúc ca -->
+  <KetThucCaModal
+    :show="showKetThucCaModal"
+    :ca-data="ketThucCaData"
+    @close="closeKetThucCaModal"
+    @confirm="onKetThucCaConfirm"
+  />
+
   <!-- Modal xác nhận đăng xuất -->
   <Teleport to="body">
     <div v-if="showLogoutConfirm" class="logout-overlay" @click.self="!authStore.loggingOut && (showLogoutConfirm = false)">      <div class="logout-modal" role="dialog" aria-modal="true" aria-labelledby="logout-title">
@@ -520,6 +704,80 @@ const crumbs = computed(() => ({
 .pill:hover { border-color: var(--ss-primary); }
 .shift { padding: 0 18px; }
 .shift i { color: var(--ss-primary); font-size: 13px; }
+
+/* ── Nút xem lại ca ── */
+.xem-lai-ca {
+  padding: 0 18px;
+  background: #fff8e1;
+  border-color: #ffc107;
+  color: #f57f17;
+  animation: pulse-notify 2s ease-in-out infinite;
+}
+.xem-lai-ca:hover {
+  background: #fff3cd;
+  border-color: #ff9800;
+}
+.xem-lai-ca i {
+  color: #ff9800;
+  font-size: 13px;
+}
+.ca-badge-notify {
+  min-width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #ff9800;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  margin-left: 2px;
+}
+
+@keyframes pulse-notify {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 152, 0, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(255, 152, 0, 0); }
+}
+
+/* ── Nút kết thúc ca ── */
+.ket-thuc-ca {
+  padding: 8px 16px;
+  background: #e8f5e9;
+  border-color: #4caf50;
+  color: #2e7d32;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ket-thuc-ca:hover {
+  background: #c8e6c9;
+  border-color: #43a047;
+}
+.ket-thuc-ca i {
+  color: #4caf50;
+  font-size: 20px;
+  flex-shrink: 0;
+}
+.ket-thuc-ca-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.ket-thuc-ca-title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+}
+.ket-thuc-ca-detail {
+  font-size: 10px;
+  font-weight: 500;
+  color: #66bb6a;
+  line-height: 1;
+}
+
 .pill.logout {
   padding: 0 14px;
   color: #e53935;

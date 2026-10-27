@@ -4,6 +4,7 @@ import com.smashstep.datn.auth.service.PasswordResetService;
 import com.smashstep.datn.common.exception.AppException;
 import com.smashstep.datn.customer.entity.KhachHang;
 import com.smashstep.datn.customer.repository.KhachHangRepository;
+import com.smashstep.datn.employee.repository.NhanVienRepository;
 import com.smashstep.datn.promotion.service.EmailService;
 import org.junit.jupiter.api.*;
 import org.mockito.ArgumentCaptor;
@@ -16,17 +17,20 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class PasswordResetServiceTest {
     final KhachHangRepository customers=mock(KhachHangRepository.class);
+    final NhanVienRepository employees=mock(NhanVienRepository.class);
     final PasswordEncoder encoder=mock(PasswordEncoder.class);
     final EmailService email=mock(EmailService.class);
-    final PasswordResetService service=new PasswordResetService(customers,encoder,email);
+    final PasswordResetService service=new PasswordResetService(customers,employees,encoder,email);
     final KhachHang customer=new KhachHang();
     final Instant now=Instant.parse("2026-10-16T00:00:00Z");
     @BeforeEach void setup(){
         customer.setId(7L); customer.setEmail("customer@example.test"); customer.setTenKhachHang("Khách kiểm thử"); customer.setTrangThai(1);customer.setMatKhau("old-hash");
         when(customers.findByEmailIgnoreCase(customer.getEmail())).thenReturn(Optional.of(customer));
         when(customers.findById(7L)).thenReturn(Optional.of(customer));
+        when(employees.findByEmailIgnoreCase(anyString())).thenReturn(Optional.empty());
         when(encoder.encode(anyString())).thenReturn("new-hash");
-        ReflectionTestUtils.setField(service,"websiteUrl","http://localhost:5173");
+        ReflectionTestUtils.setField(service,"websiteUrl","http://localhost:5174");
+        ReflectionTestUtils.setField(service,"adminFrontendUrl","http://localhost:5173");
         ReflectionTestUtils.setField(service,"clock",Clock.fixed(now,ZoneOffset.UTC));
     }
     String issue(){
