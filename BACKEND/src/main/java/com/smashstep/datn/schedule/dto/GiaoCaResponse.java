@@ -46,4 +46,9 @@ public class GiaoCaResponse {
 
     /** Tổng tiền đầu ca (= tienMatDauCa + chuyenKhoanDauCa) */
     private BigDecimal tongTienDauCa;
+    private Long lichLamViecCaTruocId;
+    private String nhanVienCaTruoc;
+    private java.time.LocalDate ngayCaTruoc;
+    /** False for legacy or automatically closed shifts without a physical count. */
+    private boolean tienMatCaTruocDaKiemDem;
 }

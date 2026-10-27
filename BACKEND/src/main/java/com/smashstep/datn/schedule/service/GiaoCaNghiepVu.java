@@ -38,9 +38,28 @@ public class GiaoCaNghiepVu {
         var now=now();
         if(nearby(employee).stream().anyMatch(r->Integer.valueOf(1).equals(r.getTrangThai())))return null;
         return nearby(employee).stream().filter(r->coTheNhan(r,now)).min(Comparator.comparing(r->range(r).batDau()))
-                .map(r->GiaoCaResponse.builder().lichLamViecId(r.getId()).tenCa(r.getIdCaLamViec().getTenCa())
-                        .gioBatDau(fmt(range(r).batDau())).gioKetThuc(fmt(range(r).ketThuc()))
-                        .tienMatDauCa(BigDecimal.ZERO).chuyenKhoanDauCa(BigDecimal.ZERO).tongTienDauCa(BigDecimal.ZERO).build()).orElse(null);
+                .map(this::deXuatNhanCa).orElse(null);
+    }
+    private GiaoCaResponse deXuatNhanCa(LichLamViec current){
+        var builder=GiaoCaResponse.builder().lichLamViecId(current.getId())
+                .tenCa(current.getIdCaLamViec().getTenCa()).gioBatDau(fmt(range(current).batDau()))
+                .gioKetThuc(fmt(range(current).ketThuc())).tienMatDauCa(BigDecimal.ZERO)
+                .chuyenKhoanDauCa(BigDecimal.ZERO).tongTienDauCa(BigDecimal.ZERO);
+        var previous=repo.findClosedBeforeShift(current.getNgayLam(),current.getIdCaLamViec().getGioBatDau(),
+                now(),org.springframework.data.domain.PageRequest.of(0,1));
+        if(!previous.isEmpty()){
+            var row=previous.get(0);var summary=tongKet(row);
+            boolean counted=summary.getTienMatThucTe()!=null;
+            var cash=counted?summary.getTienMatThucTe():summary.getTienMatDuKien();
+            builder.lichLamViecCaTruocId(row.getId()).tenCaTruoc(row.getIdCaLamViec().getTenCa())
+                    .nhanVienCaTruoc(row.getIdNhanVien().getTenNhanVien()).ngayCaTruoc(row.getNgayLam())
+                    .tienMatCaTruoc(cash).chuyenKhoanCaTruoc(summary.getChuyenKhoanCuoiCa())
+                    .tienMatCaTruocDaKiemDem(counted)
+                    .tienMatDauCa(counted?cash:null)
+                    .chuyenKhoanDauCa(summary.getChuyenKhoanCuoiCa())
+                    .tongTienDauCa(cash.add(summary.getChuyenKhoanCuoiCa()));
+        }
+        return builder.build();
     }
     public KetThucCaResponse dangLam(Long employee){return nearby(employee).stream().filter(r->Integer.valueOf(1).equals(r.getTrangThai()))
             .min(Comparator.comparing(r->range(r).batDau())).map(this::tongKet).orElse(null);}
