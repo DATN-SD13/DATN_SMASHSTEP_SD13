@@ -15,11 +15,15 @@ Trang Return tự kiểm tra lại tối đa 90 giây, sau đó hiển thị rõ
 
 ## Cấu hình
 
-- app.payment.vnpay.enabled mặc định false; thông tin merchant qua VNPAY_TMN_CODE, VNPAY_HASH_SECRET. Secret không đưa vào Git/frontend/log.
+- `application.properties` đã có sẵn tmn-code Sandbox, Payment URL, Return URL localhost và QueryDr. Khóa ký nằm trong application-local.properties/biến môi trường, không đưa lên GitHub. Máy hiện tại đã điền đủ các trường, backend tự nạp từ file local khi chạy IntelliJ/Maven. Nhóm pull về vẫn cần bản cấu hình khóa riêng để dùng cổng VNPAY.
+- Backend vẫn tự nạp `application-local.properties` đã được Git ignore để ghi đè bằng merchant riêng. Mẫu `application-local.properties.example` dành cho người muốn đổi merchant. Nếu đặt VNPAY_SANDBOX_ENABLED=false hoặc cấu hình riêng không hợp lệ, chỉ ẩn phương thức VNPAY; backend và COD không bị chặn vì thiếu khóa. Không dùng khóa giả hoặc tham số trình duyệt để xác nhận thành công.
+- Mã website Sandbox có sẵn giá trị mặc định; Return URL mặc định `http://localhost:5174/thanh-toan-vnpay/ket-qua`, cho phép HTTP chỉ trên đúng loopback và cổng 5174. Các máy khác vẫn chạy frontend trên localhost của máy đó.
+
+- app.payment.vnpay.enabled mặc định true; connector chỉ hoạt động nếu có khóa ký hợp lệ. VNPAY_TMN_CODE, VNPAY_HASH_SECRET và VNPAY_RETURN_URL có thể ghi đè. Không đưa khóa ký vào frontend, log hoặc Git.
 - Payment URL được cố định https://sandbox.vnpayment.vn/paymentv2/vpcpay.html; QueryDr cố định https://sandbox.vnpayment.vn/merchant_webapi/api/transaction, không theo redirect.
-- VNPAY_RETURN_URL nhận HTTPS; riêng local cho phép đúng http://localhost:5174 hoặc http://127.0.0.1:5174 với đường dẫn /thanh-toan-vnpay/ket-qua khi VNPAY_ALLOW_LOCAL_RETURN=true. Mặc định không mở HTTP Return URL.
+- VNPAY_RETURN_URL nhận HTTPS; riêng local cho phép đúng http://localhost:5174 hoặc http://127.0.0.1:5174 với đường dẫn /thanh-toan-vnpay/ket-qua khi VNPAY_ALLOW_LOCAL_RETURN=true. Mặc định là Return URL localhost; không chấp nhận HTTP trên host khác.
 - VNPAY_SANDBOX_QUERY_ENABLED mặc định true, chỉ có hiệu lực khi merchant Sandbox đã bật và hợp lệ. VNPAY_QUERY_IP là địa chỉ IP server thực hiện truy vấn.
-- Local hiện đọc cấu hình từ D:/DATN_SD13/vnpay-sandbox-local.properties ngoài repository, launcher D:/DATN_SD13/vnpay-public-link-20261022/start-backend-vnpay.ps1. Không chạy SQL init hoặc sửa schema.
+- Máy local tự đọc application.properties và application-local.properties; launcher D:/DATN_SD13/vnpay-public-link-20261022/start-backend-vnpay.ps1 giữ cấu hình GHN riêng. Không chạy SQL init hoặc sửa schema.
 - Local chỉ dùng localhost/loopback; Cloudflare tunnel đã dừng. QueryDr xác nhận bằng kết nối đi tới VNPAY, không cần mở ứng dụng local ra Internet. Nhập thẻ diễn ra trên cổng VNPAY Sandbox chính thức.
 - Journal biên nhận đã xác nhận ở app.payment.demo.ledger-file ngoài Git/uploads; không lưu thẻ, mật khẩu hay OTP. Bản mới lưu cả request gốc để truy vết voucher, ghi chú và tùy chọn địa chỉ. Phiên chưa thanh toán còn trong bộ nhớ và hết hạn sau 5 phút. Hóa đơn đã ghi nằm trong DB, không phụ thuộc vòng đời của phiên.
 
@@ -36,6 +40,10 @@ Nguồn chính thức: https://sandbox.vnpayment.vn/apis/docs/thanh-toan-pay/pay
 Nếu kho CA của JDK không xác minh được chuỗi chứng chỉ Sandbox (PKIX path building failed), riêng client QueryDr thử lại bằng Windows-ROOT của hệ điều hành. Vẫn kiểm tra chứng chỉ hợp lệ và hostname, không dùng trust-all hoặc tắt TLS. Không đổi cấu hình TLS của các module khác.
 
 ## Ghi hóa đơn chính và khôi phục
+
+- Checkout luôn đọc giá chiến dịch từ CurrentPriceService: các chiến dịch cùng áp dụng lấy phần trăm giảm lớn nhất trên từng biến thể, không cộng dồn. Giá gốc vẫn giữ nguyên; trang checkout hiển thị giá gốc, giá sau giảm và số tiền giảm sản phẩm.
+- Mặc định backend tự chọn đúng một voucher hợp lệ giảm nhiều nhất cho khách và tiền hàng sau giảm sản phẩm. Khách có thể bấm Áp dụng phiếu này để đổi sang phiếu khác, hoặc trở lại Tự chọn phiếu giảm nhiều nhất. Backend kiểm tra điều kiện tối thiểu, thời hạn, lượt dùng và quyền dùng phiếu cá nhân cho mọi lựa chọn; không cộng nhiều voucher. Trùng mức giảm ưu tiên phiếu hết hạn sớm, rồi mã phiếu. Quote trả lại voucherCode và số tiền giảm đã chốt, frontend không tự tính giảm.
+- Trước khi tạo phiên thanh toán, backend kiểm tra lại giá, voucher và expectedTotal. Nếu thay đổi trong lúc lấy phí GHN, khách phải cập nhật tổng; không ký số tiền cũ. Journal giữ mã voucher đã chốt để ghi đúng hóa đơn sau xác nhận từ VNPAY, không chọn lại voucher mới sau khi khách trả tiền.
 
 - VnpayOrderService chỉ nhận PAID_SANDBOX được xác nhận qua IPN/QUERYDR; không chuyển kết quả OTP giả lập nội bộ thành hóa đơn. Khách hàng, sản phẩm, số lượng và tiền lấy từ journal server, không nhận từ callback client.
 - Khóa tạo hóa đơn chung với POS, khóa biến thể và kiểm tra tồn khả dụng. Mã SB và fingerprint được gắn trong lịch sử kỹ thuật, mã giao dịch VNPAY được gắn trong lịch sử thanh toán. Gửi callback/Return lặp không tạo hóa đơn, trừ kho hoặc dùng voucher lần hai.

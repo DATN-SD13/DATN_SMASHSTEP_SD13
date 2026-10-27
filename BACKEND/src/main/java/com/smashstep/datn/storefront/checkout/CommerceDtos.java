@@ -10,6 +10,9 @@ import java.util.List;
 
 public final class CommerceDtos {
     private CommerceDtos() {}
+    public record MapPoint(@NotNull @DecimalMin("-90") @DecimalMax("90") Double latitude,
+            @NotNull @DecimalMin("-180") @DecimalMax("180") Double longitude,
+            @PositiveOrZero @DecimalMax("100000") Double accuracy) {}
     public record Item(@NotNull @Positive Long variantId, @NotNull @Min(1) @Max(10000) Integer quantity) {
         @com.fasterxml.jackson.annotation.JsonCreator
         public static Item from(@com.fasterxml.jackson.annotation.JsonProperty("variantId") Long id,
@@ -39,7 +42,17 @@ public final class CommerceDtos {
             @Valid Receiver receiver, @Size(max=900) String note,
             @Pattern(regexp="[0-9a-fA-F-]{36}") String requestId,
             @DecimalMin("0") @Digits(integer=16,fraction=2) BigDecimal expectedTotal,
-            Boolean saveAddress, Boolean makeDefaultAddress) {
+            Boolean saveAddress, Boolean makeDefaultAddress,
+            @Valid @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL) MapPoint deliveryPoint,
+            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL) Boolean receiveOrderEmails) {
+        public Request(List<Item> items,String voucherCode,Long paymentMethodId,Receiver receiver,String note,
+                String requestId,BigDecimal expectedTotal,Boolean saveAddress,Boolean makeDefaultAddress,MapPoint deliveryPoint) {
+            this(items,voucherCode,paymentMethodId,receiver,note,requestId,expectedTotal,saveAddress,makeDefaultAddress,deliveryPoint,null);
+        }
+        public Request(List<Item> items,String voucherCode,Long paymentMethodId,Receiver receiver,String note,
+                String requestId,BigDecimal expectedTotal,Boolean saveAddress,Boolean makeDefaultAddress) {
+            this(items,voucherCode,paymentMethodId,receiver,note,requestId,expectedTotal,saveAddress,makeDefaultAddress,null);
+        }
         public Request(List<Item> items, String voucherCode, Long paymentMethodId, Receiver receiver,
                 String note, String requestId, BigDecimal expectedTotal) {
             this(items,voucherCode,paymentMethodId,receiver,note,requestId,expectedTotal,false,false);
@@ -49,7 +62,9 @@ public final class CommerceDtos {
             @NotBlank @Size(max=100) String ward) {}
     public record Location(Integer provinceId, String province, String wardCode, String ward,
             boolean resolved, String message) {}
-    public record Shipping(@NotNull @Valid Receiver receiver, @Size(max=900) String note) {}
+    public record Shipping(@NotNull @Valid Receiver receiver, @Size(max=900) String note,@Valid MapPoint deliveryPoint) {
+        public Shipping(Receiver receiver,String note){this(receiver,note,null);}
+    }
     public record Variant(Long variantId, Long productId, String name, String sku, String color,
             String size, String image, int stock, BigDecimal giaGoc, BigDecimal giaSauGiam,
             BigDecimal phanTramGiam, boolean dangGiamGia, boolean available) {}
@@ -69,6 +84,14 @@ public final class CommerceDtos {
             BigDecimal shipping,
             @com.fasterxml.jackson.annotation.JsonFormat(shape=com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
             BigDecimal total, boolean editable, List<OrderItem> items, List<Event> history,
-            String paymentMethodCode, boolean shippingEditable) {}
+            String paymentMethodCode, boolean shippingEditable, MapPoint deliveryPoint) {
+        public Order(String code,Integer status,String statusLabel,LocalDateTime createdAt,LocalDateTime updatedAt,
+                String receiverName,String phone,String address,String paymentMethod,String note,BigDecimal subtotal,
+                BigDecimal discount,BigDecimal shipping,BigDecimal total,boolean editable,List<OrderItem> items,
+                List<Event> history,String paymentMethodCode,boolean shippingEditable) {
+            this(code,status,statusLabel,createdAt,updatedAt,receiverName,phone,address,paymentMethod,note,subtotal,discount,
+                    shipping,total,editable,items,history,paymentMethodCode,shippingEditable,null);
+        }
+    }
     public record Notice(String id, String title, String message, String href, LocalDateTime at) {}
 }

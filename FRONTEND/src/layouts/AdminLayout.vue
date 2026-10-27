@@ -1,11 +1,13 @@
 <script setup>
-import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
+import { computed, ref, onMounted, onUnmounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import api from '../utils/api'
+import { avatarUrl } from '../utils/avatar'
 import { showError, showSuccess } from '../utils/feedback'
 import NhanCaModal from '../modules/admin/schedule/components/NhanCaModal.vue'
 import KetThucCaModal from '../modules/admin/schedule/components/KetThucCaModal.vue'
+import AdminAiWidget from '../modules/admin/admin-ai/components/AdminAiWidget.vue'
 
 const route     = useRoute()
 const router    = useRouter()
@@ -26,6 +28,10 @@ const userAvatarInitials = computed(() => {
   const name = authStore.user?.name || ''
   return name.split(' ').slice(-2).map(w => w[0]).join('').toUpperCase() || 'NV'
 })
+
+const avatarFailed = ref(false)
+const userAvatarUrl = computed(() => avatarUrl(authStore.user?.avatar))
+watch(userAvatarUrl, () => { avatarFailed.value = false })
 
 const userName = computed(() => authStore.user?.name || 'Nhân viên')
 
@@ -284,6 +290,28 @@ const formatMoney = (amount) => {
   }).format(amount) + 'đ'
 }
 
+let sessionTimer
+const refreshPermission = () => {
+  if (document.visibilityState === 'hidden' || !authStore.isAuthenticated) return
+  authStore.refreshSession().catch(() => {})
+}
+onMounted(() => {
+  refreshPermission()
+  sessionTimer = window.setInterval(refreshPermission, 10000)
+  window.addEventListener('focus', refreshPermission)
+  document.addEventListener('visibilitychange', refreshPermission)
+})
+onBeforeUnmount(() => {
+  clearInterval(sessionTimer)
+  window.removeEventListener('focus', refreshPermission)
+  document.removeEventListener('visibilitychange', refreshPermission)
+})
+watch(() => [authStore.role, route.fullPath], () => {
+  if (authStore.isAuthenticated && route.meta?.role && route.meta.role !== authStore.role)
+    router.replace(authStore.isAdmin ? '/thong-ke-tong-hop' : '/ban-hang')
+})
+
+
 // Menu quản trị cửa hàng
 const nav = [
   { label: 'Thống kê tổng hợp', icon: 'bi-bar-chart-line', to: '/thong-ke-tong-hop', adminOnly: true },
@@ -317,6 +345,7 @@ const nav = [
     ]
   },
   { label: 'Quản lý khách hàng', icon: 'bi-people', to: '/khach-hang' },
+  { label: 'Hỗ trợ trực tuyến', icon: 'bi-chat-dots', to: '/ho-tro-truc-tuyen' },
   { label: 'Quản lý nhân viên', icon: 'bi-person-badge', to: '/nhan-vien', adminOnly: true },
   {
     key: 'schedule', label: 'Quản lý lịch làm', icon: 'bi-calendar-week', adminOnly: true,
@@ -432,7 +461,10 @@ const crumbs = computed(() => ({
           <!-- User dropdown -->
           <div class="user-wrap" v-click-outside="closeUserMenu">
             <button type="button" class="pill user" @click="toggleUserMenu">
-              <span class="avatar">{{ userAvatarInitials }}</span>
+              <span class="avatar">
+                <img v-if="userAvatarUrl && !avatarFailed" :src="userAvatarUrl" alt="Ảnh đại diện" @error="avatarFailed = true" />
+                <span v-else>{{ userAvatarInitials }}</span>
+              </span>
               <span class="user-name">{{ userName }}</span>
               <i class="bi bi-chevron-down" :class="{ 'chev-up': showUserMenu }"></i>
             </button>
@@ -456,6 +488,8 @@ const crumbs = computed(() => ({
       <slot />
     </section>
   </div>
+
+  <AdminAiWidget v-if="authStore.isAdmin" />
 
   <!-- Panel ca làm việc hôm nay -->
   <Teleport to="body">
@@ -885,7 +919,8 @@ const crumbs = computed(() => ({
 }
 .bell:hover { border-color: var(--ss-primary); }
 .user { height: 40px; padding: 0 12px 0 6px; }
-.avatar { width: 30px; height: 30px; border-radius: 50%; background: var(--ss-primary-soft); color: var(--ss-primary); display: grid; place-items: center; font-size: 10.5px; font-weight: 700; }
+.avatar img { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: inherit; }
+.avatar { overflow: hidden; flex-shrink: 0; width: 30px; height: 30px; border-radius: 50%; background: var(--ss-primary-soft); color: var(--ss-primary); display: grid; place-items: center; font-size: 10.5px; font-weight: 700; }
 .user .bi { font-size: 10px; color: var(--ss-muted); }
 
 /* ── User dropdown ──────────────────────────────────────── */

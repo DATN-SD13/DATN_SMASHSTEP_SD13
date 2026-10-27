@@ -4,7 +4,8 @@ import { ref } from 'vue'
 import AvatarCard from '../../../../components/AvatarCard.vue'
 import { persistAvatar } from '../../../../utils/avatar'
 import customerService from '../services/customerService'
-import { showSuccess, showError } from '../../../../utils/feedback'
+import { confirmAction, showSuccess, showError } from '../../../../utils/feedback'
+import { accountRequestError } from '../../../../utils/accountValidation'
 
 const props = defineProps({
   customer: {
@@ -37,6 +38,9 @@ const errorMessage = (e) =>
 async function save() {
   if (saving.value) return
   const v = f.value
+  const validate = () => accountRequestError({ method: 'put', url: '/khach-hang/' + encodeURIComponent(props.customer.code), data: { ...v, gender: v.gender === '' ? null : Number(v.gender) } })
+  const validationError = validate()
+  if (validationError) { err.value = validationError; showError(validationError); return }
 
   if (!v.name.trim() || !v.email.trim()) {
     err.value = 'Vui lòng nhập họ tên và email.'
@@ -66,6 +70,10 @@ async function save() {
     return
   }
 
+  confirmAction('Xác nhận lưu thay đổi khách hàng?', async () => {
+  if (saving.value) return
+  const latestError = validate()
+  if (latestError) { err.value = latestError; showError(latestError); return }
   saving.value = true
   err.value = ''
 
@@ -97,13 +105,14 @@ async function save() {
   } finally {
     saving.value = false
   }
+  })
 }
 </script>
 
 <template>
   <div
     class="modal-mask"
-    @click.self="$emit('close')"
+    @click.self="!saving && $emit('close')"
   >
     <section class="modal-card">
       <div class="modal-head">
@@ -114,13 +123,14 @@ async function save() {
 
         <button
           class="ss-icon-btn"
+          :disabled="saving"
           @click="$emit('close')"
         >
           <i class="bi bi-x-lg"></i>
         </button>
       </div>
 
-      <div class="edit-layout">
+      <fieldset class="edit-layout" :disabled="saving">
         <AvatarCard
           v-model:image="f.image"
           :disabled="saving"
@@ -172,7 +182,7 @@ async function save() {
                 Giới tính
               </label>
 
-              <span class="khach-hang-select-field"><Select2KhachHang :allow-clear="false" aria-label="Giới tính" v-model="f.gender">
+              <span class="khach-hang-select-field"><Select2KhachHang :disabled="saving" :allow-clear="false" aria-label="Giới tính" v-model="f.gender">
                 <option value="">
                   -- Chọn --
                 </option>
@@ -233,7 +243,7 @@ async function save() {
             </button>
           </div>
         </div>
-      </div>
+      </fieldset>
     </section>
   </div>
 </template>
@@ -277,6 +287,10 @@ async function save() {
 }
 
 .edit-layout {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
   display: flex;
   gap: 22px;
   align-items: flex-start;

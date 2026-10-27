@@ -41,6 +41,8 @@ public class LichLamViecService {
     private final LichLamViecRepository lichLamViecRepository;
     private final CaLamViecRepository   caLamViecRepository;
     private final NhanVienRepository    nhanVienRepository;
+    private final com.smashstep.datn.product.service.KhoaGhiSanPham khoaGhi;
+    private final LichLamViecImportService nhapExcel;
 
     private static final DateTimeFormatter DATE_FMT     = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final DateTimeFormatter DATETIME_FMT = DateTimeFormatter.ofPattern("HH:mm\ndd/MM/yyyy");
@@ -66,8 +68,7 @@ public class LichLamViecService {
     // ── Ca hôm nay của nhân viên ──────────────────────────
     public List<LichLamViecResponse> getCaHomNay(Long nhanVienId) {
         LocalDate today = LocalDate.now();
-        return lichLamViecRepository.findCaHomNayCuaNhanVien(nhanVienId, today)
-                .stream()
+        return lichLamViecRepository.findForEmployee(nhanVienId,today,today).stream()
                 .map(l -> toResponse(l, false))
                 .toList();
     }
@@ -82,7 +83,7 @@ public class LichLamViecService {
     public com.smashstep.datn.schedule.dto.GiaoCaResponse getCaSapBatDau(Long nhanVienId) {
         LocalDate today   = LocalDate.now();
         LocalTime nowTime = LocalTime.now();
-        
+
         // Tìm ca hôm nay chưa nhận (trangThai 0 hoặc 4):
         // - Ca sắp bắt đầu: gioBatDau trong khoảng (now - 30 phút) đến (now + 15 phút)
         // - Cho phép hiện thông báo cho cả ca đã bắt đầu nhưng chưa xác nhận (trễ tối đa 30 phút)
@@ -99,23 +100,23 @@ public class LichLamViecService {
         if (caList.isEmpty()) return null;
 
         LichLamViec ca      = caList.get(0);
-        
+
         // Native query không auto-load associations, phải load thủ công
         CaLamViec caEntity  = ca.getIdCaLamViec();
         if (caEntity == null) {
             log.warn("[GiaoCa] Ca entity is null for lich {}", ca.getId());
             return null;
         }
-        
+
         // Trigger lazy loading trong transaction để tránh LazyInitializationException
         String tenCa = caEntity.getTenCa();
         LocalTime gioBatDau = caEntity.getGioBatDau();
         LocalTime gioKetThuc = caEntity.getGioKetThuc();
-        
+
         if (ca.getIdNhanVien() != null) {
             ca.getIdNhanVien().getTenNhanVien(); // touch để load
         }
-        
+
         log.debug("[GiaoCa] Ca entity loaded: {}, gioBD={}", tenCa, gioBatDau);
 
         // Tìm ca liền trước của nhân viên này
@@ -190,44 +191,44 @@ public class LichLamViecService {
     @Transactional(readOnly = true)
     public com.smashstep.datn.schedule.dto.KetThucCaResponse getCaDangLam(Long nhanVienId) {
         LocalDate today = LocalDate.now();
-        
+
         // Tìm ca đang làm (trangThai = 1) hôm nay
         List<LichLamViec> caList = lichLamViecRepository.findCaHomNayCuaNhanVien(nhanVienId, today)
                 .stream()
                 .filter(ca -> Integer.valueOf(1).equals(ca.getTrangThai()))
                 .toList();
-        
+
         if (caList.isEmpty()) return null;
-        
+
         LichLamViec ca = caList.get(0);
         CaLamViec caEntity = ca.getIdCaLamViec();
-        
+
         if (caEntity == null) return null;
-        
+
         // Eager load
         String tenCa = caEntity.getTenCa();
         LocalTime gioBatDau = caEntity.getGioBatDau();
         LocalTime gioKetThuc = caEntity.getGioKetThuc();
-        
+
         // Tính thời gian ca
         LocalDate ngayCa = ca.getNgayLam();
         LocalDateTime batDau = ngayCa.atTime(gioBatDau);
         LocalDate ngayKT = gioKetThuc.isBefore(gioBatDau) ? ngayCa.plusDays(1) : ngayCa;
         LocalDateTime ketThuc = ngayKT.atTime(gioKetThuc);
-        
-        log.info("[KetThucCa] Calculating revenue for nhanVienId={}, batDau={}, now={}", 
-                 nhanVienId, batDau, LocalDateTime.now());
-        
+
+        log.info("[KetThucCa] Calculating revenue for nhanVienId={}, batDau={}, now={}",
+                nhanVienId, batDau, LocalDateTime.now());
+
         // Tính doanh thu trong ca
         BigDecimal tienMat = lichLamViecRepository.tinhDoanhThuTienMat(nhanVienId, batDau, LocalDateTime.now());
         BigDecimal chuyenKhoan = lichLamViecRepository.tinhDoanhThuChuyenKhoan(nhanVienId, batDau, LocalDateTime.now());
-        
+
         log.info("[KetThucCa] Revenue calculated - tienMat={}, chuyenKhoan={}", tienMat, chuyenKhoan);
-        
+
         tienMat = tienMat != null ? tienMat : BigDecimal.ZERO;
         chuyenKhoan = chuyenKhoan != null ? chuyenKhoan : BigDecimal.ZERO;
         BigDecimal tongTien = tienMat.add(chuyenKhoan);
-        
+
         return com.smashstep.datn.schedule.dto.KetThucCaResponse.builder()
                 .lichLamViecId(ca.getId())
                 .tenCa(tenCa)
@@ -243,7 +244,7 @@ public class LichLamViecService {
                 .ghiChuKetCa(ca.getGhiChu())
                 .build();
     }
-    
+
     // ── Xác nhận kết thúc ca ─────────────────────────────────
     /**
      * Kết thúc ca làm việc - chuyển trangThai → 3 (Đã kết thúc).
@@ -252,23 +253,23 @@ public class LichLamViecService {
     public LichLamViecResponse ketThucCa(Long id, com.smashstep.datn.schedule.dto.KetThucCaRequest request) {
         LichLamViec llv = lichLamViecRepository.findById(id)
                 .orElseThrow(() -> AppException.notFound("Không tìm thấy lịch làm việc"));
-        
+
         // Kiểm tra ca đang làm
         if (!Integer.valueOf(1).equals(llv.getTrangThai())) {
             throw AppException.badRequest("Chỉ có thể kết thúc ca đang làm (trangThai = 1)");
         }
-        
+
         // Cập nhật trạng thái và ghi chú
         llv.setTrangThai(3);  // Đã kết thúc
         if (request.getGhiChuKetCa() != null && !request.getGhiChuKetCa().trim().isEmpty()) {
             String ghiChuCu = llv.getGhiChu() != null ? llv.getGhiChu() : "";
-            String ghiChuMoi = ghiChuCu.isEmpty() 
-                ? "Kết ca: " + request.getGhiChuKetCa()
-                : ghiChuCu + " | Kết ca: " + request.getGhiChuKetCa();
+            String ghiChuMoi = ghiChuCu.isEmpty()
+                    ? "Kết ca: " + request.getGhiChuKetCa()
+                    : ghiChuCu + " | Kết ca: " + request.getGhiChuKetCa();
             llv.setGhiChu(ghiChuMoi);
         }
         llv.setNgayCapNhat(LocalDateTime.now());
-        
+
         return toResponse(lichLamViecRepository.save(llv), false);
     }
 
@@ -311,46 +312,51 @@ public class LichLamViecService {
     // ── Tạo mới ────────────────────────────────────────────
     @Transactional
     public List<LichLamViecResponse> create(LichLamViecRequest request) {
-        CaLamViec ca = caLamViecRepository.findById(request.getCaLamViecId())
-                .orElseThrow(() -> AppException.notFound("Không tìm thấy ca làm việc"));
-
-        if (!Integer.valueOf(1).equals(ca.getTrangThai())) {
-            throw AppException.badRequest("Ca làm việc đã ngừng hoạt động");
+        khoaGhi.khoa("schedule");
+        if(request==null||request.getNgayLam()==null||request.getMaNhanViens()==null||request.getMaNhanViens().isEmpty()||request.getMaNhanViens().size()>100)
+            throw AppException.badRequest("Cần ngày làm và từ 1 đến 100 nhân viên");
+        if(request.getGhiChu()!=null&&request.getGhiChu().length()>500)throw AppException.badRequest("Ghi chú tối đa 500 ký tự");
+        CaLamViec ca=caLamViecRepository.findById(request.getCaLamViecId()).orElseThrow(()->AppException.notFound("Không tìm thấy ca làm việc"));
+        if(!Integer.valueOf(1).equals(ca.getTrangThai()))throw AppException.badRequest("Ca làm việc đã ngừng hoạt động");
+        QuyTacLichLamViec.khoang(request.getNgayLam(),ca);
+        var seen=new java.util.HashSet<Long>();var staff=new ArrayList<NhanVien>();
+        for(String code:request.getMaNhanViens()){
+            if(code==null||code.isBlank()||code.length()>50)throw AppException.badRequest("Mã nhân viên không hợp lệ");
+            var nv=nhanVienRepository.findByMaNhanVien(code.trim()).orElseThrow(()->AppException.notFound("Không tìm thấy nhân viên: "+code));
+            if(!Integer.valueOf(1).equals(nv.getTrangThai()))throw AppException.badRequest("Nhân viên "+code+" đang bị khóa");
+            if(!seen.add(nv.getId()))throw AppException.badRequest("Nhân viên bị lặp trong yêu cầu phân ca");
+            if(chongLich(nv.getId(),request.getNgayLam(),ca))throw AppException.conflict("Nhân viên "+code+" đã có lịch trùng ca hoặc chồng giờ (kể cả ca qua đêm)");
+            staff.add(nv);
         }
-
-        List<LichLamViecResponse> results = new ArrayList<>();
-
-        for (String maNv : request.getMaNhanViens()) {
-            NhanVien nv = nhanVienRepository.findByMaNhanVien(maNv)
-                    .orElseThrow(() -> AppException.notFound("Không tìm thấy nhân viên: " + maNv));
-
-            if (!Integer.valueOf(1).equals(nv.getTrangThai())) {
-                throw AppException.badRequest("Nhân viên " + maNv + " đang bị khóa");
-            }
-
-            if (lichLamViecRepository.existsByIdNhanVien_MaNhanVienAndIdCaLamViec_IdAndNgayLam(
-                    maNv, ca.getId(), request.getNgayLam())) {
-                throw AppException.conflict("Nhân viên " + maNv + " đã có lịch trong ca này ngày " + request.getNgayLam());
-            }
-
-            LichLamViec llv = new LichLamViec();
-            llv.setIdNhanVien(nv);
-            llv.setIdCaLamViec(ca);
-            llv.setNgayLam(request.getNgayLam());
-            llv.setTrangThai(0);
-            llv.setGhiChu(request.getGhiChu());
-            llv.setNgayTao(LocalDateTime.now());
-            llv.setNgayCapNhat(LocalDateTime.now());
-
-            results.add(toResponse(lichLamViecRepository.save(llv), false));
+        var results=new ArrayList<LichLamViecResponse>();var now=LocalDateTime.now();
+        for(var nv:staff){
+            var row=new LichLamViec();row.setIdNhanVien(nv);row.setIdCaLamViec(ca);row.setNgayLam(request.getNgayLam());row.setTrangThai(0);
+            row.setGhiChu(request.getGhiChu());row.setNgayTao(now);row.setNgayCapNhat(now);
+            results.add(toResponse(lichLamViecRepository.save(row),false));
         }
-
         return results;
+    }
+    private boolean chongLich(Long employee,LocalDate date,CaLamViec ca){
+        return lichLamViecRepository.findForEmployee(employee,date.minusDays(1),date.plusDays(1)).stream()
+                .anyMatch(row->QuyTacLichLamViec.chong(date,ca,row));
+    }
+    @Transactional
+    public LichLamViecResponse thayNhanVien(Long id,String code){
+        khoaGhi.khoa("schedule");
+        var old=lichLamViecRepository.findById(id).orElseThrow(()->AppException.notFound("Không tìm thấy lịch cần thay"));
+        if(old.getTrangThai()==null||old.getTrangThai()>1)throw AppException.conflict("Chỉ thay nhân viên của lịch chưa kết thúc/chưa đánh dấu vắng mặt");
+        if(code==null||code.isBlank()||code.length()>50)throw AppException.badRequest("Cần mã nhân viên thay thế hợp lệ");
+        var req=new LichLamViecRequest();req.setMaNhanViens(List.of(code));req.setCaLamViecId(old.getIdCaLamViec().getId());req.setNgayLam(old.getNgayLam());
+        req.setGhiChu("Thay thế "+old.getIdNhanVien().getMaNhanVien());
+        var result=create(req).get(0);lichLamViecRepository.delete(old);lichLamViecRepository.flush();return result;
     }
 
     // ── Cập nhật trạng thái ────────────────────────────────
     @Transactional
     public LichLamViecResponse updateTrangThai(Long id, CapNhatTrangThaiRequest request) {
+        khoaGhi.khoa("schedule");
+        if(request==null||request.getTrangThai()==null)throw AppException.badRequest("Cần trạng thái hợp lệ");
+        if(request.getGhiChu()!=null&&request.getGhiChu().length()>500)throw AppException.badRequest("Ghi chú tối đa 500 ký tự");
         LichLamViec llv = lichLamViecRepository.findById(id)
                 .orElseThrow(() -> AppException.notFound("Không tìm thấy lịch làm việc"));
 
@@ -368,6 +374,7 @@ public class LichLamViecService {
     // ── Xóa ───────────────────────────────────────────────
     @Transactional
     public void delete(Long id) {
+        khoaGhi.khoa("schedule");
         LichLamViec llv = lichLamViecRepository.findById(id)
                 .orElseThrow(() -> AppException.notFound("Không tìm thấy lịch làm việc"));
         lichLamViecRepository.delete(llv);
@@ -381,6 +388,7 @@ public class LichLamViecService {
      */
     @Transactional
     public Map<String, Object> xepCaTuDong(LocalDate tuNgay, LocalDate denNgay) {
+        khoaGhi.khoa("schedule");QuyTacLichLamViec.khoangNgay(tuNgay,denNgay);
         List<NhanVien> nhanViens = nhanVienRepository.findAll().stream()
                 .filter(nv -> Integer.valueOf(1).equals(nv.getTrangThai()))
                 .toList();
@@ -401,8 +409,7 @@ public class LichLamViecService {
                 CaLamViec ca = caLamViecs.get(caIdx % caLamViecs.size());
                 caIdx++;
 
-                if (lichLamViecRepository.existsByIdNhanVien_MaNhanVienAndIdCaLamViec_IdAndNgayLam(
-                        nv.getMaNhanVien(), ca.getId(), ngay)) {
+                if (chongLich(nv.getId(), ngay, ca)) {
                     skipped++;
                     continue;
                 }
@@ -423,7 +430,8 @@ public class LichLamViecService {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("daTao", created);
         result.put("boBua", skipped);
-        result.put("thongBao", "Xếp ca tự động hoàn tất: tạo " + created + " lịch, bỏ qua " + skipped + " (đã tồn tại).");
+        result.put("boQua", skipped);
+        result.put("thongBao", "Xếp ca tự động hoàn tất: tạo " + created + " lịch, bỏ qua " + skipped + " (đã tồn tại hoặc chồng giờ).");
         return result;
     }
 
@@ -496,12 +504,12 @@ public class LichLamViecService {
             // Header row
             // Cột: A=maNhanVien, B=tenNhanVien(auto), C=maCa, D=tenCa(auto), E=ngayLam, F=ghiChu
             String[] headers = {
-                "Mã nhân viên (*)",
-                "Tên nhân viên (tự động)",
-                "Mã ca (*)",
-                "Tên ca (tự động)",
-                "Ngày làm dd/MM/yyyy (*)",
-                "Ghi chú"
+                    "maNhanVien (*)",
+                    "Tên nhân viên (tự động)",
+                    "maCa (*)",
+                    "Tên ca (tự động)",
+                    "ngayLam yyyy-MM-dd (*)",
+                    "ghiChu"
             };
             int[] colWidths = {5000, 8000, 4000, 9000, 7000, 7000};
             Row headerRow = sheet.createRow(0);
@@ -517,53 +525,57 @@ public class LichLamViecService {
             int nvCount  = nhanViens.size();
             int caCount  = cas.size();
 
-            // Style ngày — định dạng dd/MM/yyyy
-            CellStyle dateStyle = wb.createCellStyle();
-            dateStyle.cloneStyleFrom(dStyle);
-            CreationHelper createHelper = wb.getCreationHelper();
-            dateStyle.setDataFormat(createHelper.createDataFormat().getFormat("dd/MM/yyyy"));
-
-            // Sheet LichLamViec: tạo sẵn VLOOKUP cho cột B và D để tự hiện tên.
-            // Cột A, C, E, F để trống để người dùng nhập.
+            // Chuẩn bị dòng trống và VLOOKUP cho tối đa maxRows dòng
+            // No prefilled employee, shift or date in the blank template.
             for (int r = 1; r <= maxRows; r++) {
                 Row row = sheet.createRow(r);
 
-                row.createCell(0).setCellStyle(dStyle); // A — maNhanVien (người dùng nhập)
+                // Cột A — maNhanVien: người dùng chọn từ danh sách
+                Cell cellA = row.createCell(0);
+                cellA.setCellStyle(dStyle);
 
                 // B — tenNhanVien: tự hiện theo mã NV ở cột A
                 Cell cellB = row.createCell(1);
                 if (nvCount > 0) {
                     cellB.setCellFormula(
-                        "IF(A" + (r + 1) + "=\"\",\"\","
-                        + "IFERROR(VLOOKUP(A" + (r + 1) + ",_NhanVien!$A:$B,2,0),\"Không tìm thấy\"))"
+                            "IF(A" + (r+1) + "=\"\",\"\","
+                                    + "IFERROR(VLOOKUP(A" + (r+1) + ",_NhanVien!$A:$B,2,0),\"Không tìm thấy\"))"
                     );
                 }
                 cellB.setCellStyle(dStyle);
 
-                row.createCell(2).setCellStyle(dStyle); // C — maCa (người dùng nhập)
+                // Cột C — maCa: người dùng chọn từ danh sách
+                Cell cellC = row.createCell(2);
+                cellC.setCellStyle(dStyle);
 
                 // D — tenCa: tự hiện theo mã ca ở cột C
                 Cell cellD = row.createCell(3);
                 if (caCount > 0) {
                     cellD.setCellFormula(
-                        "IF(C" + (r + 1) + "=\"\",\"\","
-                        + "IFERROR(VLOOKUP(C" + (r + 1) + ",_CaLamViec!$A:$B,2,0),\"Không tìm thấy\"))"
+                            "IF(C" + (r+1) + "=\"\",\"\","
+                                    + "IFERROR(VLOOKUP(C" + (r+1) + ",_CaLamViec!$A:$B,2,0),\"Không tìm thấy\"))"
                     );
                 }
                 cellD.setCellStyle(dStyle);
 
-                row.createCell(4).setCellStyle(dateStyle); // E — ngayLam (người dùng nhập)
-                row.createCell(5).setCellStyle(dStyle);    // F — ghiChu
+                // Cột E — ngayLam: người dùng nhập ngày làm
+                Cell cellE = row.createCell(4);
+                // Leave the date empty; no example assignment is saved accidentally.
+                cellE.setCellStyle(dStyle);
+
+                // Cột F — ghiChu
+                Cell cellF = row.createCell(5);
+                cellF.setCellStyle(dStyle);
             }
 
             // Data validation — dropdown maNhanVien (cột A)
             if (nvCount > 0) {
                 org.apache.poi.ss.util.CellRangeAddressList nvRange =
-                    new org.apache.poi.ss.util.CellRangeAddressList(1, maxRows, 0, 0);
+                        new org.apache.poi.ss.util.CellRangeAddressList(1, maxRows, 0, 0);
                 org.apache.poi.xssf.usermodel.XSSFDataValidationHelper dvHelper =
-                    new org.apache.poi.xssf.usermodel.XSSFDataValidationHelper((org.apache.poi.xssf.usermodel.XSSFSheet) sheet);
+                        new org.apache.poi.xssf.usermodel.XSSFDataValidationHelper((org.apache.poi.xssf.usermodel.XSSFSheet) sheet);
                 org.apache.poi.ss.usermodel.DataValidationConstraint nvConstraint =
-                    dvHelper.createFormulaListConstraint("_NhanVien!$A$1:$A$" + nvCount);
+                        dvHelper.createFormulaListConstraint("_NhanVien!$A$1:$A$" + nvCount);
                 org.apache.poi.ss.usermodel.DataValidation nvDv = dvHelper.createValidation(nvConstraint, nvRange);
                 nvDv.setShowErrorBox(true);
                 nvDv.createErrorBox("Lỗi", "Mã nhân viên không hợp lệ. Vui lòng chọn từ danh sách.");
@@ -573,11 +585,11 @@ public class LichLamViecService {
             // Data validation — dropdown maCa (cột C)
             if (caCount > 0) {
                 org.apache.poi.ss.util.CellRangeAddressList caRange =
-                    new org.apache.poi.ss.util.CellRangeAddressList(1, maxRows, 2, 2);
+                        new org.apache.poi.ss.util.CellRangeAddressList(1, maxRows, 2, 2);
                 org.apache.poi.xssf.usermodel.XSSFDataValidationHelper dvHelper =
-                    new org.apache.poi.xssf.usermodel.XSSFDataValidationHelper((org.apache.poi.xssf.usermodel.XSSFSheet) sheet);
+                        new org.apache.poi.xssf.usermodel.XSSFDataValidationHelper((org.apache.poi.xssf.usermodel.XSSFSheet) sheet);
                 org.apache.poi.ss.usermodel.DataValidationConstraint caConstraint =
-                    dvHelper.createFormulaListConstraint("_CaLamViec!$A$1:$A$" + caCount);
+                        dvHelper.createFormulaListConstraint("_CaLamViec!$A$1:$A$" + caCount);
                 org.apache.poi.ss.usermodel.DataValidation caDv = dvHelper.createValidation(caConstraint, caRange);
                 caDv.setShowErrorBox(true);
                 caDv.createErrorBox("Lỗi", "Mã ca không hợp lệ. Vui lòng chọn từ danh sách.");
@@ -624,12 +636,12 @@ public class LichLamViecService {
 
             // Mô tả cột
             String[][] colDesc = {
-                {"Mã nhân viên (*)",        "Bắt buộc. Chọn từ dropdown hoặc nhập mã nhân viên."},
-                {"Tên nhân viên (tự động)", "Không cần nhập. Tự hiện sau khi nhập đúng mã."},
-                {"Mã ca (*)",               "Bắt buộc. Chọn từ dropdown hoặc nhập mã ca làm việc."},
-                {"Tên ca (tự động)",        "Không cần nhập. Tự hiện sau khi nhập đúng mã ca."},
-                {"Ngày làm (*)",            "Bắt buộc. Định dạng dd/MM/yyyy, ví dụ: " + LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))},
-                {"Ghi chú",                "Tuỳ chọn. Mô tả thêm nếu cần."},
+                    {"Mã nhân viên (*)",        "Bắt buộc. Chọn từ dropdown hoặc nhập mã nhân viên."},
+                    {"Tên nhân viên (tự động)", "Không cần nhập. Tự hiện sau khi nhập đúng mã."},
+                    {"Mã ca (*)",               "Bắt buộc. Chọn từ dropdown hoặc nhập mã ca làm việc."},
+                    {"Tên ca (tự động)",        "Không cần nhập. Tự hiện sau khi nhập đúng mã ca."},
+                    {"Ngày làm (*)",            "Bắt buộc. Định dạng dd/MM/yyyy, ví dụ: " + LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))},
+                    {"Ghi chú",                "Tuỳ chọn. Mô tả thêm nếu cần."},
             };
 
             Font boldSm = wb.createFont(); boldSm.setBold(true);
@@ -649,10 +661,10 @@ public class LichLamViecService {
             noteTitle.setCellStyle(boldStyle);
 
             String[] notes = {
-                "• Không thay đổi tên sheet 'LichLamViec' và không xóa dòng tiêu đề.",
-                "• Dòng đã có lịch trùng ca + ngày sẽ bị bỏ qua (không báo lỗi).",
-                "• Nếu tên NV / tên ca hiện 'Không tìm thấy' nghĩa là mã không đúng.",
-                "• Hỗ trợ tối đa 500 dòng mỗi lần import.",
+                    "• Không thay đổi tên sheet 'LichLamViec' và không xóa dòng tiêu đề.",
+                    "• Dòng đã có lịch trùng ca + ngày sẽ bị bỏ qua (không báo lỗi).",
+                    "• Nếu tên NV / tên ca hiện 'Không tìm thấy' nghĩa là mã không đúng.",
+                    "• Hỗ trợ tối đa 500 dòng mỗi lần import.",
             };
             for (String note : notes) {
                 guide.createRow(row++).createCell(0).setCellValue(note);
@@ -705,101 +717,10 @@ public class LichLamViecService {
     // ── Import Excel ───────────────────────────────────────
     @Transactional
     public Map<String, Object> importExcel(MultipartFile file) throws IOException {
-        if (file.isEmpty()) throw AppException.badRequest("File không được để trống");
-
-        int created = 0, skipped = 0, errors = 0;
-        List<String> errorMessages = new ArrayList<>();
-
-        try (Workbook wb = WorkbookFactory.create(file.getInputStream())) {
-            Sheet sheet = wb.getSheet("LichLamViec");
-            if (sheet == null) sheet = wb.getSheetAt(0);
-
-            for (int i = 1; i <= sheet.getLastRowNum(); i++) {
-                Row row = sheet.getRow(i);
-                if (row == null) continue;
-
-                String maNv    = cellStr(row.getCell(0));  // cột A
-                String maCa    = cellStr(row.getCell(2));  // cột C
-                String ngayStr = cellStr(row.getCell(4));  // cột E
-                String ghiChu  = cellStr(row.getCell(5));  // cột F
-
-                // Bỏ qua dòng trống hoàn toàn (chưa nhập dữ liệu)
-                if (maNv.isEmpty() && maCa.isEmpty() && ngayStr.isEmpty()) continue;
-
-                // Báo lỗi nếu thiếu 1 trong 3 field bắt buộc
-                if (maNv.isEmpty() || maCa.isEmpty() || ngayStr.isEmpty()) {
-                    errorMessages.add("Dòng " + (i + 1) + ": thiếu dữ liệu bắt buộc"
-                        + (maNv.isEmpty() ? " (mã nhân viên)" : "")
-                        + (maCa.isEmpty() ? " (mã ca)" : "")
-                        + (ngayStr.isEmpty() ? " (ngày làm)" : ""));
-                    errors++;
-                    continue;
-                }
-
-                LocalDate ngayLam;
-                try {
-                    String s = ngayStr.trim();
-                    if (s.contains("/")) {
-                        ngayLam = LocalDate.parse(s, DateTimeFormatter.ofPattern("dd/MM/yyyy"));
-                    } else {
-                        ngayLam = LocalDate.parse(s, DateTimeFormatter.ISO_LOCAL_DATE);
-                    }
-                } catch (DateTimeParseException e) {
-                    errorMessages.add("Dòng " + (i + 1) + ": ngày '" + ngayStr + "' không đúng định dạng dd/MM/yyyy");
-                    errors++;
-                    continue;
-                }
-
-                NhanVien nv = nhanVienRepository.findByMaNhanVien(maNv.trim()).orElse(null);
-                if (nv == null) {
-                    errorMessages.add("Dòng " + (i + 1) + ": không tìm thấy nhân viên '" + maNv + "'");
-                    errors++;
-                    continue;
-                }
-                if (!Integer.valueOf(1).equals(nv.getTrangThai())) {
-                    errorMessages.add("Dòng " + (i + 1) + ": nhân viên '" + maNv + "' đang bị khóa");
-                    errors++;
-                    continue;
-                }
-
-                CaLamViec ca = caLamViecRepository.findByMaCa(maCa.trim()).orElse(null);
-                if (ca == null) {
-                    errorMessages.add("Dòng " + (i + 1) + ": không tìm thấy ca '" + maCa + "'");
-                    errors++;
-                    continue;
-                }
-                if (!Integer.valueOf(1).equals(ca.getTrangThai())) {
-                    errorMessages.add("Dòng " + (i + 1) + ": ca '" + maCa + "' đang ngừng hoạt động");
-                    errors++;
-                    continue;
-                }
-
-                if (lichLamViecRepository.existsByIdNhanVien_MaNhanVienAndIdCaLamViec_IdAndNgayLam(
-                        nv.getMaNhanVien(), ca.getId(), ngayLam)) {
-                    skipped++;
-                    continue;
-                }
-
-                LichLamViec llv = new LichLamViec();
-                llv.setIdNhanVien(nv);
-                llv.setIdCaLamViec(ca);
-                llv.setNgayLam(ngayLam);
-                llv.setTrangThai(0);
-                llv.setGhiChu(ghiChu.isEmpty() ? null : ghiChu);
-                llv.setNgayTao(LocalDateTime.now());
-                llv.setNgayCapNhat(LocalDateTime.now());
-                lichLamViecRepository.save(llv);
-                created++;
-            }
-        }
-
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("daTao",  created);
-        result.put("boBua",  skipped);
-        result.put("loiio",  errors);
-        result.put("chiTietLoi", errorMessages);
-        result.put("thongBao", "Import hoàn tất: tạo " + created + ", bỏ qua " + skipped + ", lỗi " + errors + " dòng.");
-        return result;
+        var checked=nhapExcel.xemTruoc(file);
+        if(checked.coLoi()>0)throw new com.smashstep.datn.schedule.exception.LichLamViecImportException(checked);
+        var result=nhapExcel.xacNhan(new com.smashstep.datn.schedule.dto.LichLamViecImportDto.XacNhan(checked.dong().stream().map(r->r.duLieu()).toList()));
+        return Map.of("daTao",result.daTao(),"boQua",result.boQua(),"boBua",result.boQua(),"loi",0,"loiio",0,"chiTietLoi",List.of(),"thongBao",result.thongBao());
     }
 
     // ── Xuất Excel lịch sử hoạt động ──────────────────────────
@@ -887,9 +808,9 @@ public class LichLamViecService {
 
             // ── Header row ──
             String[] headers = {
-                "STT", "Mã NV", "Tên nhân viên", "Vai trò",
-                "Ca làm việc", "Ngày làm", "Giờ bắt đầu", "Giờ kết thúc",
-                "Doanh thu (đ)", "Trạng thái", "Ghi chú"
+                    "STT", "Mã NV", "Tên nhân viên", "Vai trò",
+                    "Ca làm việc", "Ngày làm", "Giờ bắt đầu", "Giờ kết thúc",
+                    "Doanh thu (đ)", "Trạng thái", "Ghi chú"
             };
             int[] colWidths = { 1500, 3500, 7000, 4000, 5000, 4000, 4500, 4500, 5500, 4500, 7000 };
 
@@ -1002,6 +923,7 @@ public class LichLamViecService {
      */
     @Transactional
     public int tuDongKetThuc() {
+        khoaGhi.khoa("schedule");
         LocalDateTime now = LocalDateTime.now();
         List<LichLamViec> expired = lichLamViecRepository.findExpiredLich(now);
         for (LichLamViec llv : expired) {

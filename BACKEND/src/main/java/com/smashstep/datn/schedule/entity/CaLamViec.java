@@ -29,7 +29,7 @@ public class CaLamViec {
     @Column(name = "gio_ket_thuc")
     private LocalTime gioKetThuc;
 
-    @Column(name = "mo_ta")
+    @Column(name = "mo_ta", length = 1000)
     private String moTa;
 
     @Column(name = "trang_thai")

@@ -4,6 +4,7 @@ import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import SsPager from '../../../../components/SsPager.vue'
 import Select2 from '../../promotion/components/Select2.vue'
 import scheduleService from '../services/scheduleService'
+import LichLamViecImportModal from '../components/LichLamViecImportModal.vue'
 import { confirmAction, showSuccess, showError } from '../../../../utils/feedback'
 import api from '../../../../utils/api'
 
@@ -162,15 +163,7 @@ async function submitThayThe() {
   thayTheSaving.value = true
   thayTheError.value  = ''
   try {
-    // Tạo lịch mới cho NV thay thế trước
-    await scheduleService.phanCa({
-      maNhanViens: [thayTheMaNV.value],
-      caLamViecId: Number(thayTheLich.value.caLamViecId),
-      ngayLam:     thayTheLich.value.ngayLam,
-      ghiChu:      `Thay thế ${thayTheLich.value.tenNhanVien}`
-    })
-    // Xóa lịch cũ của NV bị khóa sau khi tạo thành công
-    await scheduleService.deleteLich(thayTheLich.value.id)
+    await scheduleService.thayNhanVien(thayTheLich.value.id, thayTheMaNV.value)
     thayTheModal.value = false
     showSuccess('Đã xếp lịch thành công.')
     await Promise.all([loadLichBiKhoa(), viewMode.value === 'lich' ? loadCalendar() : load()])
@@ -191,6 +184,8 @@ function handleDelete(row) {
 const calMode   = ref('tuan')
 const weekStart = ref(getMonday(new Date()))
 const calRows   = ref([])
+let calendarRequest = 0
+const calendarShifts = computed(() => shifts.value.filter(s => s.trangThai === 1 || calRows.value.some(r => r.caLamViecId === s.id)))
 
 function getMonday(d) {
   const date = new Date(d); const day = date.getDay()
@@ -243,7 +238,7 @@ const dayLabel = computed(() =>
 function prevDay() { const d=new Date(currentDay.value); d.setDate(d.getDate()-1); currentDay.value=d; loadCalendar() }
 function nextDay() { const d=new Date(currentDay.value); d.setDate(d.getDate()+1); currentDay.value=d; loadCalendar() }
 const dayRows = computed(() =>
-  shifts.value.filter(s=>s.trangThai===1).map(shift => ({
+  calendarShifts.value.map(shift => ({
     shift, list: calCell(shift.id, toYMD(currentDay.value)), ymd: toYMD(currentDay.value)
   }))
 )
@@ -254,8 +249,8 @@ const monthLabel = computed(() => {
   const s = currentMonth.value.toLocaleDateString('vi-VN', { month:'long', year:'numeric' })
   return s.charAt(0).toUpperCase() + s.slice(1)
 })
-function prevMonth() { const d=new Date(currentMonth.value); d.setMonth(d.getMonth()-1); currentMonth.value=d; loadCalendar() }
-function nextMonth() { const d=new Date(currentMonth.value); d.setMonth(d.getMonth()+1); currentMonth.value=d; loadCalendar() }
+function prevMonth() { const d=new Date(currentMonth.value); d.setDate(1); d.setMonth(d.getMonth()-1); currentMonth.value=d; loadCalendar() }
+function nextMonth() { const d=new Date(currentMonth.value); d.setDate(1); d.setMonth(d.getMonth()+1); currentMonth.value=d; loadCalendar() }
 
 const monthGrid = computed(() => {
   const year=currentMonth.value.getFullYear(), month=currentMonth.value.getMonth()
@@ -270,11 +265,12 @@ const monthGrid = computed(() => {
 })
 
 function monthCellCount(ymd) {
-  return shifts.value.filter(s=>s.trangThai===1).reduce((sum,shift)=>sum+calCell(shift.id,ymd).length,0)
+  return calendarShifts.value.reduce((sum,shift)=>sum+calCell(shift.id,ymd).length,0)
 }
 
 // ── Load calendar (chung cho ngày/tuần/tháng) ─────────────
 async function loadCalendar() {
+  const request = ++calendarRequest
   let from, to
   if (calMode.value==='ngay') {
     from=to=toYMD(currentDay.value)
@@ -286,9 +282,21 @@ async function loadCalendar() {
     from=toYMD(new Date(y,m,1)); to=toYMD(new Date(y,m+1,0))
   }
   try {
-    const data = await scheduleService.getLichLamViec({ tuNgay:from, denNgay:to, size:500 })
-    calRows.value = data?.content || []
-  } catch { /* ignore */ }
+    const collected = []
+    let currentPage = 1, lastPage = 1
+    do {
+      const data = await scheduleService.getLichLamViec({ tuNgay: from, denNgay: to, page: currentPage, size: 100 })
+      if (request !== calendarRequest) return
+      collected.push(...(data?.content || []))
+      lastPage = Math.max(1, Number(data?.totalPages || 1))
+      currentPage++
+    } while (currentPage <= lastPage)
+    calRows.value = collected
+  } catch (e) {
+    if (request !== calendarRequest) return
+    calRows.value = []
+    showError(e?.response?.data?.message || 'Không thể tải lịch. Vui lòng thử lại.')
+  }
 }
 
 function prevNav() { if(calMode.value==='ngay') prevDay(); else if(calMode.value==='tuan') prevWeek(); else prevMonth() }
@@ -341,39 +349,11 @@ async function submitAuto() {
 }
 
 // ── Import Excel ───────────────────────────────────────────
-const showImportModal  = ref(false)
-const importFile       = ref(null)
-const importLoading    = ref(false)
-const importError      = ref('')
-const importResult     = ref(null)
-const fileInputRef     = ref(null)
-
-function openImportModal() {
-  importFile.value = null; importError.value = ''; importResult.value = null
-  showImportModal.value = true
-}
-
-function onFileChange(e) {
-  const f = e.target.files?.[0]
-  if (!f) return
-  const ext = f.name.split('.').pop().toLowerCase()
-  if (!['xlsx','xls'].includes(ext)) {
-    importError.value = 'Chỉ chấp nhận file .xlsx hoặc .xls'
-    importFile.value = null
-    return
-  }
-  importError.value = ''; importFile.value = f
-}
-
-async function submitImport() {
-  if (!importFile.value) return (importError.value = 'Vui lòng chọn file Excel')
-  importError.value = ''; importResult.value = null; importLoading.value = true
-  try {
-    importResult.value = await scheduleService.importExcel(importFile.value)
-    if (viewMode.value === 'lich') loadCalendar(); else load()
-  } catch (e) {
-    importError.value = e?.response?.data?.message || 'Import thất bại'
-  } finally { importLoading.value = false }
+const showImportModal = ref(false)
+function openImportModal() { showImportModal.value = true }
+function importedSchedules() {
+  if (viewMode.value === 'lich') loadCalendar(); else load()
+  loadLichBiKhoa()
 }
 
 // ── Tải template ──────────────────────────────────────────
@@ -695,7 +675,7 @@ async function submitModal() {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="(shift, si) in shifts.filter(s=>s.trangThai===1)" :key="shift.id">
+                  <tr v-for="(shift, si) in calendarShifts" :key="shift.id">
                     <td class="cal-td-shift" :style="{ background: SHIFT_COLORS[si%3] }">
                       <div class="cal-shift-name">{{ shift.tenCa }}</div>
                       <div class="cal-shift-time">{{ shift.thoiGian }}</div>
@@ -1017,66 +997,7 @@ async function submitModal() {
       </div>
     </Teleport>
 
-    <!-- Modal import Excel -->
-    <Teleport to="body">
-      <div v-if="showImportModal" class="ss-modal-bg" @click.self="showImportModal=false">
-        <div class="ss-modal" style="width:min(480px,100%)">
-          <div class="ss-head">
-            <div class="ss-head-icon"><i class="bi bi-file-earmark-excel"></i></div>
-            <h2>Import Excel lịch làm việc</h2>
-            <span class="ss-spacer"></span>
-            <button class="ss-icon-btn" @click="showImportModal=false"><i class="bi bi-x-lg"></i></button>
-          </div>
-
-          <p class="ss-hint" style="margin-bottom:14px">
-            <i class="bi bi-info-circle"></i>
-            File Excel cần đúng định dạng template. Tải template trước nếu chưa có.
-          </p>
-
-          <!-- Upload zone -->
-          <div class="upload-zone"
-            :class="{ 'has-file': importFile }"
-            @click="fileInputRef?.click()"
-            @dragover.prevent
-            @drop.prevent="e => { importFile = e.dataTransfer.files[0]; importError=''; importResult=null }">
-            <input ref="fileInputRef" type="file" accept=".xlsx,.xls" style="display:none" @change="onFileChange" />
-            <template v-if="importFile">
-              <i class="bi bi-file-earmark-check" style="font-size:28px;color:#2e7d32"></i>
-              <span class="upload-filename">{{ importFile.name }}</span>
-              <span class="upload-sub">Click để đổi file</span>
-            </template>
-            <template v-else>
-              <i class="bi bi-cloud-upload" style="font-size:28px;color:var(--ss-muted)"></i>
-              <span class="upload-hint">Kéo thả hoặc click để chọn file</span>
-              <span class="upload-sub">.xlsx, .xls</span>
-            </template>
-          </div>
-
-          <!-- Kết quả import -->
-          <div v-if="importResult" class="import-result">
-            <div class="auto-stat success"><i class="bi bi-check-circle"></i> Đã tạo: <strong>{{ importResult.daTao }}</strong></div>
-            <div class="auto-stat warn"><i class="bi bi-skip-forward"></i> Bỏ qua: <strong>{{ importResult.boBua }}</strong></div>
-            <div class="auto-stat danger"><i class="bi bi-x-circle"></i> Lỗi: <strong>{{ importResult.loiio }}</strong></div>
-            <ul v-if="importResult.chiTietLoi?.length" class="error-list">
-              <li v-for="(msg, i) in importResult.chiTietLoi" :key="i">{{ msg }}</li>
-            </ul>
-          </div>
-
-          <p v-if="importError" class="ss-hint warn"><i class="bi bi-exclamation-circle"></i> {{ importError }}</p>
-
-          <div class="ss-actions">
-            <button class="ss-btn" @click="showImportModal=false" :disabled="importLoading">Đóng</button>
-            <button class="ss-btn" @click="handleDownloadTemplate" :disabled="downloadingTpl" style="margin-right:auto">
-              <i class="bi bi-download"></i> Tải template
-            </button>
-            <button class="ss-btn primary" @click="submitImport" :disabled="importLoading || !importFile">
-              <i :class="importLoading ? 'bi bi-arrow-repeat spin' : 'bi bi-upload'"></i>
-              {{ importLoading ? 'Đang import...' : 'Import' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <LichLamViecImportModal v-if="showImportModal" @close="showImportModal=false" @imported="importedSchedules" />
 
   </AdminLayout>
 </template>

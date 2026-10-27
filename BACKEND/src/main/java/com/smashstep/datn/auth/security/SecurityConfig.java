@@ -56,45 +56,50 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-            .csrf(AbstractHttpConfigurer::disable)
-            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-            .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-            .exceptionHandling(errors -> errors
-                .authenticationEntryPoint((request, response, exception) -> {
-                    response.setStatus(401);
-                    response.setContentType("application/json;charset=UTF-8");
-                    response.getWriter().write("{\"success\":false,\"message\":\"Phiên đăng nhập không hợp lệ hoặc đã hết hạn. Vui lòng đăng nhập lại.\",\"data\":null}");
-                })
-                .accessDeniedHandler((request, response, exception) -> {
-                    response.setStatus(403);
-                    response.setContentType("application/json;charset=UTF-8");
-                    response.getWriter().write("{\"success\":false,\"message\":\"Tài khoản không có quyền thực hiện thao tác này.\",\"data\":null}");
-                }))
-            .authorizeHttpRequests(auth -> auth
-                // Public storefront exposes read-only catalogue endpoints.
-                .requestMatchers(HttpMethod.GET, "/api/store/**").permitAll()
-                // These callbacks validate VNPAY HMAC; browser return never records payment.
-                .requestMatchers(HttpMethod.GET, "/api/payments/vnpay/ipn", "/api/payments/vnpay/return-check").permitAll()
-                // A signed browser proof may request a server-to-server QueryDr; it cannot assign payment status.
-                .requestMatchers(HttpMethod.POST, "/api/payments/vnpay/reconcile-return").permitAll()
-                // Auth endpoints — public
-                .requestMatchers("/api/auth/**").permitAll()
-                // Health check — public
-                .requestMatchers("/api/health").permitAll()
-                // Upload static resources — public
-                .requestMatchers("/uploads/**").permitAll()
-                // Product images — public
-                .requestMatchers(HttpMethod.GET, "/api/product-images/**").permitAll()
-                // OPTIONS preflight — public
-                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                .requestMatchers("/api/customer/**").hasRole("CUSTOMER")
-                .requestMatchers("/api/products/**", "/api/product-details/**", "/api/product-attributes/**",
-                        "/api/hoa-don/**", "/api/ban-hang/**", "/api/thong-ke/**", "/api/thong-ke-tong-hop/**")
-                    .hasAnyRole("ADMIN", "STAFF")
-                // Tất cả API còn lại yêu cầu đăng nhập
-                .anyRequest().authenticated()
-            )
-            .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+                .csrf(AbstractHttpConfigurer::disable)
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .exceptionHandling(errors -> errors
+                        .authenticationEntryPoint((request, response, exception) -> {
+                            response.setStatus(401);
+                            response.setContentType("application/json;charset=UTF-8");
+                            response.getWriter().write("{\"success\":false,\"message\":\"Phiên đăng nhập không hợp lệ hoặc đã hết hạn. Vui lòng đăng nhập lại.\",\"data\":null}");
+                        })
+                        .accessDeniedHandler((request, response, exception) -> {
+                            response.setStatus(403);
+                            response.setContentType("application/json;charset=UTF-8");
+                            response.getWriter().write("{\"success\":false,\"message\":\"Tài khoản không có quyền thực hiện thao tác này.\",\"data\":null}");
+                        }))
+                .authorizeHttpRequests(auth -> auth
+                        // Public storefront exposes read-only catalogue endpoints.
+                        .requestMatchers(HttpMethod.GET, "/api/store/**").permitAll()
+                        // These callbacks validate VNPAY HMAC; browser return never records payment.
+                        .requestMatchers(HttpMethod.GET, "/api/payments/vnpay/ipn", "/api/payments/vnpay/return-check").permitAll()
+                        // A signed browser proof may request a server-to-server QueryDr; it cannot assign payment status.
+                        .requestMatchers(HttpMethod.POST, "/api/payments/vnpay/reconcile-return").permitAll()
+                        // Auth endpoints — public
+                        .requestMatchers("/api/auth/**").permitAll()
+                        // Health check — public
+                        .requestMatchers("/api/health").permitAll()
+                        // Upload static resources — public
+                        .requestMatchers("/uploads/**").permitAll()
+                        // Product images — public
+                        .requestMatchers(HttpMethod.GET, "/api/product-images/**").permitAll()
+                        // OPTIONS preflight — public
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        .requestMatchers("/api/chat/customer/**").hasRole("CUSTOMER")
+                        .requestMatchers("/api/chat/staff/**").hasAnyRole("ADMIN", "STAFF")
+                        .requestMatchers("/api/customer/**").hasRole("CUSTOMER")
+                        .requestMatchers("/api/thong-ke/**", "/api/thong-ke-tong-hop/**").hasRole("ADMIN")
+                        .requestMatchers("/api/nhan-vien/me", "/api/nhan-vien/me/**", "/api/nhan-vien/vai-tro").hasAnyRole("ADMIN", "STAFF")
+                        .requestMatchers("/api/nhan-vien", "/api/nhan-vien/**").hasRole("ADMIN")
+                        .requestMatchers("/api/products/**", "/api/product-details/**", "/api/product-attributes/**",
+                                "/api/hoa-don/**", "/api/ban-hang/**", "/api/thong-ke/**", "/api/thong-ke-tong-hop/**")
+                        .hasAnyRole("ADMIN", "STAFF")
+                        // Tất cả API còn lại yêu cầu đăng nhập
+                        .anyRequest().authenticated()
+                )
+                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }

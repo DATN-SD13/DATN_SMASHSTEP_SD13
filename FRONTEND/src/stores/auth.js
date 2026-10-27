@@ -56,6 +56,28 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.setItem(USER_KEY,  JSON.stringify(user.value))
   }
 
+  let sessionRefresh = null
+  async function refreshSession() {
+    if (!token.value || user.value?.userType !== 'NHAN_VIEN') return null
+    if (sessionRefresh) return sessionRefresh
+    const checkingToken = token.value, checkingId = user.value.id
+    const operation = (async () => {
+      const response = await api.get('/auth/me', { skipSessionRefresh: true })
+      if (token.value !== checkingToken || user.value?.id !== checkingId) return null
+      const current = response.data?.data
+      if (!current || Number(current.userId) !== Number(checkingId) || current.userType !== 'NHAN_VIEN'
+          || !['ADMIN', 'STAFF'].includes(current.role)) throw new Error('Thông tin phiên đăng nhập không hợp lệ')
+      if (user.value.role !== current.role) {
+        user.value = { ...user.value, role: current.role }
+        localStorage.setItem(USER_KEY, JSON.stringify(user.value))
+      }
+      return current
+    })()
+    sessionRefresh = operation
+    try { return await operation }
+    finally { if (sessionRefresh === operation) sessionRefresh = null }
+  }
+
   /** Prepare the active page while credentials still exist, then end the session. */
   async function logout() {
     if (loggingOut.value) return false
@@ -75,6 +97,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function _clearState() {
+    sessionRefresh = null
     token.value = null
     user.value  = null
     localStorage.removeItem(TOKEN_KEY)
@@ -83,6 +106,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   /** Gọi bởi axios interceptor khi gặp 401. */
   function forceLogout() {
+    if (!token.value && !user.value) return Promise.resolve(false)
     const wasCustomer = isCustomer.value
     _clearState()
     return router.replace(wasCustomer ? '/khach-hang/dang-nhap' : '/dang-nhap')
@@ -92,6 +116,6 @@ export const useAuthStore = defineStore('auth', () => {
     token, user,
     isAuthenticated, role, userType,
     isAdmin, isStaff, isCustomer,
-    loggingOut, logoutAuthorized, setLogoutGuard, login, logout, forceLogout
+    loggingOut, logoutAuthorized, setLogoutGuard, login, logout, forceLogout, refreshSession
   }
 })

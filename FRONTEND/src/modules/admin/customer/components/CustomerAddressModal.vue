@@ -11,6 +11,7 @@ import { useAddressApi } from '../../../../composables/useAddressApi'
 import customerService
   from '../services/customerService'
 import { confirmAction, showSuccess, showError } from '../../../../utils/feedback'
+import { accountRequestError } from '../../../../utils/accountValidation'
 
 const props = defineProps({
   customer: {
@@ -113,6 +114,8 @@ function edit(a) {
 async function save() {
   if (saving.value || loading.value) return
   const v = f.value
+  const validationError = accountRequestError({ method: editingId.value ? 'put' : 'post', url: '/khach-hang/' + encodeURIComponent(props.customer.code) + '/dia-chi' + (editingId.value ? '/' + editingId.value : ''), data: { ...v, addressType: Number(v.addressType) } })
+  if (validationError) { err.value = validationError; showError(validationError); return }
 
   if (
     !v.receiverName.trim() ||
@@ -191,6 +194,7 @@ async function save() {
     emit('changed')
   } catch (e) {
     err.value = errorMessage(e)
+    showError(err.value)
   } finally {
     saving.value = false
   }
@@ -255,7 +259,7 @@ onMounted(load)
 <template>
   <div
     class="modal-mask"
-    @click.self="$emit('close')"
+    @click.self="!saving && $emit('close')"
   >
     <p v-if="addressError" class="ss-alert error" role="alert">{{ addressError }}</p>
     <section class="modal-card">
@@ -275,6 +279,7 @@ onMounted(load)
 
         <button
           class="ss-icon-btn"
+          :disabled="saving"
           @click="$emit('close')"
         >
           <i class="bi bi-x-lg"></i>
@@ -418,7 +423,7 @@ onMounted(load)
               <span class="req">*</span>
             </label>
 
-            <span class="khach-hang-select-field"><Select2KhachHang :allow-clear="false" aria-label="Tỉnh/Thành phố" v-model="f.province" :disabled="loadingProvinces" @change="changeProvince">
+            <span class="khach-hang-select-field"><Select2KhachHang :allow-clear="false" aria-label="Tỉnh/Thành phố" v-model="f.province" :disabled="loadingProvinces || saving" @change="changeProvince">
               <option value="">Chọn tỉnh/thành</option>
               <option v-for="p in provinces" :key="p.code" :value="p.name">{{ p.name }}</option>
             </Select2KhachHang></span>
@@ -431,7 +436,7 @@ onMounted(load)
               <span class="req">*</span>
             </label>
 
-            <span class="khach-hang-select-field"><Select2KhachHang :allow-clear="false" aria-label="Phường/Xã" v-model="f.ward" :disabled="loadingWards || !f.province">
+            <span class="khach-hang-select-field"><Select2KhachHang :allow-clear="false" aria-label="Phường/Xã" v-model="f.ward" :disabled="loadingWards || !f.province || saving">
               <option value="">Chọn phường/xã</option>
               <option v-for="w in wards" :key="w.code" :value="w.name">{{ w.name }}</option>
             </Select2KhachHang></span>
@@ -456,7 +461,7 @@ onMounted(load)
               Loại địa chỉ
             </label>
 
-            <span class="khach-hang-select-field"><Select2KhachHang :allow-clear="false" aria-label="Loại địa chỉ" v-model="f.addressType">
+            <span class="khach-hang-select-field"><Select2KhachHang :disabled="saving" :allow-clear="false" aria-label="Loại địa chỉ" v-model="f.addressType">
               <option :value="1">
                 Nhà riêng
               </option>

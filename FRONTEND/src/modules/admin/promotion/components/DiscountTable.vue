@@ -31,6 +31,10 @@ function canToggle(x) {
   return x.timeStatus !== 3
 }
 
+function displayStatusLabel(x) {
+  return x.status === 0 ? 'Ngừng hoạt động' : x.timeStatusLabel
+}
+
 function timeStatusClass(x) {
 // ket thuc
   if (x.timeStatus === 3) {
@@ -110,7 +114,7 @@ function timeStatusClass(x) {
           class="ss-pill dot"
           :class="timeStatusClass(x)"
         >
-          {{ x.timeStatusLabel }}
+          {{ displayStatusLabel(x) }}
         </span>
       </td>
 

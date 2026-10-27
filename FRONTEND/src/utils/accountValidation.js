@@ -62,6 +62,7 @@ export function accountRequestError(config) {
   if (url === '/auth/dat-lai-mat-khau') return /^[A-Za-z0-9_-]{32,128}$/.test(data.token || '') ? passwordError(data.newPassword) : 'Link đặt lại mật khẩu không hợp lệ.'
   if (url === '/auth/dang-ky' || url === '/auth/register') return nameError(data.name) || emailError(data.email) || phoneError(data.phone, false) || passwordError(data.password)
   if (url === '/customer/account/password') return !data.currentPassword?.trim() ? 'Vui lòng nhập mật khẩu hiện tại.' : passwordError(data.newPassword) || (data.newPassword !== data.confirmPassword ? 'Mật khẩu xác nhận không khớp.' : '')
+  if (url === '/nhan-vien/me/doi-mat-khau') return !data.matKhauCu?.trim() ? 'Vui lòng nhập mật khẩu hiện tại.' : passwordError(data.matKhauMoi) || (data.matKhauCu === data.matKhauMoi ? 'Mật khẩu mới không được trùng mật khẩu hiện tại.' : '')
   if (/^\/customer\/account\/addresses(?:\/\d+)?$/.test(url) || /^\/khach-hang\/[^/]+\/dia-chi(?:\/\d+)?$/.test(url)) return addressErrors(data)
   const employee = /^\/nhan-vien(?:\/[^/]+)?$/.test(url), customer = /^\/khach-hang(?:\/[^/]+)?$/.test(url), profile = url === '/customer/account'
   if (employee || customer || profile) {
@@ -70,6 +71,11 @@ export function accountRequestError(config) {
     if (invalid) return invalid
     if ((employee && data.gender == null) || (data.gender != null && ![0, 1, 2].includes(data.gender))) return 'Giới tính không hợp lệ.'
     if (employee && (!Number.isInteger(data.roleId) || data.roleId < 1)) return 'Vui lòng chọn vai trò hợp lệ.'
+    if (employee) {
+      for (const [field, label, max] of [['province', 'Tỉnh/Thành phố', 100], ['ward', 'Phường/Xã', 100], ['street', 'Địa chỉ cụ thể', 500]]) {
+        if (data[field] && (typeof data[field] !== 'string' || data[field].length > max || /[<>]/.test(data[field]) || controls.test(data[field]))) return `${label} tối đa ${max} ký tự và không chứa ký tự không hợp lệ.`
+      }
+    }
     if (customer && create && !data.defaultAddress) return 'Vui lòng nhập địa chỉ mặc định.'
     if (data.defaultAddress) return addressErrors(data.defaultAddress)
   }
