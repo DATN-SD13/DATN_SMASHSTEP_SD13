@@ -1,26 +1,30 @@
 <script setup>
-import { computed, ref, onMounted, watch } from "vue";
+import { computed, ref, onMounted, onBeforeUnmount, watch } from "vue";
 import AdminLayout from "../../../../layouts/AdminLayout.vue";
-import StatisticsSelect from "../../product/components/Select2Control.vue";
+import StatisticsPager from "../components/StatisticsPager.vue";
+import { imageUrl } from "../../product/services/imageUtils";
 
 import {
+  cancelStatisticsRequests,
   getStatisticsChart,
   getStatisticsSummary,
   getStatisticsPeriod,
   getStatisticsOrderStatus,
   getStatisticsEmployee,
   getStatisticsProduct,
-  getStatisticsBrands,
   getStatisticsRevenueComparison,
   sendStatisticsReportEmail,
+  getStatisticsEmailSchedule,
+  saveStatisticsEmailSchedule,
 } from "../service/statisticsService";
 
-import { Bar, Line, Pie } from "vue-chartjs";
+import { Bar, Line, Doughnut } from "vue-chartjs";
 
 import * as XLSX from "xlsx";
 
 import {
   Chart as ChartJS,
+  DoughnutController,
   BarController,
   LineController,
   CategoryScale,
@@ -75,35 +79,6 @@ const dateValidationMessage = computed(() => {
 });
 
 const groupBy = ref("day");
-const selectedBrand = ref("");
-
-// Sẽ lấy dữ liệu thật từ API ở bước kết nối backend
-const brandOptions = ref([]);
-
-async function loadBrands() {
-  try {
-    const response = await getStatisticsBrands();
-
-    // Hỗ trợ API trả về mảng trực tiếp hoặc ApiResponse
-    const data = Array.isArray(response)
-      ? response
-      : Array.isArray(response?.data?.data)
-        ? response.data.data
-        : Array.isArray(response?.data)
-          ? response.data
-          : [];
-
-    // Chỉ giữ thương hiệu hợp lệ
-    brandOptions.value = data.filter(
-      (brand) => brand && brand.id != null && typeof brand.name === "string",
-    );
-  } catch (error) {
-    console.error("Lỗi tải thương hiệu:", error);
-
-    brandOptions.value = [];
-  }
-}
-
 // ===== CHUYEN GIAO DIEN THONG KE =====
 // overview: Thống kê tổng quan
 // comparison: So sánh doanh thu
@@ -120,15 +95,16 @@ const dashboardSummary = ref(null);
 const orderStatusData = ref([]);
 
 const orderStatusColors = {
-  waiting: "#60A5FA", // Chờ xác nhận
-  confirmed: "#2563EB", // Đã xác nhận
+  waiting: "#e5ac4b", // Chờ xác nhận
+  confirmed: "#4c9cde", // Đã xác nhận
   ready: "#818CF8", // Chờ giao hàng
   shipping: "#06B6D4", // Đang giao hàng
   delivered: "#0EA5E9", // Đã giao hàng
-  done: "#1D4ED8", // Hoàn thành
-  cancel: "#64748B", // Đã hủy - xám xanh
-  refund: "#A5B4FC", // Hoàn tiền
-  pending: "#94A3B8", // Hóa đơn chờ
+  done: "#33ad91", // Hoàn thành
+  cancel: "#dd7f8a", // Đã hủy - xám xanh
+  refund: "#a28ac9", // Hoàn tiền
+  pending: "#94A3B8",
+  failed: "#e88b4b", // Hóa đơn chờ
 };
 
 // Chỉ lấy trạng thái có hóa đơn
@@ -162,6 +138,7 @@ const orderStatusChart = computed(() => ({
 }));
 
 const orderStatusChartOptions = {
+  cutout: "74%",
   responsive: true,
   maintainAspectRatio: false,
   plugins: {
@@ -179,9 +156,13 @@ const orderStatusChartOptions = {
 const loadingOrderStatus = ref(false);
 const orderStatusError = ref("");
 
+let loadOrderStatusVersion = 0;
 async function loadOrderStatus() {
+  const request = ++loadOrderStatusVersion;
   if (!fromDate.value || !toDate.value || fromDate.value > toDate.value) {
     orderStatusData.value = [];
+    loadingOrderStatus.value = false;
+    orderStatusError.value = "";
     return;
   }
 
@@ -194,6 +175,7 @@ async function loadOrderStatus() {
       denNgay: toDate.value,
     });
 
+    if (request !== loadOrderStatusVersion) return;
     if (!response.data?.success) {
       throw new Error(
         response.data?.message || "Không thể tải trạng thái đơn hàng",
@@ -204,6 +186,7 @@ async function loadOrderStatus() {
 
     console.log("TRẠNG THÁI ĐƠN HÀNG:", orderStatusData.value);
   } catch (error) {
+    if (request !== loadOrderStatusVersion) return;
     console.error("Lỗi thống kê trạng thái:", error);
 
     orderStatusError.value =
@@ -213,7 +196,7 @@ async function loadOrderStatus() {
 
     orderStatusData.value = [];
   } finally {
-    loadingOrderStatus.value = false;
+    if (request === loadOrderStatusVersion) loadingOrderStatus.value = false;
   }
 }
 
@@ -282,25 +265,25 @@ watch([productSearch, productStockFilter, productSort, productData], () => {
 function exportProductExcel() {
   // Kiểm tra API đang tải
   if (loadingProduct.value) {
-    alert("Dữ liệu sản phẩm đang tải. Vui lòng đợi!");
+    showFeedback("Dữ liệu sản phẩm đang tải. Vui lòng đợi!");
     return;
   }
 
   // Kiểm tra API gặp lỗi
   if (productError.value) {
-    alert("Không thể xuất Excel vì dữ liệu sản phẩm đang bị lỗi.");
+    showFeedback("Không thể xuất Excel vì dữ liệu sản phẩm đang bị lỗi.");
     return;
   }
 
   // Kiểm tra khoảng ngày
   if (!fromDate.value || !toDate.value || fromDate.value > toDate.value) {
-    alert("Vui lòng chọn khoảng ngày hợp lệ trước khi xuất Excel.");
+    showFeedback("Vui lòng chọn khoảng ngày hợp lệ trước khi xuất Excel.");
     return;
   }
 
   // Kiểm tra dữ liệu rỗng
   if (!filteredProducts.value.length) {
-    alert("Không có dữ liệu sản phẩm để xuất Excel.");
+    showFeedback("Không có dữ liệu sản phẩm để xuất Excel.");
     return;
   }
 
@@ -309,10 +292,10 @@ function exportProductExcel() {
     "Mã sản phẩm": product.code,
     "Tên sản phẩm": product.name,
     "Số lượng đã bán": Number(product.sold || 0),
-    "Số lượng hoàn tiền": Number(product.returned || 0),
+    "SL từ đơn hoàn tiền": Number(product.returned || 0),
 
-    "Doanh số SP trước giảm giá (VNĐ)": Number(product.revenue || 0),
-    "Tồn kho": Number(product.stock || 0),
+    "Doanh số sản phẩm (VNĐ)": Number(product.revenue || 0),
+    "Tồn kho hiện tại": Number(product.stock || 0),
   }));
 
   const worksheet = XLSX.utils.json_to_sheet(rows);
@@ -459,25 +442,25 @@ function resetEmployeeFilters() {
 function exportEmployeeExcel() {
   // Kiểm tra API đang tải
   if (loadingEmployee.value) {
-    alert("Dữ liệu nhân viên đang tải. Vui lòng đợi!");
+    showFeedback("Dữ liệu nhân viên đang tải. Vui lòng đợi!");
     return;
   }
 
   // Kiểm tra API gặp lỗi
   if (employeeError.value) {
-    alert("Không thể xuất Excel vì dữ liệu nhân viên đang bị lỗi.");
+    showFeedback("Không thể xuất Excel vì dữ liệu nhân viên đang bị lỗi.");
     return;
   }
 
   // Kiểm tra khoảng ngày
   if (!fromDate.value || !toDate.value || fromDate.value > toDate.value) {
-    alert("Vui lòng chọn khoảng ngày hợp lệ trước khi xuất Excel.");
+    showFeedback("Vui lòng chọn khoảng ngày hợp lệ trước khi xuất Excel.");
     return;
   }
 
   // Kiểm tra dữ liệu rỗng
   if (!filteredEmployees.value.length) {
-    alert("Không có dữ liệu nhân viên để xuất Excel.");
+    showFeedback("Không có dữ liệu nhân viên để xuất Excel.");
     return;
   }
 
@@ -485,7 +468,7 @@ function exportEmployeeExcel() {
     STT: index + 1,
     "Mã nhân viên": employee.code,
     "Tên nhân viên": employee.name,
-    "Tổng đơn hàng": Number(employee.totalOrders || 0),
+    "Đơn hoàn thành": Number(employee.totalOrders || 0),
     "Sản phẩm đã bán": Number(employee.productsSold || 0),
     "Doanh thu (VNĐ)": Number(employee.revenue || 0),
   }));
@@ -608,19 +591,19 @@ async function loadPeriod() {
 function exportPeriodExcel() {
   // Kiểm tra API đang tải
   if (loadingPeriod.value) {
-    alert("Dữ liệu đang được tải. Vui lòng đợi!");
+    showFeedback("Dữ liệu đang được tải. Vui lòng đợi!");
     return;
   }
 
   // Kiểm tra API gặp lỗi
   if (periodError.value) {
-    alert("Không thể xuất Excel vì dữ liệu thống kê đang bị lỗi.");
+    showFeedback("Không thể xuất Excel vì dữ liệu thống kê đang bị lỗi.");
     return;
   }
 
   // Kiểm tra dữ liệu rỗng
   if (!periodData.value.length) {
-    alert("Không có dữ liệu thống kê để xuất Excel.");
+    showFeedback("Không có dữ liệu thống kê để xuất Excel.");
     return;
   }
 
@@ -629,7 +612,7 @@ function exportPeriodExcel() {
     "Thời gian": item.period,
     "Doanh thu (VNĐ)": Number(item.revenue || 0),
     "Số đơn hàng": Number(item.orders || 0),
-    "AOV (VNĐ)": Number(item.aov || 0),
+    "Giá trị đơn trung bình (VNĐ)": Number(item.aov || 0),
     "Tăng trưởng (%)": item.growth == null ? "—" : Number(item.growth),
   }));
 
@@ -664,9 +647,13 @@ function growthText(value) {
 const loadingSummary = ref(false);
 const summaryError = ref("");
 
+let loadSummaryVersion = 0;
 async function loadSummary() {
+  const request = ++loadSummaryVersion;
   if (!fromDate.value || !toDate.value || fromDate.value > toDate.value) {
     dashboardSummary.value = null;
+    loadingSummary.value = false;
+    summaryError.value = "";
     return;
   }
 
@@ -679,6 +666,7 @@ async function loadSummary() {
       denNgay: toDate.value,
     });
 
+    if (request !== loadSummaryVersion) return;
     if (!response.data?.success) {
       throw new Error(response.data?.message || "Không thể tải doanh thu");
     }
@@ -687,6 +675,7 @@ async function loadSummary() {
 
     console.log("TỔNG QUAN DOANH THU:", dashboardSummary.value);
   } catch (error) {
+    if (request !== loadSummaryVersion) return;
     console.error("Lỗi thống kê doanh thu:", error);
 
     summaryError.value =
@@ -696,12 +685,11 @@ async function loadSummary() {
 
     dashboardSummary.value = null;
   } finally {
-    loadingSummary.value = false;
+    if (request === loadSummaryVersion) loadingSummary.value = false;
   }
 }
 
 const salesChartType = ref("bar");
-const brandChartType = ref("pie");
 const brandChartSort = ref("revenue");
 
 const salesChartData = ref([]);
@@ -731,7 +719,7 @@ const brandChart = computed(() => ({
   labels: sortedBrands.value.map((item) => item.name),
   datasets: [
     {
-      label: brandChartSort.value === "revenue" ? "Doanh thu" : "Số lượng bán",
+      label: brandChartSort.value === "revenue" ? "Doanh số sản phẩm" : "Số lượng bán",
       data: sortedBrands.value.map((item) =>
         Number(item[brandChartSort.value] || 0),
       ),
@@ -743,58 +731,6 @@ const brandChart = computed(() => ({
     },
   ],
 }));
-
-const brandLineChart = computed(() => ({
-  labels: sortedBrands.value.map((item) => item.name),
-  datasets: [
-    {
-      label: brandChartSort.value === "revenue" ? "Doanh thu" : "Số lượng bán",
-      data: sortedBrands.value.map((item) =>
-        Number(item[brandChartSort.value] || 0),
-      ),
-      borderColor: "#2563EB",
-      backgroundColor: "#2563EB",
-      borderWidth: 2,
-      tension: 0.35,
-      pointRadius: 4,
-      fill: false,
-    },
-  ],
-}));
-
-const brandPieOptions = {
-  responsive: true,
-  maintainAspectRatio: false,
-  plugins: {
-    legend: {
-      display: true,
-      position: "bottom",
-      labels: {
-        boxWidth: 10,
-        padding: 12,
-        font: { size: 10 },
-      },
-    },
-  },
-};
-
-const brandLineOptions = {
-  responsive: true,
-  maintainAspectRatio: false,
-  plugins: {
-    legend: { display: false },
-  },
-  scales: {
-    y: {
-      beginAtZero: true,
-      ticks: { precision: 0 },
-      grid: { color: "#edf0f5" },
-    },
-    x: {
-      grid: { display: false },
-    },
-  },
-};
 
 const salesChart = computed(() => ({
   labels: salesChartData.value.map((item) => {
@@ -885,7 +821,6 @@ async function loadCharts() {
       tuNgay: fromDate.value,
       denNgay: toDate.value,
       nhomTheo: groupBy.value,
-      thuongHieuId: selectedBrand.value || undefined,
     });
 
     // Bỏ qua kết quả từ yêu cầu cũ
@@ -1115,19 +1050,19 @@ watch([comparisonMode, comparisonYear], loadRevenueComparison);
 function exportRevenueComparisonExcel() {
   // Kiểm tra dữ liệu đang tải
   if (loadingComparison.value) {
-    alert("Dữ liệu đang tải, vui lòng thử lại.");
+    showFeedback("Dữ liệu đang tải, vui lòng thử lại.");
     return;
   }
 
   // Kiểm tra lỗi API
   if (comparisonError.value) {
-    alert("Không thể xuất Excel vì dữ liệu đang bị lỗi.");
+    showFeedback("Không thể xuất Excel vì dữ liệu đang bị lỗi.");
     return;
   }
 
   // Kiểm tra dữ liệu rỗng
   if (!revenueComparisonRows.value.length) {
-    alert("Không có dữ liệu doanh thu để xuất Excel.");
+    showFeedback("Không có dữ liệu doanh thu để xuất Excel.");
     return;
   }
 
@@ -1137,7 +1072,7 @@ function exportRevenueComparisonExcel() {
     "Thời gian": item.period,
     "Doanh thu thực tế (VNĐ)": item.revenue,
     "Số đơn hàng": item.orders,
-    "Giá trị trung bình đơn - AOV (VNĐ)": item.aov,
+    "Giá trị đơn trung bình (VNĐ)": item.aov,
     "Tăng trưởng (%)": item.growth == null ? "—" : item.growth,
   }));
 
@@ -1180,8 +1115,26 @@ const revenueComparisonRows = computed(() => {
 const reportEmail = ref("");
 
 // Ngày bắt đầu và kết thúc báo cáo
-const reportFromDate = ref(fromDate.value);
-const reportToDate = ref(toDate.value);
+const reportType = ref('month');
+const reportMonth = ref(formatDate(new Date()).slice(0, 7));
+const reportYear = ref(new Date().getFullYear());
+const currentReportMonth = formatDate(new Date()).slice(0, 7);
+const currentReportYear = new Date().getFullYear();
+const reportRange = computed(() => {
+  if (reportType.value === 'month') {
+    const match = String(reportMonth.value || '').match(/^(\d{4})-(\d{2})$/);
+    if (!match || Number(match[2]) < 1 || Number(match[2]) > 12) return { from: '', to: '' };
+    const year=Number(match[1]),month=Number(match[2]);
+    return { from: formatDate(new Date(year,month-1,1)), to: formatDate(new Date(year,month,0)) };
+  }
+  const year=Number(reportYear.value);
+  if(!Number.isInteger(year) || year<2000 || year>2100)return {from:'',to:''};
+  return {from: year+'-01-01',to:year+'-12-31'};
+});
+const reportFromDate = computed(() => reportRange.value.from);
+const reportToDate = computed(() => reportRange.value.to);
+const reportPeriodError = computed(() => !reportFromDate.value ? 'Chọn tháng hoặc năm hợp lệ.' : reportFromDate.value > formatDate(new Date()) ? 'Không gửi báo cáo cho kỳ chưa bắt đầu.' : '');
+const reportIsTemporary = computed(() => reportToDate.value > formatDate(new Date()));
 
 // Trạng thái gửi email
 const sendingReportEmail = ref(false);
@@ -1205,6 +1158,8 @@ async function sendRevenueReport() {
     reportEmailError.value = "Địa chỉ email không hợp lệ.";
     return;
   }
+
+  if(reportPeriodError.value){reportEmailError.value=reportPeriodError.value;return;}
 
   // Kiểm tra thời gian
   if (!reportFromDate.value || !reportToDate.value) {
@@ -1245,7 +1200,7 @@ async function sendRevenueReport() {
     }
 
     reportEmailSuccess.value =
-      "Đã gửi báo cáo tổng kết thành công đến " + email;
+      "Đã gửi báo cáo " + (reportType.value === 'month' ? 'tháng ' + reportMonth.value : 'năm ' + reportYear.value) + " đến " + email;
   } catch (error) {
     console.error("Lỗi gửi báo cáo email:", error);
 
@@ -1258,30 +1213,38 @@ async function sendRevenueReport() {
   }
 }
 
-onMounted(() => {
-  loadBrands();
-  loadCharts();
-  loadSummary();
-  loadPeriod();
-  loadOrderStatus();
-  loadEmployee();
-  loadProduct();
-
-  // Tải biểu đồ so sánh doanh thu
-  loadRevenueComparison();
+function loadCurrentView() {
+  if (activeStatisticsView.value === 'overview') { loadSummary(); loadOrderStatus(); loadCharts(); loadProduct(); loadEmployee(); }
+  else if (activeStatisticsView.value === 'products') { loadProduct(); loadCharts(); }
+  else if (activeStatisticsView.value === 'employees') loadEmployee();
+  else if (activeStatisticsView.value === 'comparison') { loadRevenueComparison(); loadPeriod(); }
+  else if (activeStatisticsView.value === 'email') loadEmailSchedule();
+}
+let filterReloadTimer;
+function invalidateStatisticsRequests() {
+  chartRequestId++; productRequestId++; employeeRequestId++; comparisonRequestId++;
+  loadSummaryVersion++; loadOrderStatusVersion++;
+  cancelStatisticsRequests();
+}
+function scheduleFilterReload() {
+  clearTimeout(filterReloadTimer);
+  invalidateStatisticsRequests();
+  if (activeStatisticsView.value === 'overview') {
+    loadingSummary.value = loadingOrderStatus.value = loadingCharts.value = loadingProduct.value = loadingEmployee.value = true;
+  }
+  filterReloadTimer = setTimeout(() => { filterReloadTimer = null; loadCurrentView(); }, 180);
+}
+onMounted(loadCurrentView);
+watch([activeStatisticsView, fromDate, toDate], scheduleFilterReload);
+watch(groupBy, () => {
+  if (filterReloadTimer) { clearTimeout(filterReloadTimer); filterReloadTimer = setTimeout(() => { filterReloadTimer = null; loadCurrentView(); }, 180); }
+  else if (activeStatisticsView.value === 'overview') loadCharts();
 });
-
-watch([fromDate, toDate, groupBy, selectedBrand], () => {
-  loadCharts();
+onBeforeUnmount(() => {
+  clearTimeout(filterReloadTimer); cancelStatisticsRequests();
+  chartRequestId++; productRequestId++; employeeRequestId++; comparisonRequestId++;
+  loadSummaryVersion++; loadOrderStatusVersion++; clearTimeout(feedbackTimer);
 });
-
-watch([fromDate, toDate], () => {
-  loadSummary();
-  loadOrderStatus();
-  loadEmployee();
-  loadProduct();
-});
-
 const periodLabel = computed(() => {
   const display = (value) => {
     if (!value) return "";
@@ -1323,7 +1286,6 @@ function quickFilter(type) {
 function resetFilters() {
   quickFilter("month");
   groupBy.value = "day";
-  selectedBrand.value = "";
 }
 
 function money(value) {
@@ -1335,3173 +1297,194 @@ function number(value) {
   if (value == null) return "—";
   return Number(value).toLocaleString("vi-VN");
 }
+
+const statisticsTabs = [
+  {key:'overview',label:'Tổng quan',icon:'bi-grid'},
+  {key:'comparison',label:'So sánh doanh thu',icon:'bi-bar-chart-line'},
+  {key:'email',label:'Gửi báo cáo',icon:'bi-envelope'}
+];
+const quickPeriods = [{key:'today',label:'Hôm nay'},{key:'week',label:'7 ngày qua'},{key:'month',label:'Tháng này'},{key:'lastMonth',label:'Tháng trước'},{key:'year',label:'Năm nay'}];
+function rangeFor(type) {
+  const now=new Date(); let start=new Date(now.getFullYear(),now.getMonth(),now.getDate()),end=new Date(start);
+  if(type==='week') start.setDate(start.getDate()-6);
+  if(type==='month') start=new Date(now.getFullYear(),now.getMonth(),1);
+  if(type==='lastMonth'){start=new Date(now.getFullYear(),now.getMonth()-1,1);end=new Date(now.getFullYear(),now.getMonth(),0);}
+  if(type==='year') start=new Date(now.getFullYear(),0,1);
+  return [formatDate(start),formatDate(end)];
+}
+const selectedQuickPeriod=computed(()=>quickPeriods.find(p=>{const [a,b]=rangeFor(p.key);return a===fromDate.value && b===toDate.value;})?.key);
+const compactDonutOptions={responsive:true,maintainAspectRatio:false,cutout:'72%',plugins:{legend:{display:false}}};
+const otherPaymentRevenue=computed(()=>Math.max(0,Number(dashboardSummary.value?.totalRevenue||0)-Number(dashboardSummary.value?.cashRevenue||0)-Number(dashboardSummary.value?.transferRevenue||0)));
+function statusShare(count){return totalOrderStatuses.value?(Number(count)*100/totalOrderStatuses.value).toLocaleString('vi-VN',{maximumFractionDigits:1}):'0';}
+function growthClass(value){return value==null?'':Number(value)>0?'growth-positive':Number(value)<0?'growth-negative':'';}
+const feedback=ref(''); let feedbackTimer;
+function showFeedback(message){feedback.value=message;clearTimeout(feedbackTimer);feedbackTimer=setTimeout(()=>feedback.value='',6000);}
+watch(filteredEmployees,()=>{employeePage.value=Math.min(employeePage.value,employeeTotalPages.value);});
+function exportOverviewExcel(){
+  if(loadingSummary.value || summaryError.value || !dashboardSummary.value || dateValidationMessage.value)return;
+  const labels={totalRevenue:'Doanh thu đơn hoàn thành',expectedRevenue:'Giá trị đơn dự kiến',expectedOrders:'Đơn dự kiến',totalOrders:'Đơn hoàn thành',productsSold:'Số lượng bán',cashRevenue:'Tiền mặt',transferRevenue:'Chuyển khoản',averageOrderValue:'Giá trị đơn trung bình',newCustomers:'Khách đăng ký mới'};
+  const rows=Object.entries(labels).map(([key,label])=>({'Chỉ số':label,'Giá trị':Number(dashboardSummary.value[key]||0),'Từ ngày':fromDate.value,'Đến ngày':toDate.value}));
+  rows.push({'Chỉ số':'Khác / chưa phân loại (chênh lệch)','Giá trị':otherPaymentRevenue.value,'Từ ngày':fromDate.value,'Đến ngày':toDate.value});
+  const sheet=XLSX.utils.json_to_sheet(rows);sheet['!cols']=[{wch:42},{wch:24},{wch:16},{wch:16}];const book=XLSX.utils.book_new();XLSX.utils.book_append_sheet(book,sheet,'Tong quan');XLSX.writeFile(book,'thong-ke-tong-quan-'+fromDate.value+'-'+toDate.value+'.xlsx');
+}
+
+const failedProductImages = ref(new Set());
+watch(productData,()=>failedProductImages.value=new Set());
+function productThumbnail(product){return failedProductImages.value.has(product.id)?'':imageUrl(product.imageUrl);}
+const scheduleEmail = ref(''), monthlyEnabled=ref(false), yearlyEnabled=ref(false);
+const scheduleLoading=ref(false), scheduleSaving=ref(false), scheduleLoaded=ref(false), scheduleError=ref(''), scheduleSuccess=ref('');
+const lastMonthlySent=ref(null), lastYearlySent=ref(null);
+function applySchedule(data){scheduleEmail.value=data.email||'';monthlyEnabled.value=!!data.monthlyEnabled;yearlyEnabled.value=!!data.yearlyEnabled;lastMonthlySent.value=data.lastMonthlySent;lastYearlySent.value=data.lastYearlySent;}
+async function loadEmailSchedule(){
+  if(scheduleSaving.value)return;
+  scheduleLoading.value=true;scheduleError.value='';
+  try{const response=await getStatisticsEmailSchedule();if(!response.data?.success)throw new Error(response.data?.message||'Không tải được lịch gửi.');applySchedule(response.data.data);scheduleLoaded.value=true;}
+  catch(e){scheduleLoaded.value=false;scheduleError.value=e.response?.data?.message||e.message||'Không tải được lịch gửi.';}
+  finally{scheduleLoading.value=false;}
+}
+async function saveEmailSchedule(){
+  if(scheduleSaving.value || !scheduleLoaded.value)return;
+  scheduleError.value='';scheduleSuccess.value='';
+  if((monthlyEnabled.value||yearlyEnabled.value) && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(scheduleEmail.value.trim())){scheduleError.value='Nhập email hợp lệ để bật lịch tự động.';return;}
+  scheduleSaving.value=true;
+  try{const response=await saveStatisticsEmailSchedule({email:scheduleEmail.value.trim(),monthlyEnabled:monthlyEnabled.value,yearlyEnabled:yearlyEnabled.value});if(!response.data?.success)throw new Error(response.data?.message||'Không lưu được lịch gửi.');applySchedule(response.data.data);scheduleSuccess.value='Đã lưu lịch gửi tự động.';}
+  catch(e){scheduleError.value=e.response?.data?.message||e.message||'Không lưu được lịch gửi.';}
+  finally{scheduleSaving.value=false;}
+}
+function sentTime(value){return value?new Date(value).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'}):'Chưa gửi';}
+watch([reportType,reportMonth,reportYear],()=>{reportEmailError.value='';reportEmailSuccess.value='';});
+
 </script>
 
 <template>
   <AdminLayout>
     <main class="statistics-page">
-      <!-- TIÊU ĐỀ THỐNG KÊ - GIAO DIEN NEN SANG -->
-      <header class="dashboard-hero">
-        <div class="dashboard-hero-copy">
-          <div class="dashboard-eyebrow">Báo cáo kinh doanh</div>
-          <h1>Thống kê tổng hợp</h1>
-          <p>Theo dõi doanh thu, hiệu suất bán hàng và hoạt động kinh doanh.</p>
-        </div>
-
-        <div class="dashboard-hero-mark">
-          <i class="bi bi-bar-chart-line"></i>
-          <span>{{
-            activeStatisticsView === 'overview'
-              ? 'Tổng quan cửa hàng'
-              : activeStatisticsView === 'comparison'
-                ? 'So sánh doanh thu'
-                : 'Gửi mail tổng kết'
-          }}</span>
-        </div>
+      <header class="page-heading">
+        <div class="breadcrumb"><span>Trang chủ</span><b>/</b><strong>Thống kê</strong></div>
+        <h1>Thống kê tổng hợp</h1>
+        <p>Theo dõi kết quả kinh doanh và đối chiếu số liệu cửa hàng.</p>
       </header>
-
-      <!-- Chuyen 3 chuc nang - giu cac API va noi dung da co -->
-      <nav class="statistics-view-navigation" aria-label="Chức năng thống kê">
-        <button
-          type="button"
-          :class="{ active: activeStatisticsView === 'overview' }"
-          :aria-pressed="activeStatisticsView === 'overview'"
-          @click="changeStatisticsView('overview')"
-        >
-          <i class="bi bi-speedometer2"></i>
-          Tổng quan
-        </button>
-        <button
-          type="button"
-          :class="{ active: activeStatisticsView === 'comparison' }"
-          :aria-pressed="activeStatisticsView === 'comparison'"
-          @click="changeStatisticsView('comparison')"
-        >
-          <i class="bi bi-bar-chart-line"></i>
-          So sánh doanh thu
-        </button>
-        <button
-          type="button"
-          :class="{ active: activeStatisticsView === 'email' }"
-          :aria-pressed="activeStatisticsView === 'email'"
-          @click="changeStatisticsView('email')"
-        >
-          <i class="bi bi-envelope"></i>
-          Gửi mail tổng kết
-        </button>
+      <nav class="view-tabs" aria-label="Chức năng thống kê">
+        <button v-for="tab in statisticsTabs" :key="tab.key" type="button" :class="{ active: activeStatisticsView === tab.key }" :aria-pressed="activeStatisticsView === tab.key" @click="changeStatisticsView(tab.key)"><i aria-hidden="true" :class="'bi ' + tab.icon"></i>{{ tab.label }}</button>
       </nav>
+      <div v-if="feedback" class="notice warning" role="status"><i aria-hidden="true" class="bi bi-info-circle"></i>{{ feedback }}<button type="button" @click="feedback = ''" aria-label="Đóng thông báo">×</button></div>
 
-      <!-- ===== GUI EMAIL BAO CAO TONG KET ===== -->
-      <section
-        v-if="activeStatisticsView === 'email'"
-        class="report-email-section"
-      >
-        <div class="report-email-card">
-          <!-- TIEU DE -->
-          <div class="report-email-header">
-            <div class="report-email-heading">
-              <div class="report-email-icon">
-                <i class="bi bi-envelope-paper"></i>
-              </div>
-
-              <div>
-                <h3>Gửi mail tổng kết doanh thu</h3>
-                <p>
-                  Gửi báo cáo kết quả kinh doanh SmashStep trực tiếp đến email
-                  người nhận.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <!-- FORM GUI EMAIL -->
-          <form class="report-email-form" @submit.prevent="sendRevenueReport">
-            <div class="report-email-field">
-              <label for="report-email">
-                <i class="bi bi-envelope"></i>
-                Email người nhận
-              </label>
-
-              <input
-                id="report-email"
-                v-model.trim="reportEmail"
-                type="email"
-                placeholder="Nhập địa chỉ email nhận báo cáo..."
-                autocomplete="email"
-                maxlength="254"
-                required
-                :disabled="sendingReportEmail"
-              />
-            </div>
-
-            <!-- CHON THOI GIAN -->
-            <div class="report-email-date-grid">
-              <div class="report-email-field">
-                <label for="report-from-date">
-                  <i class="bi bi-calendar3"></i>
-                  Từ ngày
-                </label>
-
-                <input
-                  id="report-from-date"
-                  v-model="reportFromDate"
-                  type="date"
-                  required
-                  :disabled="sendingReportEmail"
-                />
-              </div>
-
-              <div class="report-email-field">
-                <label for="report-to-date">
-                  <i class="bi bi-calendar-check"></i>
-                  Đến ngày
-                </label>
-
-                <input
-                  id="report-to-date"
-                  v-model="reportToDate"
-                  type="date"
-                  required
-                  :min="reportFromDate || undefined"
-                  :disabled="sendingReportEmail"
-                />
-              </div>
-            </div>
-
-            <!-- NOI DUNG BAO CAO -->
-            <div class="report-email-preview">
-              <h4>
-                <i class="bi bi-file-earmark-bar-graph"></i>
-                Nội dung báo cáo sẽ gửi
-              </h4>
-
-              <div class="report-email-preview-grid">
-                <span>
-                  <i class="bi bi-check-circle"></i>
-                  Doanh thu thực tế
-                </span>
-
-                <span>
-                  <i class="bi bi-check-circle"></i>
-                  Doanh thu dự kiến
-                </span>
-
-                <span>
-                  <i class="bi bi-check-circle"></i>
-                  Tiền mặt / chuyển khoản
-                </span>
-
-                <span>
-                  <i class="bi bi-check-circle"></i>
-                  Tổng số đơn hàng
-                </span>
-
-                <span>
-                  <i class="bi bi-check-circle"></i>
-                  Giá trị trung bình đơn (AOV)
-                </span>
-
-                <span>
-                  <i class="bi bi-check-circle"></i>
-                  Sản phẩm bán được và khách mới
-                </span>
-              </div>
-            </div>
-
-            <!-- THONG BAO LOI -->
-            <div
-              v-if="reportEmailError"
-              class="report-email-alert report-email-error"
-              role="alert"
-            >
-              <i class="bi bi-exclamation-triangle"></i>
-              {{ reportEmailError }}
-            </div>
-
-            <!-- THONG BAO THANH CONG -->
-            <div
-              v-if="reportEmailSuccess"
-              class="report-email-alert report-email-success"
-              role="status"
-            >
-              <i class="bi bi-check-circle"></i>
-              {{ reportEmailSuccess }}
-            </div>
-
-            <!-- NUT GUI -->
-            <div class="report-email-actions">
-              <span class="report-email-note">
-                <i class="bi bi-shield-check"></i>
-                Chỉ tài khoản Admin được phép gửi báo cáo.
-              </span>
-
-              <button
-                type="submit"
-                class="report-email-submit"
-                :disabled="sendingReportEmail"
-              >
-                <i
-                  :class="
-                    sendingReportEmail ? 'bi bi-hourglass-split' : 'bi bi-send'
-                  "
-                ></i>
-
-                {{
-                  sendingReportEmail
-                    ? "Đang gửi báo cáo..."
-                    : "Gửi mail tổng kết"
-                }}
-              </button>
-            </div>
-          </form>
+      <section v-if="activeStatisticsView === 'overview'" class="panel filter-panel">
+        <div class="panel-heading"><h2>Bộ lọc thời gian</h2><button type="button" class="outline-button" @click="resetFilters"><i aria-hidden="true" class="bi bi-arrow-counterclockwise"></i>Đặt lại bộ lọc</button></div>
+        <div class="filter-row">
+          <label>Từ ngày<input v-model="fromDate" type="date" :aria-invalid="!!dateValidationMessage"></label>
+          <label>Đến ngày<input v-model="toDate" type="date" :aria-invalid="!!dateValidationMessage"></label>
+          <div class="quick-periods" aria-label="Khoảng thời gian nhanh"><button v-for="item in quickPeriods" :key="item.key" type="button" :class="{ active: selectedQuickPeriod === item.key }" @click="quickFilter(item.key)">{{ item.label }}</button></div>
         </div>
+        <p v-if="dateValidationMessage" class="error-text" role="alert">{{ dateValidationMessage }}</p>
+        <p v-else class="filter-caption">Khoảng thống kê: <strong>{{ periodLabel }}</strong></p>
       </section>
 
-      <!-- BỘ LỌC TỔNG QUAN -->
-      <section v-if="activeStatisticsView === 'overview'" class="filter-card">
-        <div class="filter-header">
-          <h3>
-            <i class="bi bi-funnel"></i>
-            Bộ lọc tổng quan
-          </h3>
-
-          <div class="quick-filters">
-            <button type="button" @click="quickFilter('today')">Hôm nay</button>
-
-            <button type="button" @click="quickFilter('week')">
-              7 ngày qua
-            </button>
-
-            <button type="button" @click="quickFilter('month')">
-              Tháng này
-            </button>
-
-            <button type="button" @click="quickFilter('lastMonth')">
-              Tháng trước
-            </button>
-
-            <button type="button" @click="quickFilter('year')">Năm nay</button>
-          </div>
-        </div>
-
-        <div class="filter-grid">
-          <div class="filter-field">
-            <label for="stats-from-date">Từ ngày</label>
-            <input
-              id="stats-from-date"
-              v-model="fromDate"
-              type="date"
-              :aria-invalid="!!dateValidationMessage"
-            />
-          </div>
-
-          <div class="filter-field">
-            <label for="stats-to-date">Đến ngày</label>
-            <input
-              id="stats-to-date"
-              v-model="toDate"
-              type="date"
-              :aria-invalid="!!dateValidationMessage"
-            />
-          </div>
-
-          <div class="filter-field">
-            <label>Nhóm thời gian biểu đồ</label>
-            <div class="stats-select">
-              <StatisticsSelect
-                v-model="groupBy"
-                :allow-clear="false"
-                aria-label="Nhóm thời gian biểu đồ"
-              >
-                <option value="day">Theo ngày</option>
-                <option value="month">Theo tháng</option>
-                <option value="year">Theo năm</option>
-              </StatisticsSelect>
-            </div>
-          </div>
-
-          <div class="filter-field">
-            <label>Thương hiệu biểu đồ</label>
-            <div class="stats-select">
-              <StatisticsSelect
-                v-model="selectedBrand"
-                :allow-clear="false"
-                aria-label="Thương hiệu biểu đồ"
-              >
-                <option value="">Tất cả thương hiệu</option>
-
-                <option
-                  v-for="brand in brandOptions"
-                  :key="brand.id"
-                  :value="brand.id"
-                >
-                  {{ brand.name }}
-                </option>
-              </StatisticsSelect>
-            </div>
-          </div>
-
-          <button type="button" class="reset-button" @click="resetFilters">
-            <i class="bi bi-arrow-repeat"></i>
-            Đặt lại
-          </button>
-        </div>
-      </section>
-
-      <!-- THANH THÔNG TIN THỜI GIAN -->
-      <section
-        v-if="activeStatisticsView === 'overview'"
-        class="information-bar"
-      >
-        <div class="information-left">
-          <span class="blue-dot"></span>
-          <span>
-            Đang hiển thị dữ liệu tổng quan từ ngày
-            <strong>{{ periodLabel }}</strong>
-          </span>
-        </div>
-      </section>
-
-      <p
-        v-if="activeStatisticsView === 'overview' && dateValidationMessage"
-        class="date-error"
-        role="alert"
-      >
-        <i class="bi bi-exclamation-triangle"></i>
-        {{ dateValidationMessage }}
-      </p>
-
-      <!-- 7 Ô DOANH THU -->
-      <section
-        v-if="activeStatisticsView === 'overview'"
-        class="summary-section"
-      >
-        <!-- HÀNG TRÊN -->
-
-        <!-- Trạng thái đang tải -->
-        <div v-if="loadingSummary" class="summary-message">
-          <i class="bi bi-hourglass-split"></i>
-          Đang tải dữ liệu tổng quan doanh thu...
-        </div>
-
-        <!-- Trạng thái API lỗi -->
-        <div
-          v-else-if="summaryError"
-          class="summary-message summary-message-error"
-          role="alert"
-        >
-          <i class="bi bi-exclamation-triangle"></i>
-          {{ summaryError }}
-        </div>
-
-        <div
-          v-if="!loadingSummary && !summaryError"
-          class="summary-grid top-grid"
-        >
-          <div class="stat-card">
-            <div class="stat-icon mint">
-              <i class="bi bi-graph-up-arrow"></i>
-            </div>
-            <strong>{{ money(dashboardSummary?.totalRevenue) }}</strong>
-
-            <span>Doanh thu thực tế (đơn hoàn thành)</span>
-          </div>
-
-          <!-- DOANH THU DỰ KIẾN -->
-          <div class="stat-card stat-card-expected">
-            <div class="stat-icon blue">
-              <i class="bi bi-clock-history"></i>
-            </div>
-
-            <strong>
-              {{ money(dashboardSummary?.expectedRevenue) }}
-            </strong>
-
-            <span> Doanh thu dự kiến (đã xác nhận / chờ lấy hàng) </span>
-
-            <small>
-              {{ number(dashboardSummary?.expectedOrders) }}
-              đơn • theo ngày tạo
-            </small>
-          </div>
-
-          <div class="stat-card">
-            <div class="stat-icon green">
-              <i class="bi bi-graph-up-arrow"></i>
-            </div>
-            <strong>{{ money(dashboardSummary?.cashRevenue) }}</strong>
-            <span>Tổng tiền mặt</span>
-          </div>
-
-          <div class="stat-card">
-            <div class="stat-icon purple">
-              <i class="bi bi-credit-card"></i>
-            </div>
-            <strong>{{ money(dashboardSummary?.transferRevenue) }}</strong>
-            <span>Tổng tiền chuyển khoản</span>
-          </div>
-        </div>
-
-        <!-- HÀNG DƯỚI -->
-        <div
-          v-if="!loadingSummary && !summaryError"
-          class="summary-grid bottom-grid"
-        >
-          <div class="stat-card">
-            <div class="stat-icon blue">
-              <i class="bi bi-cart3"></i>
-            </div>
-            <strong>{{ number(dashboardSummary?.totalOrders) }}</strong>
-            <span>Tổng đơn hàng</span>
-          </div>
-
-          <div class="stat-card">
-            <div class="stat-icon purple">
-              <i class="bi bi-credit-card"></i>
-            </div>
-            <strong>{{ money(dashboardSummary?.averageOrderValue) }}</strong>
-            <span>Giá trị trung bình đơn (AOV)</span>
-          </div>
-
-          <div class="stat-card">
-            <div class="stat-icon yellow">
-              <i class="bi bi-box-seam"></i>
-            </div>
-            <strong>{{ number(dashboardSummary?.productsSold) }}</strong>
-            <span>Sản phẩm đã bán</span>
-          </div>
-
-          <div class="stat-card">
-            <div class="stat-icon red">
-              <i class="bi bi-people"></i>
-            </div>
-            <strong>{{ number(dashboardSummary?.newCustomers) }}</strong>
-            <span>Khách mới</span>
-          </div>
-        </div>
-      </section>
-
-      <!-- HAI BIỂU ĐỒ THỐNG KÊ -->
-      <section v-if="activeStatisticsView === 'overview'" class="charts-grid">
-        <!-- BIỂU ĐỒ SẢN PHẨM BÁN ĐƯỢC -->
-        <div class="chart-card">
-          <div class="chart-header">
-            <h3>
-              <i class="bi bi-bar-chart-line"></i>
-              Sản phẩm bán được theo ngày
-            </h3>
-
-            <div class="chart-actions">
-              <button
-                type="button"
-                :class="{ active: salesChartType === 'bar' }"
-                @click="salesChartType = 'bar'"
-              >
-                Cột
-              </button>
-              <button
-                type="button"
-                :class="{ active: salesChartType === 'line' }"
-                @click="salesChartType = 'line'"
-              >
-                Đường
-              </button>
-            </div>
-          </div>
-
-          <div class="chart-content">
-            <div v-if="loadingCharts" class="chart-empty">
-              Đang tải dữ liệu biểu đồ...
-            </div>
-
-            <div v-else-if="chartError" class="chart-empty">
-              {{ chartError }}
-            </div>
-
-            <div v-else-if="salesChartData.length" class="chart-canvas">
-              <Bar
-                v-if="salesChartType === 'bar'"
-                :data="salesChart"
-                :options="salesChartOptions"
-              />
-
-              <Line v-else :data="salesChart" :options="salesChartOptions" />
-            </div>
-
-            <div v-else class="chart-empty">
-              Chưa có dữ liệu sản phẩm bán được
-            </div>
-          </div>
-        </div>
-        <!-- Đóng chart-card biểu đồ bên trái -->
-
-        <!-- BIỂU ĐỒ THƯƠNG HIỆU -->
-        <div class="chart-card">
-          <div class="chart-header">
-            <h3>
-              <i class="bi bi-pie-chart"></i>
-              Thương hiệu
-            </h3>
-
-            <div class="chart-right">
-              <div class="chart-actions">
-                <button
-                  type="button"
-                  :class="{ active: brandChartType === 'pie' }"
-                  @click="brandChartType = 'pie'"
-                >
-                  Tròn
-                </button>
-                <button
-                  type="button"
-                  :class="{ active: brandChartType === 'line' }"
-                  @click="brandChartType = 'line'"
-                >
-                  Đường
-                </button>
-              </div>
-
-              <div class="stats-select">
-                <StatisticsSelect
-                  v-model="brandChartSort"
-                  :allow-clear="false"
-                  aria-label="Sắp xếp thương hiệu"
-                >
-                  <option value="revenue">Theo doanh thu</option>
-                  <option value="quantity">Theo số lượng</option>
-                </StatisticsSelect>
-              </div>
-            </div>
-          </div>
-
-          <div class="chart-content brand-chart-content">
-            <div v-if="loadingCharts" class="chart-empty">
-              Đang tải dữ liệu thương hiệu...
-            </div>
-
-            <div v-else-if="chartError" class="chart-empty">
-              {{ chartError }}
-            </div>
-
-            <template v-else-if="brandChartData.length">
-              <div class="brand-chart-canvas">
-                <Pie
-                  v-if="brandChartType === 'pie'"
-                  :data="brandChart"
-                  :options="brandPieOptions"
-                />
-
-                <Line
-                  v-else
-                  :data="brandLineChart"
-                  :options="brandLineOptions"
-                />
-              </div>
-
-              <div class="brand-list">
-                <div
-                  v-for="(brand, index) in sortedBrands"
-                  :key="brand.name"
-                  class="brand-list-item"
-                >
-                  <div class="brand-name">
-                    <span
-                      class="brand-dot"
-                      :style="{
-                        backgroundColor:
-                          brandColors[index % brandColors.length],
-                      }"
-                    ></span>
-
-                    <span>{{ brand.name }}</span>
-                  </div>
-
-                  <strong>
-                    {{
-                      brandChartSort === "revenue"
-                        ? money(brand.revenue)
-                        : number(brand.quantity)
-                    }}
-                  </strong>
-                </div>
-              </div>
-            </template>
-
-            <div v-else class="chart-empty">Chưa có dữ liệu thương hiệu</div>
-          </div>
-        </div>
-      </section>
-
-      <!-- ===== BIỂU ĐỒ SO SÁNH DOANH THU ===== -->
-
-      <section
-        v-if="activeStatisticsView === 'comparison'"
-        class="revenue-comparison-card"
-      >
-        <div class="revenue-comparison-header">
-          <h3>
-            <i class="bi bi-bar-chart-line"></i>
-            So sánh doanh thu và tăng trưởng
-          </h3>
-
-          <div class="revenue-comparison-filters">
-            <select v-model="comparisonMode">
-              <option value="month">Theo tháng</option>
-              <option value="quarter">Theo quý</option>
-              <option value="year">Theo năm</option>
-            </select>
-
-            <input
-              v-model.number="comparisonYear"
-              type="number"
-              min="2000"
-              max="2100"
-              aria-label="Năm thống kê"
-            />
-          </div>
-        </div>
-
-        <div v-if="loadingComparison" class="comparison-message">
-          Đang tải dữ liệu so sánh doanh thu...
-        </div>
-
-        <div
-          v-else-if="comparisonError"
-          class="comparison-message"
-          role="alert"
-        >
-          {{ comparisonError }}
-        </div>
-
-        <template v-else-if="visibleComparisonData.length">
-          <div class="revenue-comparison-chart">
-            <Bar
-              :data="revenueComparisonChart"
-              :options="revenueComparisonOptions"
-            />
-          </div>
-
-          <p class="comparison-note">
-            Doanh thu tính từ đơn hoàn thành. Kỳ hiện tại là số liệu tạm tính.
-            Các kỳ tương lai không hiển thị.
-          </p>
+      <template v-if="activeStatisticsView === 'overview'">
+        <div class="section-heading"><div><h2>Kết quả kinh doanh</h2><p>Doanh thu và số lượng bán lấy từ đơn hoàn thành, theo ngày thanh toán.</p></div><button class="outline-button" type="button" :disabled="loadingSummary || !!summaryError || !dashboardSummary || !!dateValidationMessage" @click="exportOverviewExcel"><i aria-hidden="true" class="bi bi-file-earmark-excel"></i>Xuất Excel</button></div>
+        <div v-if="loadingSummary" class="panel empty-state" role="status">Đang tải tổng quan…</div>
+        <div v-else-if="summaryError" class="notice error" role="alert">{{ summaryError }}<button type="button" @click="loadSummary">Thử lại</button></div>
+        <template v-else-if="dashboardSummary && !dateValidationMessage">
+          <section class="metric-grid">
+            <article class="metric revenue"><span class="metric-icon"><i aria-hidden="true" class="bi bi-graph-up-arrow"></i></span><span>Doanh thu thực tế</span><strong>{{ money(dashboardSummary.totalRevenue) }}</strong><small>Từ các đơn đã hoàn thành</small></article>
+            <article class="metric"><span class="metric-icon amber"><i aria-hidden="true" class="bi bi-clock-history"></i></span><span>Giá trị đơn dự kiến</span><strong>{{ money(dashboardSummary.expectedRevenue) }}</strong><small>{{ number(dashboardSummary.expectedOrders) }} đơn đã xác nhận / chờ lấy hàng · theo ngày tạo</small></article>
+            <article class="metric"><span class="metric-icon blue"><i aria-hidden="true" class="bi bi-bag-check"></i></span><span>Đơn hoàn thành</span><strong>{{ number(dashboardSummary.totalOrders) }}</strong><small>Đã thanh toán, trạng thái hoàn thành</small></article>
+            <article class="metric"><span class="metric-icon purple"><i aria-hidden="true" class="bi bi-box-seam"></i></span><span>Số lượng đã bán</span><strong>{{ number(dashboardSummary.productsSold) }}</strong><small>Tổng số lượng sản phẩm trên các đơn hoàn thành</small></article>
+          </section>
+          <section class="panel secondary-metrics" aria-label="Chỉ số bổ sung">
+            <div><span>Tiền mặt</span><strong>{{ money(dashboardSummary.cashRevenue) }}</strong></div><div><span>Chuyển khoản</span><strong>{{ money(dashboardSummary.transferRevenue) }}</strong></div>
+            <div v-if="otherPaymentRevenue > 0" title="Chênh lệch giữa doanh thu và hai số tiền mặt, chuyển khoản trong báo cáo; không gán toàn bộ cho một phương thức."><span>Khác / chưa phân loại <i aria-hidden="true" class="bi bi-info-circle"></i></span><strong>{{ money(otherPaymentRevenue) }}</strong></div>
+            <div><span>Giá trị đơn trung bình</span><strong>{{ money(dashboardSummary.averageOrderValue) }}</strong></div><div><span>Khách đăng ký mới</span><strong>{{ number(dashboardSummary.newCustomers) }}</strong></div>
+          </section>
         </template>
+        <section class="overview-charts">
+          <article class="panel sales-panel">
+            <div class="panel-heading"><div><h2>Xu hướng số lượng bán</h2><p>Đơn hoàn thành · {{ groupBy === 'day' ? 'theo ngày' : groupBy === 'month' ? 'theo tháng' : 'theo năm' }}</p></div><div class="chart-controls"><select v-model="groupBy" aria-label="Nhóm thời gian biểu đồ"><option value="day">Theo ngày</option><option value="month">Theo tháng</option><option value="year">Theo năm</option></select><div class="segmented"><button type="button" :class="{ active: salesChartType === 'bar' }" @click="salesChartType = 'bar'" aria-label="Biểu đồ cột"><i aria-hidden="true" class="bi bi-bar-chart"></i></button><button type="button" :class="{ active: salesChartType === 'line' }" @click="salesChartType = 'line'" aria-label="Biểu đồ đường"><i aria-hidden="true" class="bi bi-graph-up"></i></button></div></div></div>
+            <div v-if="loadingCharts" class="empty-state" role="status">Đang tải biểu đồ…</div><div v-else-if="chartError" class="empty-state error-text" role="alert">{{ chartError }}</div>
+            <div v-else-if="salesChartData.some(row => Number(row.quantity) > 0)" class="sales-canvas"><Bar v-if="salesChartType === 'bar'" :data="salesChart" :options="salesChartOptions"/><Line v-else :data="salesChart" :options="salesChartOptions"/></div>
+            <div v-else class="empty-state"><i aria-hidden="true" class="bi bi-bar-chart"></i><strong>Chưa có sản phẩm được bán</strong><span>Thử chọn khoảng thời gian khác.</span></div>
+          </article>
+          <article class="panel status-panel">
+            <div class="panel-heading"><div><h2>Trạng thái đơn hàng</h2><p>Tất cả đơn đã phát hành · theo ngày tạo đơn</p></div></div>
+            <div v-if="loadingOrderStatus" class="empty-state" role="status">Đang tải trạng thái…</div><div v-else-if="orderStatusError" class="empty-state error-text" role="alert">{{ orderStatusError }}</div>
+            <template v-else-if="activeOrderStatuses.length"><div class="donut-wrap"><Doughnut :data="orderStatusChart" :options="orderStatusChartOptions"/><div class="donut-center"><strong>{{ number(totalOrderStatuses) }}</strong><span>đơn hàng</span></div></div><ul class="status-legend"><li v-for="status in activeOrderStatuses" :key="status.ma"><span><i aria-hidden="true" :style="{ background: orderStatusColors[status.khoa] || '#94a3b8' }"></i>{{ status.ten }}</span><strong>{{ number(status.soLuong) }}<small>{{ statusShare(status.soLuong) }}%</small></strong></li></ul></template>
+            <div v-else class="empty-state"><i aria-hidden="true" class="bi bi-inbox"></i><strong>Chưa có đơn hàng</strong><span>Không có đơn trong khoảng đã chọn.</span></div>
+          </article>
+        </section>
+      </template>
 
-        <div v-else class="comparison-message">
-          Chưa có dữ liệu so sánh doanh thu.
-        </div>
+      <template v-if="activeStatisticsView === 'overview'">
+        <details class="panel brand-panel detail-table"><summary><i aria-hidden="true" class="bi bi-pie-chart"></i>Cơ cấu theo thương hiệu<span>Mở để xem chi tiết</span></summary><div class="panel-heading"><div><h2>Cơ cấu bán hàng theo thương hiệu</h2><p>Doanh số theo dòng sản phẩm; chưa phân bổ giảm phiếu và phí vận chuyển.</p></div><select v-model="brandChartSort" aria-label="Chỉ số thương hiệu"><option value="revenue">Theo doanh số</option><option value="quantity">Theo số lượng</option></select></div>
+          <div v-if="loadingCharts" class="empty-state">Đang tải thương hiệu…</div><div v-else-if="chartError" class="empty-state error-text">{{ chartError }}</div>
+          <div v-else-if="sortedBrands.some(row => Number(row[brandChartSort]) > 0)" class="brand-content"><div class="brand-canvas"><Doughnut :data="brandChart" :options="compactDonutOptions"/></div><ul class="brand-legend"><li v-for="(brand, index) in sortedBrands" :key="brand.name"><span><i aria-hidden="true" :style="{ background: brandColors[index % brandColors.length] }"></i>{{ brand.name }}</span><strong>{{ brandChartSort === 'revenue' ? money(brand.revenue) : number(brand.quantity) }}</strong></li></ul></div>
+          <div v-else class="empty-state">Chưa có dữ liệu thương hiệu trong khoảng này.</div>
+        </details>
+        <article class="panel table-panel"><div class="panel-heading"><div><h2>Hiệu quả bán hàng theo sản phẩm</h2><p>Tồn kho là số lượng hiện tại; các chỉ số bán hàng áp dụng khoảng ngày đã chọn.</p></div><button class="outline-button" type="button" :disabled="loadingProduct || !!productError || !filteredProducts.length || !!dateValidationMessage" @click="exportProductExcel"><i aria-hidden="true" class="bi bi-file-earmark-excel"></i>Xuất Excel</button></div>
+          <div class="table-filters"><label class="search-field"><i aria-hidden="true" class="bi bi-search"></i><input v-model="productSearch" placeholder="Tìm mã, tên sản phẩm…" aria-label="Tìm sản phẩm"></label><select v-model="productStockFilter" aria-label="Lọc tồn kho"><option value="all">Tất cả tồn kho</option><option value="inStock">Còn hàng</option><option value="outOfStock">Hết hàng</option></select><select v-model="productSort" aria-label="Sắp xếp sản phẩm"><option value="sold">Bán nhiều nhất</option><option value="revenue">Doanh số cao nhất</option><option value="stock">Tồn kho nhiều nhất</option><option value="name">Tên A–Z</option></select><button class="outline-button" type="button" @click="resetProductFilters">Đặt lại</button></div>
+          <div v-if="loadingProduct" class="empty-state">Đang tải sản phẩm…</div><div v-else-if="productError" class="empty-state error-text">{{ productError }}</div>
+          <div v-else class="table-scroll"><table><thead><tr><th>STT</th><th>Mã sản phẩm</th><th>Sản phẩm</th><th>Đã bán</th><th title="Số lượng trên các hóa đơn có giao dịch hoàn tiền trong kỳ">SL từ đơn hoàn tiền</th><th>Doanh số sản phẩm</th><th>Tồn kho hiện tại</th></tr></thead><tbody><tr v-for="(product, index) in paginatedProducts" :key="product.id"><td class="muted">{{ (productPage - 1) * productPageSize + index + 1 }}</td><td class="code">{{ product.code }}</td><td class="name-cell"><div class="product-identity"><img v-if="productThumbnail(product)" :src="productThumbnail(product)" :alt="product.name" loading="lazy" @error="failedProductImages.add(product.id)"><span v-else class="product-image-fallback"><i aria-hidden="true" class="bi bi-image"></i></span><span>{{ product.name }}</span></div></td><td>{{ number(product.sold) }}</td><td>{{ number(product.returned) }}</td><td class="amount">{{ money(product.revenue) }}</td><td><span class="stock-badge" :class="{ empty: Number(product.stock) <= 0 }">{{ number(product.stock) }}</span></td></tr><tr v-if="!paginatedProducts.length"><td colspan="7" class="empty-row">Không có sản phẩm phù hợp với bộ lọc.</td></tr></tbody></table></div>
+          <StatisticsPager v-if="!loadingProduct && !productError" v-model="productPage" :total="filteredProducts.length" :page-size="productPageSize" label="sản phẩm"/>
+          <p class="footnote">Doanh số sản phẩm đã tính giảm giá trên sản phẩm; chưa phân bổ phiếu giảm giá và phí vận chuyển của hóa đơn.</p>
+        </article>
+      </template>
+
+      <article v-if="activeStatisticsView === 'overview'" class="panel table-panel"><div class="panel-heading"><div><h2>Hiệu quả bán hàng theo nhân viên</h2><p>Kết quả được ghi nhận theo nhân viên trên các đơn hoàn thành.</p></div><button class="outline-button" type="button" :disabled="loadingEmployee || !!employeeError || !filteredEmployees.length || !!dateValidationMessage" @click="exportEmployeeExcel"><i aria-hidden="true" class="bi bi-file-earmark-excel"></i>Xuất Excel</button></div>
+        <div class="table-filters"><label class="search-field"><i aria-hidden="true" class="bi bi-search"></i><input v-model="employeeSearch" placeholder="Tìm mã, tên nhân viên…" aria-label="Tìm nhân viên"></label><select v-model="employeeSort" aria-label="Sắp xếp nhân viên"><option value="revenue">Doanh thu cao nhất</option><option value="totalOrders">Số đơn nhiều nhất</option><option value="productsSold">Bán nhiều sản phẩm nhất</option><option value="name">Tên A–Z</option></select><button class="outline-button" type="button" @click="resetEmployeeFilters">Đặt lại</button></div>
+        <div v-if="loadingEmployee" class="empty-state">Đang tải nhân viên…</div><div v-else-if="employeeError" class="empty-state error-text">{{ employeeError }}</div>
+        <div v-else class="table-scroll"><table><thead><tr><th>STT</th><th>Mã nhân viên</th><th>Nhân viên</th><th>Đơn hoàn thành</th><th>Số lượng đã bán</th><th>Doanh thu</th></tr></thead><tbody><tr v-for="(employee, index) in paginatedEmployees" :key="employee.id"><td class="muted">{{ (employeePage - 1) * employeePageSize + index + 1 }}</td><td class="code">{{ employee.code }}</td><td class="name-cell">{{ employee.name }}</td><td>{{ number(employee.totalOrders) }}</td><td>{{ number(employee.productsSold) }}</td><td class="amount">{{ money(employee.revenue) }}</td></tr><tr v-if="!paginatedEmployees.length"><td colspan="6" class="empty-row">Không có nhân viên phù hợp với bộ lọc.</td></tr></tbody></table></div>
+        <StatisticsPager v-if="!loadingEmployee && !employeeError" v-model="employeePage" :total="filteredEmployees.length" :page-size="employeePageSize" label="nhân viên"/>
+      </article>
+
+      <template v-if="activeStatisticsView === 'comparison'">
+        <article class="panel comparison-panel"><div class="panel-heading"><div><h2>So sánh doanh thu giữa các kỳ</h2><p>Dựa trên đơn hoàn thành. Kỳ hiện tại là số tạm tính; tăng trưởng so với toàn bộ kỳ trước.</p></div><button class="outline-button" type="button" :disabled="loadingComparison || !!comparisonError || !revenueComparisonRows.length" @click="exportRevenueComparisonExcel"><i aria-hidden="true" class="bi bi-file-earmark-excel"></i>Xuất Excel</button></div>
+          <div class="table-filters"><label>Nhóm kỳ<select v-model="comparisonMode"><option value="month">Theo tháng</option><option value="quarter">Theo quý</option><option value="year">Theo năm</option></select></label><label>Năm tham chiếu<input v-model.number="comparisonYear" type="number" min="2000" max="2100"></label></div>
+          <div v-if="loadingComparison" class="empty-state">Đang tải so sánh…</div><div v-else-if="comparisonError" class="empty-state error-text">{{ comparisonError }}</div>
+          <template v-else-if="visibleComparisonData.length"><div class="comparison-canvas"><Bar :data="revenueComparisonChart" :options="revenueComparisonOptions"/></div>
+            <details class="detail-table"><summary><i aria-hidden="true" class="bi bi-table"></i>Xem bảng số liệu đối chiếu <span>{{ revenueComparisonRows.length }} kỳ</span></summary><div class="table-scroll"><table><thead><tr><th>Kỳ</th><th>Doanh thu</th><th>Đơn hoàn thành</th><th>Giá trị đơn TB</th><th>Tăng trưởng</th></tr></thead><tbody><tr v-for="row in revenueComparisonRows" :key="row.period"><td class="code">{{ row.period }}</td><td class="amount">{{ money(row.revenue) }}</td><td>{{ number(row.orders) }}</td><td>{{ money(row.aov) }}</td><td><span :class="growthClass(row.growth)">{{ growthText(row.growth) }}</span></td></tr></tbody></table></div></details>
+          </template><div v-else class="empty-state">Chưa có dữ liệu so sánh.</div>
+        </article>
+        <details class="panel detail-table fixed-periods"><summary><i aria-hidden="true" class="bi bi-calendar3"></i>Các mốc thời gian hiện tại<span>Hôm nay · Tuần · Tháng · Năm</span></summary><div class="panel-heading"><p>Các mốc được tính theo thời điểm hiện tại, độc lập với khoảng lọc và năm so sánh bên trên.</p><button class="outline-button" type="button" :disabled="loadingPeriod || !!periodError || !periodData.length" @click="exportPeriodExcel"><i aria-hidden="true" class="bi bi-file-earmark-excel"></i>Xuất Excel</button></div><div v-if="loadingPeriod" class="empty-state">Đang tải…</div><div v-else-if="periodError" class="empty-state error-text">{{ periodError }}</div><div v-else class="table-scroll"><table><thead><tr><th>Mốc thời gian</th><th>Doanh thu</th><th>Đơn hoàn thành</th><th>Giá trị đơn TB</th><th>Tăng trưởng</th></tr></thead><tbody><tr v-for="row in periodData" :key="row.period"><td class="code">{{ row.period }}</td><td class="amount">{{ money(row.revenue) }}</td><td>{{ number(row.orders) }}</td><td>{{ money(row.aov) }}</td><td><span :class="growthClass(row.growth)">{{ growthText(row.growth) }}</span></td></tr><tr v-if="!periodData.length"><td colspan="5" class="empty-row">Chưa có dữ liệu.</td></tr></tbody></table></div></details>
+      </template>
+
+      <section v-if="activeStatisticsView === 'email'" class="report-layout">
+        <article class="panel"><div class="panel-heading"><div><h2>Gửi báo cáo tổng kết</h2><p>Chọn báo cáo theo tháng hoặc năm để gửi ngay.</p></div></div>
+          <form class="report-form" @submit.prevent="sendRevenueReport">
+            <div class="report-kinds" aria-label="Loại báo cáo"><button type="button" :class="{ active: reportType === 'month' }" @click="reportType = 'month'" :disabled="sendingReportEmail"><i aria-hidden="true" class="bi bi-calendar-month"></i>Tổng kết tháng</button><button type="button" :class="{ active: reportType === 'year' }" @click="reportType = 'year'" :disabled="sendingReportEmail"><i aria-hidden="true" class="bi bi-calendar3"></i>Tổng kết năm</button></div>
+            <label>Email người nhận<input v-model="reportEmail" type="email" required maxlength="254" autocomplete="email" placeholder="Ví dụ: quanly@example.com" :disabled="sendingReportEmail"></label>
+            <label v-if="reportType === 'month'">Tháng báo cáo<input v-model="reportMonth" type="month" min="2000-01" :max="currentReportMonth" required :disabled="sendingReportEmail"></label>
+            <label v-else>Năm báo cáo<input v-model.number="reportYear" type="number" min="2000" :max="currentReportYear" required :disabled="sendingReportEmail"></label>
+            <p v-if="reportPeriodError" class="error-text">{{ reportPeriodError }}</p><p v-else class="report-period-note">Khoảng báo cáo: <strong>{{ reportFromDate.split('-').reverse().join('/') }} – {{ reportToDate.split('-').reverse().join('/') }}</strong><span v-if="reportIsTemporary">Kỳ chưa kết thúc; email sẽ ghi rõ số liệu tạm tính.</span></p>
+            <p v-if="reportEmailError" class="notice error" role="alert">{{ reportEmailError }}</p><p v-if="reportEmailSuccess" class="notice success" role="status">{{ reportEmailSuccess }}</p>
+            <div class="report-actions"><span><i aria-hidden="true" class="bi bi-shield-check"></i>Chỉ quản lý được gửi báo cáo</span><button class="primary-button" type="submit" :disabled="sendingReportEmail || !!reportPeriodError"><i aria-hidden="true" class="bi bi-send"></i>{{ sendingReportEmail ? 'Đang gửi…' : reportType === 'month' ? 'Gửi tổng kết tháng' : 'Gửi tổng kết năm' }}</button></div>
+          </form>
+        </article>
+        <article class="panel"><div class="panel-heading"><div><h2>Tự động gửi cuối kỳ</h2><p>Lưu email nhận và các kỳ muốn theo dõi.</p></div><span class="schedule-zone">Giờ Việt Nam</span></div>
+          <div v-if="scheduleLoading" class="empty-state" role="status">Đang tải lịch gửi…</div>
+          <form v-else class="report-form schedule-form" @submit.prevent="saveEmailSchedule">
+            <label>Email nhận tự động<input v-model="scheduleEmail" type="email" maxlength="254" :required="monthlyEnabled || yearlyEnabled" :disabled="scheduleSaving || !scheduleLoaded" placeholder="Ví dụ: quanly@example.com"></label>
+            <label class="schedule-option"><input v-model="monthlyEnabled" type="checkbox" :disabled="scheduleSaving || !scheduleLoaded"><span><strong>Tổng kết tháng</strong><small>00:05 ngày 1 tháng sau, báo cáo toàn bộ tháng vừa kết thúc.</small></span></label>
+            <label class="schedule-option"><input v-model="yearlyEnabled" type="checkbox" :disabled="scheduleSaving || !scheduleLoaded"><span><strong>Tổng kết năm</strong><small>00:10 ngày 1/1, báo cáo toàn bộ năm vừa kết thúc.</small></span></label>
+            <div class="schedule-last"><span>Tháng gần nhất: <strong>{{ sentTime(lastMonthlySent) }}</strong></span><span>Năm gần nhất: <strong>{{ sentTime(lastYearlySent) }}</strong></span></div>
+            <p class="schedule-note"><i aria-hidden="true" class="bi bi-info-circle"></i>Backend cần chạy để gửi email. Nếu tắt lúc đến lịch, hệ thống gửi bù sau khi chạy lại. Lịch bắt đầu từ tháng/năm được bật; không tự gửi các kỳ cũ trước đó.</p>
+            <p v-if="scheduleError" class="notice error" role="alert">{{ scheduleError }}<button v-if="!scheduleLoaded" type="button" @click="loadEmailSchedule">Thử lại</button></p><p v-if="scheduleSuccess" class="notice success" role="status">{{ scheduleSuccess }}</p>
+            <div class="report-actions"><span>Các thay đổi có hiệu lực sau khi lưu.</span><button class="primary-button" type="submit" :disabled="scheduleSaving || !scheduleLoaded">{{ scheduleSaving ? 'Đang lưu…' : 'Lưu lịch tự động' }}</button></div>
+          </form>
+        </article>
       </section>
 
-      <!-- ===== BANG DOI CHIEU DOANH THU ===== -->
-
-      <section
-        v-if="activeStatisticsView === 'comparison'"
-        class="revenue-comparison-card"
-      >
-        <div class="revenue-comparison-header">
-          <h3>
-            <i class="bi bi-table"></i>
-            Bảng đối chiếu doanh thu
-          </h3>
-
-          <button
-            type="button"
-            class="period-export-btn"
-            :disabled="
-              loadingComparison ||
-              !!comparisonError ||
-              !revenueComparisonRows.length
-            "
-            @click="exportRevenueComparisonExcel"
-          >
-            <i class="bi bi-file-earmark-excel"></i>
-            Xuất Excel
-          </button>
-
-          <span class="comparison-note">
-            Dữ liệu theo
-            {{
-              comparisonMode === "month"
-                ? "tháng"
-                : comparisonMode === "quarter"
-                  ? "quý"
-                  : "năm"
-            }}
-          </span>
-        </div>
-
-        <!-- Đang tải -->
-        <div v-if="loadingComparison" class="comparison-message">
-          Đang tải bảng đối chiếu doanh thu...
-        </div>
-
-        <!-- Lỗi API -->
-        <div
-          v-else-if="comparisonError"
-          class="comparison-message"
-          role="alert"
-        >
-          {{ comparisonError }}
-        </div>
-
-        <!-- Bảng dữ liệu -->
-        <div v-else class="period-table-wrapper">
-          <table class="period-table">
-            <thead>
-              <tr>
-                <th>STT</th>
-                <th>Thời gian</th>
-                <th>Doanh thu thực tế</th>
-                <th>Số đơn</th>
-                <th>AOV</th>
-                <th>Tăng trưởng</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              <tr v-for="row in revenueComparisonRows" :key="row.period">
-                <td>{{ row.stt }}</td>
-
-                <td class="period-name">
-                  {{ row.period }}
-                </td>
-
-                <td>
-                  {{ money(row.revenue) }}
-                </td>
-
-                <td>
-                  {{ number(row.orders) }}
-                </td>
-
-                <td>
-                  {{ money(row.aov) }}
-                </td>
-
-                <td>
-                  <span
-                    :class="{
-                      'growth-positive': row.growth != null && row.growth > 0,
-                      'growth-negative': row.growth != null && row.growth < 0,
-                    }"
-                  >
-                    {{ growthText(row.growth) }}
-                  </span>
-                </td>
-              </tr>
-
-              <tr v-if="!revenueComparisonRows.length">
-                <td colspan="6" class="period-message">
-                  Chưa có dữ liệu đối chiếu doanh thu.
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <p class="comparison-note">
-          Doanh thu được tính từ đơn hoàn thành. Kỳ hiện tại là số liệu tạm
-          tính. Tăng trưởng được so với toàn bộ kỳ trước.
-        </p>
-      </section>
-
-      <!-- TỔNG QUAN THEO CHU KỲ THỜI GIAN -->
-      <section
-        v-if="activeStatisticsView === 'overview'"
-        class="period-section"
-      >
-        <div class="period-card">
-          <div class="period-header">
-            <h3>
-              <i class="bi bi-calendar3"></i>
-              Tổng quan theo chu kỳ thời gian
-            </h3>
-
-            <button
-              type="button"
-              class="period-export-btn"
-              @click="exportPeriodExcel"
-            >
-              <i class="bi bi-file-earmark-excel"></i>
-              Xuất Excel
-            </button>
-          </div>
-
-          <div v-if="loadingPeriod" class="period-message">
-            Đang tải dữ liệu...
-          </div>
-
-          <div v-else-if="periodError" class="period-message period-error">
-            {{ periodError }}
-          </div>
-
-          <div v-else class="period-table-wrapper">
-            <table class="period-table">
-              <thead>
-                <tr>
-                  <th>Thời gian</th>
-                  <th>Doanh thu</th>
-                  <th>Số đơn</th>
-                  <th>AOV</th>
-                  <th>Tăng trưởng</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                <tr v-for="row in periodData" :key="row.period">
-                  <td class="period-name">
-                    {{ row.period }}
-                  </td>
-
-                  <td>{{ money(row.revenue) }}</td>
-
-                  <td>{{ number(row.orders) }}</td>
-
-                  <td>{{ money(row.aov) }}</td>
-
-                  <td>
-                    <span
-                      :class="{
-                        'growth-positive': Number(row.growth) > 0,
-                        'growth-negative':
-                          row.growth != null && Number(row.growth) < 0,
-                      }"
-                    >
-                      {{ growthText(row.growth) }}
-                    </span>
-                  </td>
-                </tr>
-
-                <tr v-if="!periodData.length">
-                  <td colspan="5" class="period-message">
-                    Chưa có dữ liệu thống kê
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- CƠ CẤU TRẠNG THÁI ĐƠN HÀNG -->
-        <div class="order-status-card">
-          <div class="period-header">
-            <h3>
-              <i class="bi bi-pie-chart"></i>
-              Cơ cấu trạng thái đơn hàng
-            </h3>
-          </div>
-
-          <div v-if="loadingOrderStatus" class="period-message">
-            Đang tải dữ liệu...
-          </div>
-
-          <div v-else-if="orderStatusError" class="period-message period-error">
-            {{ orderStatusError }}
-          </div>
-
-          <template v-else-if="activeOrderStatuses.length">
-            <p class="order-status-total">
-              Tổng số đơn hàng:
-              <strong>{{ number(totalOrderStatuses) }}</strong>
-            </p>
-
-            <div class="order-status-canvas">
-              <Pie
-                :data="orderStatusChart"
-                :options="orderStatusChartOptions"
-              />
-            </div>
-
-            <div class="order-status-list">
-              <div
-                v-for="status in orderStatusData"
-                :key="status.ma"
-                class="order-status-item"
-              >
-                <span class="order-status-name">
-                  <span
-                    class="order-status-dot"
-                    :style="{
-                      backgroundColor:
-                        orderStatusColors[status.khoa] || '#94a3b8',
-                    }"
-                  ></span>
-                  {{ status.ten }}
-                </span>
-
-                <strong>{{ number(status.soLuong) }}</strong>
-              </div>
-            </div>
-          </template>
-
-          <div v-else class="period-message">
-            Chưa có dữ liệu trạng thái đơn hàng
-          </div>
-        </div>
-      </section>
-
-      <!-- TỔNG QUAN DOANH THU NHÂN VIÊN -->
-
-      <section
-        v-if="activeStatisticsView === 'overview'"
-        class="employee-section"
-      >
-        <div class="employee-card">
-          <!-- TIÊU ĐỀ -->
-          <div class="employee-header">
-            <h3>
-              <i class="bi bi-people"></i>
-              Tổng quan doanh thu nhân viên
-            </h3>
-
-            <button
-              type="button"
-              class="employee-export-btn"
-              @click="exportEmployeeExcel"
-            >
-              <i class="bi bi-file-earmark-excel"></i>
-              Xuất Excel
-            </button>
-          </div>
-
-          <!-- BỘ LỌC NHÂN VIÊN -->
-          <div class="employee-filters">
-            <input
-              v-model="employeeSearch"
-              type="text"
-              aria-label="Tìm tên hoặc mã nhân viên"
-              placeholder="Tìm tên hoặc mã nhân viên..."
-            />
-
-            <div class="stats-select">
-              <StatisticsSelect
-                v-model="employeeSort"
-                :allow-clear="false"
-                aria-label="Sắp xếp nhân viên"
-              >
-                <option value="revenue">Doanh thu cao nhất</option>
-                <option value="totalOrders">Số đơn nhiều nhất</option>
-                <option value="productsSold">Sản phẩm bán nhiều nhất</option>
-                <option value="name">Tên nhân viên A-Z</option>
-              </StatisticsSelect>
-            </div>
-
-            <button
-              type="button"
-              class="employee-reset-btn"
-              @click="resetEmployeeFilters"
-            >
-              <i class="bi bi-arrow-repeat"></i>
-              Đặt lại
-            </button>
-          </div>
-
-          <!-- TRẠNG THÁI TẢI DỮ LIỆU -->
-          <div v-if="loadingEmployee" class="period-message">
-            Đang tải dữ liệu nhân viên...
-          </div>
-
-          <div v-else-if="employeeError" class="period-message period-error">
-            {{ employeeError }}
-          </div>
-
-          <!-- BẢNG NHÂN VIÊN -->
-          <div v-else class="employee-table-wrapper">
-            <table class="employee-table">
-              <thead>
-                <tr>
-                  <th>STT</th>
-                  <th>Mã nhân viên</th>
-                  <th>Tên nhân viên</th>
-                  <th>Tổng đơn hàng</th>
-                  <th>Sản phẩm đã bán</th>
-                  <th>Doanh thu</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                <tr
-                  v-for="(employee, index) in paginatedEmployees"
-                  :key="employee.id"
-                >
-                  <td>
-                    {{ (employeePage - 1) * employeePageSize + index + 1 }}
-                  </td>
-
-                  <td>{{ employee.code }}</td>
-
-                  <td class="employee-name">
-                    {{ employee.name }}
-                  </td>
-
-                  <td>{{ number(employee.totalOrders) }}</td>
-
-                  <td>{{ number(employee.productsSold) }}</td>
-
-                  <td class="employee-revenue">
-                    {{ money(employee.revenue) }}
-                  </td>
-                </tr>
-
-                <tr v-if="!paginatedEmployees.length">
-                  <td colspan="6" class="period-message">
-                    Không tìm thấy nhân viên phù hợp
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <!-- PHÂN TRANG -->
-          <div
-            v-if="
-              !loadingEmployee && !employeeError && filteredEmployees.length
-            "
-            class="employee-pagination"
-          >
-            <span>
-              Hiển thị {{ paginatedEmployees.length }} /
-              {{ filteredEmployees.length }} nhân viên
-            </span>
-
-            <div class="employee-page-buttons">
-              <button
-                type="button"
-                :disabled="employeePage <= 1"
-                @click="employeePage--"
-              >
-                Trước
-              </button>
-
-              <span> Trang {{ employeePage }} / {{ employeeTotalPages }} </span>
-
-              <button
-                type="button"
-                :disabled="employeePage >= employeeTotalPages"
-                @click="employeePage++"
-              >
-                Sau
-              </button>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- ===== TỔNG QUAN SẢN PHẨM ===== -->
-
-      <section
-        v-if="activeStatisticsView === 'overview'"
-        class="employee-section"
-      >
-        <div class="employee-card">
-          <!-- TIÊU ĐỀ -->
-
-          <div class="employee-header">
-            <h3>
-              <i class="bi bi-box-seam"></i>
-              Tổng quan sản phẩm
-            </h3>
-
-            <button
-              type="button"
-              class="employee-export-btn"
-              @click="exportProductExcel"
-            >
-              <i class="bi bi-file-earmark-excel"></i>
-              Xuất Excel
-            </button>
-          </div>
-
-          <p class="product-revenue-note">
-            <i class="bi bi-info-circle"></i>
-            Doanh số sản phẩm được tính từ chi tiết hóa đơn, chưa phân bổ giảm
-            giá và phí vận chuyển ở cấp hóa đơn nên có thể khác tổng doanh thu.
-          </p>
-
-          <!-- BỘ LỌC -->
-          <div class="employee-filters">
-            <input
-              v-model="productSearch"
-              type="text"
-              aria-label="Tìm mã hoặc tên sản phẩm"
-              placeholder="Tìm mã hoặc tên sản phẩm..."
-            />
-
-            <div class="stats-select">
-              <StatisticsSelect
-                v-model="productStockFilter"
-                :allow-clear="false"
-                aria-label="Lọc tồn kho"
-              >
-                <option value="all">Tất cả tồn kho</option>
-                <option value="inStock">Còn hàng</option>
-                <option value="outOfStock">Hết hàng</option>
-              </StatisticsSelect>
-            </div>
-
-            <div class="stats-select">
-              <StatisticsSelect
-                v-model="productSort"
-                :allow-clear="false"
-                aria-label="Sắp xếp sản phẩm"
-              >
-                <option value="sold">Bán nhiều nhất</option>
-                <option value="revenue">Doanh thu cao nhất</option>
-                <option value="stock">Tồn kho nhiều nhất</option>
-                <option value="name">Tên sản phẩm A-Z</option>
-              </StatisticsSelect>
-            </div>
-
-            <button
-              type="button"
-              class="employee-reset-btn"
-              @click="resetProductFilters"
-            >
-              <i class="bi bi-arrow-repeat"></i>
-              Đặt lại
-            </button>
-          </div>
-
-          <!-- TRẠNG THÁI API -->
-          <div v-if="loadingProduct" class="period-message">
-            Đang tải dữ liệu sản phẩm...
-          </div>
-
-          <div v-else-if="productError" class="period-message period-error">
-            {{ productError }}
-          </div>
-
-          <!-- BẢNG SẢN PHẨM -->
-          <div v-else class="employee-table-wrapper">
-            <table class="employee-table">
-              <thead>
-                <tr>
-                  <th>STT</th>
-                  <th>Mã sản phẩm</th>
-                  <th>Tên sản phẩm</th>
-                  <th>Đã bán</th>
-                  <th>Hoàn tiền</th>
-                  <th>Doanh số SP (trước giảm giá)</th>
-                  <th>Tồn kho</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                <tr
-                  v-for="(product, index) in paginatedProducts"
-                  :key="product.id"
-                >
-                  <td>
-                    {{ (productPage - 1) * productPageSize + index + 1 }}
-                  </td>
-
-                  <td>{{ product.code }}</td>
-
-                  <td class="employee-name">
-                    {{ product.name }}
-                  </td>
-
-                  <td>{{ number(product.sold) }}</td>
-
-                  <td>{{ number(product.returned) }}</td>
-
-                  <td class="employee-revenue">
-                    {{ money(product.revenue) }}
-                  </td>
-
-                  <td>
-                    <span
-                      :style="{
-                        color:
-                          Number(product.stock) > 0 ? '#16a34a' : '#dc2626',
-                        fontWeight: '600',
-                      }"
-                    >
-                      {{ number(product.stock) }}
-                    </span>
-                  </td>
-                </tr>
-
-                <tr v-if="!paginatedProducts.length">
-                  <td colspan="7" class="period-message">
-                    Không tìm thấy sản phẩm phù hợp
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <!-- PHÂN TRANG -->
-          <div
-            v-if="!loadingProduct && !productError && filteredProducts.length"
-            class="employee-pagination"
-          >
-            <span>
-              Hiển thị {{ paginatedProducts.length }} /
-              {{ filteredProducts.length }} sản phẩm
-            </span>
-
-            <div class="employee-page-buttons">
-              <button
-                type="button"
-                :disabled="productPage <= 1"
-                @click="productPage--"
-              >
-                Trước
-              </button>
-
-              <span> Trang {{ productPage }} / {{ productTotalPages }} </span>
-
-              <button
-                type="button"
-                :disabled="productPage >= productTotalPages"
-                @click="productPage++"
-              >
-                Sau
-              </button>
-            </div>
-          </div>
-        </div>
-      </section>
     </main>
   </AdminLayout>
 </template>
 
 <style scoped>
-/* ===== GIAO DIEN THONG KE SMASHSTEP ===== */
+.statistics-page{--blue:#168fce;--ink:#243f50;--muted:#8296a3;--border:#e0eaf0;background:#f5f8fc;color:var(--ink);padding:26px 28px 36px;min-height:calc(100vh - 86px);font-size:13px}.statistics-page *{box-sizing:border-box}.page-heading{margin-bottom:22px}.breadcrumb{display:flex;gap:14px;align-items:center;color:#90a3af;font-size:12px;margin-bottom:8px}.breadcrumb b{color:#c0cdd5}.breadcrumb strong{font-weight:500;color:#4b6b80}.page-heading h1{font-size:26px;font-weight:750;line-height:1.3;margin:0 0 7px}.page-heading p{font-size:13px;color:var(--muted);margin:0}.view-tabs{display:flex;gap:5px;margin-bottom:24px;border-bottom:1px solid var(--border);overflow-x:auto}.view-tabs button{display:flex;align-items:center;justify-content:center;gap:9px;padding:14px 18px;border:0;border-bottom:3px solid transparent;border-radius:8px 8px 0 0;background:transparent;color:#7c929f;white-space:nowrap;font:inherit;font-weight:600;cursor:pointer}.view-tabs button.active{border-bottom-color:var(--blue);color:var(--blue);background:#eaf5fc}.view-tabs button:hover{color:var(--blue)}
+.panel{background:#fff;border:1px solid var(--border);border-radius:15px;box-shadow:0 2px 4px #234a6410;min-width:0;margin-bottom:22px;overflow:hidden}.panel-heading{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:22px 24px}.panel-heading h2,.section-heading h2{font-size:16px;font-weight:700;margin:0;line-height:1.4}.panel-heading p,.section-heading p{font-size:12px;line-height:1.7;color:var(--muted);margin:6px 0 0}.section-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:25px 0 16px}.statistics-page button{font:inherit}.outline-button,.primary-button{display:inline-flex;justify-content:center;align-items:center;gap:8px;padding:0 15px;height:38px;border:1px solid #b9dbef;border-radius:9px;background:#fff;color:#168bc5;white-space:nowrap;font-weight:600!important;cursor:pointer}.outline-button:hover{background:#eff8fd}.primary-button{color:white;background:var(--blue);border-color:var(--blue)}.statistics-page button:disabled{opacity:.45;cursor:default}.statistics-page button:focus-visible,.statistics-page summary:focus-visible{outline:2px solid #168fce;outline-offset:3px}
+.statistics-page input,.statistics-page select{min-width:0;height:42px;border:1px solid #d7e5ed;border-radius:9px;padding:0 12px;color:#4c687b;background:#fff;font:inherit;outline:none}.statistics-page input:focus,.statistics-page select:focus{border-color:var(--blue);box-shadow:0 0 0 3px #168fce10}.statistics-page input[aria-invalid=true]{border-color:#df7373}.statistics-page label{display:flex;flex-direction:column;gap:8px;color:#657f8e;font-size:12px;font-weight:500}.filter-panel .panel-heading{padding-bottom:18px}.filter-row{display:flex;align-items:flex-end;gap:18px;padding:0 24px}.filter-row>label{flex:0 1 220px}.filter-row input{width:100%}.quick-periods{display:flex;flex-wrap:wrap;gap:6px;min-height:42px;align-items:center;margin-left:auto}.quick-periods button{background:#f6f9fb;border:1px solid #e3ebf0;border-radius:7px;padding:8px 11px;color:#728b9b;cursor:pointer;font-size:12px}.quick-periods button.active{background:#e9f5fc;border-color:#a4d6f1;color:#1489c4}.filter-caption{padding:16px 24px 18px;margin:0;color:#91a2af;font-size:12px}.filter-caption strong{font-weight:500;color:#54778d}.filter-panel>.error-text{padding:0 24px 16px}
+.metric-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-bottom:16px}.metric{background:#fff;border:1px solid var(--border);box-shadow:0 2px 4px #234a6408;border-radius:14px;padding:21px 20px;display:flex;flex-direction:column;align-items:flex-start;min-width:0}.metric>span:not(.metric-icon){font-size:12px;color:#718998;margin-top:17px}.metric>strong{font-size:25px;font-weight:750;margin-top:8px;line-height:1.35;overflow-wrap:anywhere}.metric>small{font-size:11px;color:#9aabb7;line-height:1.65;margin-top:9px}.metric-icon{display:flex;align-items:center;justify-content:center;width:39px;height:39px;background:#e7f7f1;color:#24916d;border-radius:11px;font-size:18px}.metric-icon.amber{background:#fff5e4;color:#cc972c}.metric-icon.blue{background:#eaf4ff;color:#3489d1}.metric-icon.purple{background:#f0edff;color:#8c72d5}.metric.revenue{border-top:3px solid #21a59a;padding-top:19px}.secondary-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));padding:21px 8px}.secondary-metrics>div{display:flex;flex-direction:column;gap:8px;padding:0 18px;border-right:1px solid #e7eef3}.secondary-metrics>div:last-child{border:0}.secondary-metrics span{font-size:11px;color:#8ba0ae}.secondary-metrics strong{font-size:15px;font-weight:650;color:#466477}
+.overview-charts{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(340px,1fr);gap:20px;align-items:start}.chart-controls{display:flex;align-items:center;gap:10px}.chart-controls select{height:34px;max-width:130px;font-size:12px}.segmented{display:flex;background:#f3f7fa;padding:3px;border-radius:7px}.segmented button{height:28px;width:32px;border:0;border-radius:5px;background:transparent;color:#8aa1b0;cursor:pointer}.segmented button.active{background:#fff;box-shadow:0 1px 3px #1f4d7320;color:var(--blue)}.sales-canvas{height:400px;padding:10px 24px 24px;min-width:0}.donut-wrap{height:210px;width:210px;margin:6px auto 20px;position:relative}.donut-center{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;pointer-events:none}.donut-center strong{font-size:29px;font-weight:750}.donut-center span{font-size:11px;color:#91a3af;margin-top:3px}.status-legend,.brand-legend{list-style:none;padding:0 24px 20px;margin:0}.status-legend{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:18px}.status-legend li,.brand-legend li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid #edf2f6;font-size:12px}.status-legend li:last-child,.brand-legend li:last-child{border:0}.status-legend li>span,.brand-legend li>span{display:flex;align-items:center;gap:9px;color:#627f91}.status-legend i,.brand-legend i{display:inline-block;width:8px;height:8px;border-radius:3px;flex-shrink:0}.status-legend strong{font-size:12px}.status-legend small{display:inline-block;min-width:43px;text-align:right;font-size:10px;font-weight:400;color:#9aadb9;margin-left:10px}.brand-content{display:grid;grid-template-columns:280px minmax(0,1fr);align-items:center;gap:25px;padding:4px 24px 24px}.brand-canvas{height:240px;max-width:240px;margin:auto}.brand-legend{padding:0}.brand-legend strong{white-space:nowrap;font-size:12px}.brand-panel .panel-heading select{font-size:12px;max-width:170px}
+.table-filters{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:0 24px 22px}.table-filters>label:not(.search-field){min-width:160px}.table-filters select{min-width:170px}.search-field{position:relative;flex:1;min-width:200px;max-width:440px}.search-field input{width:100%;padding-left:36px}.search-field>i{position:absolute;left:13px;top:14px;color:#9bb0bd}.table-filters>.outline-button{margin-left:auto}.table-scroll{width:100%;overflow-x:auto}.statistics-page table{width:100%;border-collapse:collapse;font-size:12px;text-align:left;white-space:nowrap}.statistics-page th{padding:17px 20px;background:#eaf4fa;font-size:11px;font-weight:600;color:#668396;border-top:1px solid #e1ebf2;border-bottom:1px solid #dce9f1}.statistics-page td{padding:18px 20px;border-bottom:1px solid #edf2f6;vertical-align:middle;color:#526f82}.statistics-page th:first-child,.statistics-page td:first-child{padding-left:24px}.statistics-page tr:last-child td{border-bottom:0}.statistics-page tbody tr:hover td{background:#fafdff}.statistics-page .code{color:#35596f;font-weight:600}.statistics-page .amount{color:#168fc9;font-weight:700}.statistics-page .name-cell{white-space:normal;min-width:160px;max-width:280px;font-weight:500;line-height:1.6}.statistics-page .muted{color:#98aab6}.stock-badge{display:inline-block;border-radius:6px;padding:5px 9px;background:#eaf8f0;color:#27936c;font-size:11px}.stock-badge.empty{background:#fff0f1;color:#ce6670}.footnote{margin:0;padding:0 24px 20px;color:#96a8b4;font-size:11px;line-height:1.7}.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;min-height:240px;padding:30px 24px;color:#8da1ae;text-align:center;font-size:13px}.empty-state>i{font-size:30px;color:#c2d4e0}.empty-state strong{font-size:14px;font-weight:550;color:#6a8698}.empty-state span{font-size:12px}.empty-row{text-align:center!important;height:150px;color:#91a5b3!important}.notice{display:flex;align-items:center;gap:10px;padding:13px 16px;border-radius:9px;margin:0 0 18px;font-size:12px;line-height:1.6}.notice button{margin-left:auto;background:none;border:0;color:inherit;cursor:pointer}.warning{background:#fff7e8;color:#9b7b37;border:1px solid #f1dfb7}.error{background:#fff2f2;border:1px solid #f4d9dd;color:#b7616a}.success{background:#edf9f3;color:#30886a;border:1px solid #d5eddf}.error-text{color:#bf6973!important}
+.comparison-canvas{height:340px;padding:12px 24px 25px}.detail-table summary{display:flex;align-items:center;gap:10px;list-style:none;cursor:pointer;padding:20px 24px;font-size:13px;font-weight:600;color:#45677c;border-top:1px solid #e6eef4}.detail-table summary::-webkit-details-marker{display:none}.detail-table summary:after{content:'⌄';margin-left:auto;color:#87a1b1}.detail-table[open]>summary:after{content:'⌃'}.detail-table summary span{font-weight:400;color:#95a8b5;font-size:11px}.fixed-periods summary{border-top:0}.fixed-periods .panel-heading{padding-top:0}.fixed-periods .panel-heading p{margin:0;max-width:70%;font-size:12px}.growth-positive,.growth-negative{font-size:11px;border-radius:20px;padding:5px 8px;font-weight:600}.growth-positive{background:#eaf8f0;color:#25936d}.growth-negative{background:#fff0f1;color:#cc6672}.report-layout{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(260px,1fr);gap:22px;align-items:start}.report-form{padding:0 24px 24px;display:flex;flex-direction:column;gap:21px}.report-dates{display:grid;grid-template-columns:1fr 1fr;gap:16px}.report-actions{display:flex;align-items:center;justify-content:space-between;gap:14px;border-top:1px solid #e8eef3;padding-top:20px}.report-actions>span{color:#90a5b3;font-size:11px;display:flex;gap:7px;align-items:center}.report-aside{padding:26px}.report-aside h2{font-size:16px;margin:20px 0 14px}.aside-icon{display:flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:12px;background:#eaf6fc;color:#1695ce;font-size:21px}.report-aside ul{margin:0;padding:0 0 0 18px;font-size:12px;line-height:2.5;color:#6d899c}.report-aside p{font-size:11px;color:#95a7b4;line-height:1.8;margin:20px 0 0}
+@media(min-width:1700px){.metric>strong{font-size:28px}.sales-canvas{height:370px}}@media(max-width:1250px){.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.overview-charts{grid-template-columns:1fr}.status-panel{display:grid;grid-template-columns:260px minmax(0,1fr)}.status-panel .panel-heading{grid-column:1/-1}.status-panel .donut-wrap{grid-column:1;margin-top:0}.status-panel .status-legend{grid-column:2;grid-row:2}.status-panel .empty-state{grid-column:1/-1}.quick-periods{margin-left:0}.filter-row{flex-wrap:wrap}.filter-row>label{flex:1}.quick-periods{flex-basis:100%}.sales-panel .panel-heading{flex-wrap:wrap}}@media(max-width:768px){.statistics-page{padding:20px 16px}.view-tabs button{padding:12px}.panel-heading{padding:19px 18px;flex-wrap:wrap}.metric{padding:18px 16px}.metric>strong{font-size:22px}.secondary-metrics{grid-template-columns:repeat(2,minmax(0,1fr));row-gap:20px}.secondary-metrics>div{border:0}.filter-row{padding:0 18px;gap:12px}.filter-caption{padding-left:18px}.filter-panel .panel-heading{align-items:center}.panel-heading h2,.section-heading h2{font-size:15px}.report-layout{grid-template-columns:1fr}.brand-content{grid-template-columns:1fr;gap:20px}.table-filters{padding-left:18px;padding-right:18px}.status-panel{display:block}.status-panel .status-legend{padding:0 22px 20px;grid-template-columns:1fr}.sales-canvas{height:300px}.chart-controls{flex-wrap:wrap}.detail-table summary{padding:18px}.detail-table summary span{display:none}.report-actions{flex-direction:column;align-items:flex-start}.report-actions button{align-self:flex-end}.report-form{padding:0 18px 20px}.comparison-canvas{padding-left:12px;padding-right:12px}.fixed-periods .panel-heading p{max-width:100%}.filter-row>label{flex-basis:calc(50% - 12px)}}@media(max-width:420px){.metric-grid{gap:10px}.metric>strong{font-size:20px}.metric>small{font-size:10px}.page-heading h1{font-size:23px}.outline-button{padding:0 10px;font-size:11px!important}.quick-periods button{font-size:11px;padding:7px 9px}.report-dates{grid-template-columns:1fr}.table-filters .search-field{flex-basis:100%;max-width:none}.table-filters select{width:100%}}
+.product-identity{display:flex;align-items:center;gap:13px;min-width:200px}.product-identity img,.product-image-fallback{width:44px;height:44px;flex:0 0 44px;border-radius:8px;border:1px solid #e3edf3;background:#f7fafc;object-fit:contain}.product-image-fallback{display:flex;align-items:center;justify-content:center;color:#a5b9c6;font-size:18px}.product-identity>span:last-child{line-height:1.6}.brand-panel>summary{border-top:0}.report-layout{grid-template-columns:repeat(2,minmax(0,1fr))}.report-kinds{display:flex;gap:9px}.report-kinds button{display:flex;align-items:center;gap:8px;flex:1;justify-content:center;background:#f7fafc;border:1px solid #dfeaf1;border-radius:9px;padding:14px 10px;color:#7992a3;font:inherit;cursor:pointer}.report-kinds button.active{color:#168fce;border-color:#a4d7ef;background:#edf8fe}.report-period-note{margin:0;font-size:12px;color:#8099aa;line-height:1.9}.report-period-note strong{color:#4d7188;font-weight:500}.report-period-note span{display:block;color:#b28b40}.schedule-zone{font-size:10px;color:#819bad;background:#f1f7fb;padding:7px 9px;border-radius:7px;white-space:nowrap}.statistics-page .schedule-option{display:flex;flex-direction:row;align-items:flex-start;gap:12px;background:#f8fbfd;border:1px solid #e3edf4;border-radius:10px;padding:16px;cursor:pointer}.statistics-page .schedule-option input{height:17px;width:17px;min-width:17px;margin:2px 0 0;accent-color:#168fce}.schedule-option span{display:flex;flex-direction:column;gap:7px}.schedule-option strong{font-size:13px;color:#466b83}.schedule-option small{font-size:11px;color:#8aa0b0;font-weight:400;line-height:1.7}.schedule-note{display:flex;gap:9px;align-items:flex-start;font-size:11px;color:#91a6b5;line-height:1.8;margin:0}.schedule-note i{padding-top:3px}.schedule-last{display:flex;flex-direction:column;gap:8px;padding:13px 0;border-bottom:1px solid #e5eef4;font-size:11px;color:#91a6b5}.schedule-last strong{font-weight:500;color:#66879d}@media(max-width:1000px){.report-layout{grid-template-columns:1fr}}@media(max-width:500px){.product-identity{min-width:180px}.product-identity img,.product-image-fallback{width:38px;height:38px;flex-basis:38px}.report-kinds button{font-size:12px}.report-layout .panel-heading{gap:10px}}
 
-.statistics-page {
-  --primary: #2563eb;
-  --primary-dark: #1d4ed8;
-  --text: #1e293b;
-  --muted: #64748b;
-  --border: #e7ebf2;
-  --shadow: 0 5px 22px rgba(31, 41, 70, 0.05);
-
-  min-height: 100vh;
-  padding: 26px;
-  background: #f4f6fa;
-  color: var(--text);
-  font-family: "Segoe UI", Arial, sans-serif;
-}
-
-.statistics-page * {
-  box-sizing: border-box;
-}
-
-/* ===== HEADER ===== */
-
-.dashboard-hero {
-  position: relative;
-  overflow: hidden;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 20px;
-  padding: 32px;
-  margin-bottom: 22px;
-  border-radius: 18px;
-
-  background: linear-gradient(110deg, #102a56 0%, #1d4ed8 65%, #3b82f6 100%);
-  color: white;
-  box-shadow: 0 10px 30px rgba(22, 32, 56, 0.13);
-}
-
-.dashboard-hero::after {
-  content: "";
-  position: absolute;
-  width: 250px;
-  height: 250px;
-  right: -60px;
-  top: -120px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow:
-    0 0 0 45px rgba(255, 255, 255, 0.025),
-    0 0 0 90px rgba(255, 255, 255, 0.02);
-  pointer-events: none;
-}
-
-.dashboard-eyebrow {
-  color: #bfdbfe;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 2px;
-  margin-bottom: 8px;
-}
-
-.dashboard-hero h1 {
-  font-size: 29px;
-  font-weight: 800;
-  color: white;
-  margin: 0 0 8px;
-}
-
-.dashboard-hero p {
-  color: #cbd5e1;
-  font-size: 13px;
-  margin: 0;
-}
-
-.dashboard-hero-mark {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  white-space: nowrap;
-  padding: 12px 17px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 12px;
-  color: #f1f5f9;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.dashboard-hero-mark i {
-  color: #ff859b;
-  font-size: 19px;
-}
-
-/* ===== CARD CHUNG ===== */
-
-.filter-card,
-.chart-card,
-.period-card,
-.order-status-card,
-.employee-card {
-  min-width: 0;
-  background: white;
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  box-shadow: var(--shadow);
-}
-
-/* ===== TIEU DE CAC KHU VUC ===== */
-
-.filter-header,
-.chart-header,
-.period-header,
-.employee-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 14px;
-  padding-bottom: 17px;
-  margin-bottom: 18px;
-  border-bottom: 1px solid #edf0f5;
-}
-
-.filter-header h3,
-.chart-header h3,
-.period-header h3,
-.employee-header h3 {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0;
-  font-size: 15px;
-  color: #1e293b;
-  font-weight: 800;
-}
-
-.filter-header h3 i,
-.chart-header h3 i,
-.period-header h3 i,
-.employee-header h3 i {
-  display: inline-flex;
-  justify-content: center;
-  align-items: center;
-  width: 33px;
-  height: 33px;
-  border-radius: 10px;
-  background: #fff0f3;
-  color: #df2849;
-  font-size: 16px;
-}
-
-/* ===== BO LOC TONG QUAN ===== */
-
-.filter-card {
-  padding: 23px 25px;
-}
-
-.filter-header {
-  flex-wrap: wrap;
-}
-
-.quick-filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-}
-
-.quick-filters button {
-  border: 1px solid #e5eaf1;
-  border-radius: 9px;
-  background: #f8fafc;
-  color: #64748b;
-  padding: 9px 13px;
-  font-size: 12px;
-  font-weight: 650;
-  cursor: pointer;
-  transition: 0.2s;
-}
-
-.quick-filters button:hover {
-  background: #fff0f3;
-  color: #df2849;
-  border-color: #f4b8c6;
-}
-
-.filter-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
-  gap: 13px;
-  align-items: end;
-}
-
-.filter-field {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-}
-
-.filter-field label {
-  font-size: 12px;
-  color: #64748b;
-  font-weight: 700;
-}
-
-.filter-field input,
-.filter-field select,
-.employee-filters input,
-.employee-filters select {
-  width: 100%;
-  min-width: 0;
-  height: 43px;
-  padding: 0 12px;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  background: #fbfcfe;
-  outline: none;
-  color: #334155;
-  font-size: 13px;
-  transition: 0.2s;
-}
-
-.filter-field input:focus,
-.filter-field select:focus,
-.employee-filters input:focus,
-.employee-filters select:focus {
-  border-color: #e8758c;
-  background: white;
-  box-shadow: 0 0 0 3px rgba(223, 40, 73, 0.07);
-}
-
-.reset-button,
-.employee-reset-btn {
-  height: 43px;
-  padding: 0 16px;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  background: white;
-  color: #475569;
-  font-weight: 700;
-  font-size: 12px;
-  cursor: pointer;
-  transition: 0.2s;
-}
-
-.reset-button:hover,
-.employee-reset-btn:hover {
-  color: #df2849;
-  background: #fff5f7;
-  border-color: #f4b8c6;
-}
-
-/* ===== THANH THONG TIN ===== */
-
-.information-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-top: 17px;
-  padding: 14px 19px;
-  background: white;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  color: #64748b;
-  font-size: 12px;
-}
-
-.information-left,
-.information-right {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  flex-wrap: wrap;
-}
-
-.information-left strong {
-  color: #1e293b;
-  font-weight: 800;
-}
-
-.blue-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: #22c55e;
-  box-shadow: 0 0 0 4px #dcfce7;
-  flex-shrink: 0;
-}
-
-.refresh-button {
-  padding: 9px 14px;
-  border: 1px solid #f4c3cd;
-  border-radius: 9px;
-  background: #fff6f7;
-  color: #d32948;
-  font-size: 12px;
-}
-
-.refresh-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.date-error {
-  margin: 12px 0;
-  padding: 11px 15px;
-  background: #fff1f2;
-  color: #be123c;
-  border-radius: 9px;
-  font-size: 13px;
-}
-
-/* ===== 7 THE DOANH THU ===== */
-
-.summary-section {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  margin-top: 20px;
-}
-
-.summary-grid {
-  display: grid;
-  gap: 16px;
-}
-
-.top-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.bottom-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-.stat-card {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: flex-start;
-  min-width: 0;
-  min-height: 156px;
-  gap: 7px;
-  padding: 22px;
-  overflow: hidden;
-  background: white;
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  box-shadow: var(--shadow);
-  transition:
-    transform 0.2s,
-    box-shadow 0.2s;
-}
-
-.stat-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 12px 30px rgba(31, 41, 70, 0.1);
-}
-
-.stat-card::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 21px;
-  right: 21px;
-  height: 4px;
-  background: #e2e8f0;
-  border-radius: 0 0 4px 4px;
-}
-
-.top-grid .stat-card:first-child {
-  background: linear-gradient(120deg, #fff, #fff6f8);
-  border-color: #f4d7df;
-}
-
-.top-grid .stat-card:nth-child(1)::before {
-  background: #df2849;
-}
-
-.top-grid .stat-card:nth-child(2)::before {
-  background: #10b981;
-}
-
-.top-grid .stat-card:nth-child(3)::before {
-  background: #8b5cf6;
-}
-
-.bottom-grid .stat-card:nth-child(1)::before {
-  background: #0ea5e9;
-}
-
-.bottom-grid .stat-card:nth-child(2)::before {
-  background: #a78bfa;
-}
-
-.bottom-grid .stat-card:nth-child(3)::before {
-  background: #f59e0b;
-}
-
-.bottom-grid .stat-card:nth-child(4)::before {
-  background: #fb7185;
-}
-
-.stat-icon {
-  width: 42px;
-  height: 42px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  flex-shrink: 0;
-  border-radius: 12px;
-  font-size: 20px;
-  margin-bottom: 6px;
-}
-
-.mint {
-  background: #ffe4ea;
-  color: #df2849;
-}
-
-.green {
-  background: #dcfce7;
-  color: #16a34a;
-}
-
-.purple {
-  background: #f0eaff;
-  color: #7c3aed;
-}
-
-.blue {
-  background: #e0f2fe;
-  color: #0284c7;
-}
-
-.yellow {
-  background: #fef3c7;
-  color: #d97706;
-}
-
-.red {
-  background: #ffe4e6;
-  color: #e11d48;
-}
-
-.stat-card strong {
-  width: 100%;
-  font-size: clamp(20px, 1.8vw, 27px);
-  font-weight: 800;
-  line-height: 1.25;
-  color: #172033;
-  letter-spacing: -0.5px;
-  overflow-wrap: anywhere;
-}
-
-.stat-card span {
-  font-size: 12px;
-  color: #64748b;
-  font-weight: 650;
-}
-
-/* ===== BIEU DO ===== */
-
-.charts-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr);
-  gap: 19px;
-  margin-top: 20px;
-}
-
-.chart-card {
-  min-height: 490px;
-  padding: 23px 24px;
-}
-
-.chart-header {
-  flex-wrap: wrap;
-}
-
-.chart-right {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  flex-wrap: wrap;
-}
-
-.chart-actions {
-  display: inline-flex;
-  padding: 4px;
-  gap: 4px;
-  border: 1px solid #e9edf4;
-  border-radius: 10px;
-  background: #f5f7fb;
-}
-
-.chart-actions button {
-  padding: 8px 13px;
-  border: none;
-  border-radius: 7px;
-  background: transparent;
-  color: #64748b;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: 0.2s;
-}
-
-.chart-actions button.active {
-  color: #df2849;
-  background: white;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.09);
-}
-
-.chart-actions button:hover {
-  color: #df2849;
-}
-
-.chart-right select {
-  height: 38px;
-  padding: 0 11px;
-  max-width: 165px;
-  border: 1px solid #e2e8f0;
-  border-radius: 9px;
-  background: white;
-  font-size: 12px;
-  color: #475569;
-}
-
-.chart-content {
-  min-height: 403px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.chart-canvas {
-  width: 100%;
-  height: 363px;
-  position: relative;
-}
-
-.chart-canvas canvas {
-  width: 100% !important;
-  height: 100% !important;
-}
-
-.chart-empty {
-  width: 100%;
-  padding: 30px 12px;
-  color: #94a3b8;
-  font-size: 13px;
-  text-align: center;
-}
-
-.brand-chart-content {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  justify-content: flex-start;
-  gap: 17px;
-  padding-top: 8px;
-}
-
-.brand-chart-canvas {
-  width: 100%;
-  height: 242px;
-  position: relative;
-}
-
-.brand-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: 100%;
-}
-
-.brand-list-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  padding: 11px 13px;
-  border: 1px solid #edf0f5;
-  border-radius: 10px;
-  background: #f9fafc;
-  font-size: 12px;
-}
-
-.brand-name {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  gap: 9px;
-  color: #475569;
-  font-weight: 650;
-}
-
-.brand-name > span:last-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.brand-dot {
-  width: 10px;
-  height: 10px;
-  flex-shrink: 0;
-  border-radius: 4px;
-}
-
-.brand-list-item strong {
-  color: #1e293b;
-  font-weight: 800;
-  white-space: nowrap;
-}
-
-/* ===== CHU KY VA TRANG THAI DON ===== */
-
-.period-section {
-  display: grid;
-  grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
-  align-items: stretch;
-  gap: 19px;
-  margin-top: 20px;
-}
-
-.period-card,
-.order-status-card {
-  padding: 23px 24px;
-}
-
-.period-table-wrapper,
-.employee-table-wrapper {
-  width: 100%;
-  overflow-x: auto;
-  border: 1px solid #e9edf4;
-  border-radius: 11px;
-}
-
-.period-table,
-.employee-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-  white-space: nowrap;
-}
-
-.period-table th,
-.employee-table th {
-  background: #f5f7fb;
-  color: #64748b;
-  font-weight: 800;
-  font-size: 12px;
-  padding: 15px;
-  text-align: left;
-  border-bottom: 1px solid #e9edf4;
-}
-
-.period-table td,
-.employee-table td {
-  padding: 16px 15px;
-  border-bottom: 1px solid #edf0f5;
-  color: #475569;
-  background: white;
-}
-
-.period-table tbody tr:last-child td,
-.employee-table tbody tr:last-child td {
-  border-bottom: none;
-}
-
-.period-table tbody tr:hover td,
-.employee-table tbody tr:hover td {
-  background: #fafbfe;
-}
-
-.period-name,
-.employee-name {
-  font-weight: 750 !important;
-  color: #1e293b !important;
-}
-
-.growth-positive {
-  display: inline-block;
-  padding: 5px 9px;
-  border-radius: 7px;
-  background: #dcfce7;
-  color: #15803d;
-  font-weight: 800;
-}
-
-.growth-negative {
-  display: inline-block;
-  padding: 5px 9px;
-  border-radius: 7px;
-  background: #ffe4e6;
-  color: #be123c;
-  font-weight: 800;
-}
-
-.period-message {
-  padding: 28px 15px;
-  text-align: center;
-  color: #94a3b8;
-  font-size: 13px;
-}
-
-.period-error {
-  color: #dc2626;
-}
-
-/* ===== CO CAU TRANG THAI DON HANG ===== */
-
-.order-status-total {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  color: #64748b;
-  margin: 0 0 15px;
-  font-size: 13px;
-}
-
-.order-status-total strong {
-  color: #1e293b;
-  font-size: 21px;
-  font-weight: 850;
-}
-
-.order-status-canvas {
-  width: 100%;
-  height: 230px;
-  position: relative;
-  margin-bottom: 19px;
-}
-
-.order-status-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.order-status-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  min-height: 39px;
-  padding: 10px 13px;
-  border: 1px solid #edf0f5;
-  border-radius: 10px;
-  background: #f9fafc;
-  font-size: 12px;
-}
-
-.order-status-name {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  color: #475569;
-  font-weight: 650;
-}
-
-.order-status-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.order-status-item strong {
-  color: #1e293b;
-  font-weight: 800;
-}
-
-/* ===== BANG NHAN VIEN VA SAN PHAM ===== */
-
-.employee-section {
-  margin-top: 20px;
-  margin-bottom: 0;
-}
-
-.employee-card {
-  padding: 23px 24px;
-}
-
-.employee-header {
-  flex-wrap: wrap;
-}
-
-.employee-filters {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 11px;
-  margin-bottom: 19px;
-}
-
-.employee-filters input {
-  flex: 1 1 230px;
-}
-
-.employee-filters select {
-  width: auto;
-  flex: 0 1 200px;
-  min-width: 175px;
-  cursor: pointer;
-}
-
-.employee-export-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 40px;
-  padding: 10px 16px;
-  border: 1px solid #16a34a;
-  border-radius: 10px;
-  background: #16a34a;
-  color: white;
-  font-size: 12px;
-  font-weight: 800;
-  cursor: pointer;
-  transition: 0.2s;
-}
-
-.employee-export-btn:hover {
-  background: #15803d;
-  border-color: #15803d;
-  box-shadow: 0 5px 14px rgba(22, 163, 74, 0.2);
-}
-
-.employee-revenue {
-  color: #16a34a !important;
-  font-weight: 800 !important;
-}
-
-/* ===== PHAN TRANG ===== */
-
-.employee-pagination {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding-top: 19px;
-  color: #64748b;
-  font-size: 12px;
-}
-
-.employee-page-buttons {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-weight: 700;
-}
-
-.employee-page-buttons button {
-  min-height: 35px;
-  padding: 8px 14px;
-  border: 1px solid #e2e8f0;
-  border-radius: 9px;
-  background: white;
-  color: #475569;
-  font-size: 12px;
-  font-weight: 750;
-  cursor: pointer;
-  transition: 0.2s;
-}
-
-.employee-page-buttons button:hover:not(:disabled) {
-  border-color: #f4b8c6;
-  color: #df2849;
-  background: #fff5f7;
-}
-
-.employee-page-buttons button:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-/* ===== RESPONSIVE ===== */
-
-@media (max-width: 1440px) {
-  .filter-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .reset-button {
-    width: 100%;
-  }
-}
-
-@media (max-width: 1190px) {
-  .charts-grid,
-  .period-section {
-    grid-template-columns: 1fr;
-  }
-
-  .chart-card {
-    min-height: 0;
-  }
-}
-
-@media (max-width: 980px) {
-  .top-grid,
-  .bottom-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .top-grid .stat-card:first-child {
-    grid-column: span 2;
-  }
-
-  .dashboard-hero-mark {
-    display: none;
-  }
-}
-
-@media (max-width: 680px) {
-  .statistics-page {
-    padding: 14px 12px 28px;
-  }
-
-  .dashboard-hero {
-    padding: 23px 20px;
-    border-radius: 14px;
-  }
-
-  .dashboard-hero h1 {
-    font-size: 23px;
-  }
-
-  .filter-card,
-  .chart-card,
-  .period-card,
-  .order-status-card,
-  .employee-card {
-    padding: 18px 15px;
-    border-radius: 12px;
-  }
-
-  .filter-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .filter-grid > .filter-field:nth-child(4),
-  .filter-grid > .filter-field:nth-child(5) {
-    grid-column: span 2;
-  }
-
-  .top-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .top-grid .stat-card:first-child {
-    grid-column: auto;
-  }
-
-  .bottom-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
-  }
-
-  .stat-card {
-    min-height: 135px;
-    padding: 16px;
-  }
-
-  .stat-card strong {
-    font-size: 19px;
-  }
-
-  .employee-filters {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .employee-filters input,
-  .employee-filters select,
-  .employee-reset-btn {
-    flex: none;
-    width: 100%;
-    min-width: 0;
-  }
-
-  .employee-pagination {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .chart-header,
-  .employee-header {
-    align-items: flex-start;
-  }
-
-  .chart-canvas {
-    height: 280px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .stat-card,
-  .statistics-page button {
-    transition: none;
-  }
-
-  .stat-card:hover {
-    transform: none;
-  }
-}
-
-/* ===== GIAO DIEN CHU KY VA TRANG THAI - ANH MAU ===== */
-
-.period-section {
-  grid-template-columns: minmax(0, 1.75fr) minmax(0, 1fr);
-  gap: 16px;
-  align-items: start;
-}
-
-.period-card,
-.order-status-card {
-  padding: 20px;
-  border-radius: 16px;
-  background: #fff;
-  border: 1px solid #edf0f5;
-  box-shadow: 0 3px 16px rgba(15, 23, 42, 0.04);
-  min-height: 0;
-}
-
-.period-card .period-header,
-.order-status-card .period-header {
-  margin-bottom: 16px;
-  padding-bottom: 15px;
-}
-
-.period-card .period-header h3,
-.order-status-card .period-header h3 {
-  font-size: 14px;
-  font-weight: 800;
-}
-
-/* BANG CHU KY GIONG ANH 1 */
-
-.period-card .period-table-wrapper {
-  border: none;
-  border-radius: 0;
-  overflow-x: auto;
-}
-
-.period-card .period-table {
-  border-collapse: separate;
-  border-spacing: 0 9px;
-}
-
-.period-card .period-table th {
-  background: transparent;
-  border: none;
-  padding: 11px 13px;
-  font-size: 12px;
-  color: #697386;
-  white-space: nowrap;
-}
-
-.period-card .period-table td {
-  background: #f7f9fc;
-  border: none;
-  padding: 18px 13px;
-  font-size: 13px;
-  white-space: nowrap;
-}
-
-.period-card .period-table tbody tr:hover td {
-  background: #eff3f9;
-}
-
-.period-card .period-table tbody td:first-child {
-  border-radius: 12px 0 0 12px;
-  font-weight: 800;
-}
-
-.period-card .period-table tbody td:last-child {
-  border-radius: 0 12px 12px 0;
-}
-
-.period-card .growth-positive {
-  background: #eafbf1;
-  color: #16a34a;
-  padding: 7px 12px;
-  border-radius: 20px;
-  font-weight: 800;
-}
-
-.period-card .growth-negative {
-  background: #fff0f2;
-  color: #e11d48;
-  padding: 7px 12px;
-  border-radius: 20px;
-  font-weight: 800;
-}
-
-/* BIEU DO TRANG THAI */
-
-.order-status-card .order-status-total {
-  font-size: 12px;
-  margin-bottom: 8px;
-}
-
-.order-status-card .order-status-canvas {
-  width: 100%;
-  max-width: 260px;
-  height: 205px;
-  margin: 0 auto 20px;
-}
-
-/* DANH SACH TRANG THAI CHIA 2 COT */
-
-.order-status-card .order-status-list {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 9px;
-}
-
-.order-status-card .order-status-item {
-  min-width: 0;
-  min-height: 42px;
-  padding: 10px 12px;
-  border: 1px solid #edf1f6;
-  background: #f7f9fc;
-  border-radius: 9px;
-  gap: 7px;
-}
-
-.order-status-card .order-status-name {
-  min-width: 0;
-  font-size: 12px;
-  overflow: hidden;
-}
-
-.order-status-card .order-status-name {
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.order-status-card .order-status-item strong {
-  flex-shrink: 0;
-  font-size: 12px;
-  color: #172033;
-}
-
-@media (max-width: 1200px) {
-  .period-section {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 600px) {
-  .order-status-card .order-status-list {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* ===== NÚT XUẤT EXCEL CHU KỲ ===== */
-
-.period-card .period-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-}
-
-.period-export-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  padding: 9px 14px;
-  border: 1px solid #fbd5df;
-  border-radius: 9px;
-  background: #fff6f8;
-  color: #e54870;
-  font-size: 12px;
-  font-weight: 700;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: 0.2s ease;
-}
-
-.period-export-btn:hover {
-  background: #ffe9ef;
-  border-color: #f4a9bc;
-}
-
-.period-export-btn i {
-  font-size: 14px;
-}
-
-/* TRẠNG THÁI TẢI DỮ LIỆU DOANH THU */
-
-.summary-message {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  min-height: 95px;
-  padding: 20px;
-  border: 1px solid #e2e8f0;
-  border-radius: 13px;
-  background: #f8fafc;
-  color: #64748b;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.summary-message i {
-  font-size: 18px;
-}
-
-.summary-message-error {
-  background: #fff1f2;
-  border-color: #fecdd3;
-  color: #be123c;
-}
-
-.product-revenue-note {
-  margin: 0 0 16px;
-  padding: 12px 15px;
-  border: 1px solid #dbeafe;
-  border-radius: 10px;
-  background: #eff6ff;
-  color: #475569;
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.product-revenue-note i {
-  margin-right: 7px;
-  color: #2563eb;
-}
-
-/* ===== DONG BO MAU XANH DUONG ===== */
-
-/* Icon tiêu đề các khối */
-.statistics-page .filter-header h3 i,
-.statistics-page .chart-header h3 i,
-.statistics-page .period-header h3 i,
-.statistics-page .employee-header h3 i {
-  background: #dbeafe;
-  color: #2563eb;
-}
-
-/* Nút Xuất Excel chu kỳ */
-.statistics-page .period-export-btn {
-  background: #eff6ff;
-  color: #2563eb;
-  border: 1px solid #bfdbfe;
-}
-
-.statistics-page .period-export-btn:hover {
-  background: #dbeafe;
-  border-color: #60a5fa;
-}
-
-/* Nút biểu đồ đang được chọn */
-.statistics-page .chart-actions button.active {
-  color: #2563eb;
-}
-
-/* Màu viền ô lọc khi chọn */
-.statistics-page .filter-field input:focus,
-.statistics-page .filter-field select:focus {
-  border-color: #2563eb;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
-}
-
-/* Hover bộ lọc nhanh */
-.statistics-page .quick-filters button:hover {
-  color: #2563eb;
-  border-color: #93c5fd;
-  background: #eff6ff;
-}
-
-/* ===== KPI THONG KE - TONG XANH DUONG ===== */
-
-/* Ô tổng doanh thu */
-.statistics-page .top-grid .stat-card:first-child {
-  background: linear-gradient(120deg, #ffffff, #eff6ff);
-  border-color: #bfdbfe;
-}
-
-/* Thanh màu phía trên 7 ô */
-.statistics-page .top-grid .stat-card:nth-child(1)::before {
-  background: #2563eb;
-}
-
-.statistics-page .top-grid .stat-card:nth-child(2)::before {
-  background: #3b82f6;
-}
-
-.statistics-page .top-grid .stat-card:nth-child(3)::before {
-  background: #60a5fa;
-}
-
-.statistics-page .bottom-grid .stat-card:nth-child(1)::before {
-  background: #1d4ed8;
-}
-
-.statistics-page .bottom-grid .stat-card:nth-child(2)::before {
-  background: #2563eb;
-}
-
-.statistics-page .bottom-grid .stat-card:nth-child(3)::before {
-  background: #0ea5e9;
-}
-
-.statistics-page .bottom-grid .stat-card:nth-child(4)::before {
-  background: #38bdf8;
-}
-
-/* Icon KPI */
-.statistics-page .stat-icon {
-  background: #dbeafe;
-  color: #2563eb;
-}
-
-/* Hiệu ứng khi rê chuột */
-.statistics-page .stat-card:hover {
-  border-color: #93c5fd;
-  box-shadow: 0 12px 28px rgba(37, 99, 235, 0.12);
-}
-
-/* ===== DONG BO BO LOC SANG XANH DUONG ===== */
-
-/* Nút lọc nhanh */
-.statistics-page .quick-filters button:hover {
-  color: #2563eb;
-  background: #eff6ff;
-  border-color: #93c5fd;
-}
-
-/* Nút Reset */
-.statistics-page .reset-button:hover,
-.statistics-page .employee-reset-btn:hover {
-  color: #2563eb;
-  background: #eff6ff;
-  border-color: #93c5fd;
-}
-
-/* Viền input và select khi chọn */
-.statistics-page .filter-field input:focus,
-.statistics-page .filter-field select:focus,
-.statistics-page .employee-filters input:focus,
-.statistics-page .employee-filters select:focus {
-  outline: none;
-  border-color: #2563eb;
-  background: #ffffff;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
-}
-
-/* Nút chuyển đổi biểu đồ */
-.statistics-page .chart-actions button.active {
-  color: #2563eb;
-  background: #eff6ff;
-}
-
-/* Nút phân trang */
-.statistics-page .employee-page-buttons button:hover:not(:disabled) {
-  color: #2563eb;
-  border-color: #93c5fd;
-  background: #eff6ff;
-}
-
-/* Màu chủ đạo */
-.statistics-page {
-  --primary: #2563eb;
-  --primary-dark: #1d4ed8;
-}
-
-/* ===== SELECT2 TU MAIN - GIAO DIEN XANH DONG BO ===== */
-.statistics-page .stats-select {
-  min-width: 0;
-  width: 100%;
-}
-.statistics-page .stats-select :deep(.select2-container) {
-  width: 100% !important;
-  min-width: 0;
-  font-family: inherit;
-  font-size: 13px;
-}
-.statistics-page .stats-select :deep(.select2-selection--single) {
-  height: 43px;
-  min-height: 43px;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  background: #fbfcfe;
-}
-.statistics-page
-  .stats-select
-  :deep(.select2-selection--single .select2-selection__rendered) {
-  display: block;
-  line-height: 41px;
-  padding: 0 32px 0 12px;
-  color: #334155 !important;
-  text-overflow: ellipsis;
-  overflow: hidden;
-  white-space: nowrap;
-}
-.statistics-page
-  .stats-select
-  :deep(.select2-selection--single .select2-selection__arrow) {
-  height: 41px;
-  right: 8px;
-}
-.statistics-page
-  .stats-select
-  :deep(.select2-container--open .select2-selection),
-.statistics-page
-  .stats-select
-  :deep(.select2-container--focus .select2-selection) {
-  border-color: #2563eb;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
-}
-.statistics-page .employee-filters .stats-select {
-  flex: 0 1 200px;
-  min-width: 175px;
-}
-.statistics-page .chart-right .stats-select {
-  width: 165px;
-}
-.statistics-page .dashboard-hero-mark i {
-  color: #bfdbfe;
-}
-
-@media (max-width: 680px) {
-  .statistics-page .employee-filters .stats-select {
-    flex: none;
-    width: 100%;
-    min-width: 0;
-  }
-}
-
-/* ===== DOANH THU DU KIEN ===== */
-
-/* 4 ô KPI hàng trên */
-.statistics-page .top-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-/* Thẻ doanh thu dự kiến */
-.statistics-page .top-grid .stat-card-expected {
-  background: linear-gradient(120deg, #f8fbff, #eaf3ff);
-
-  border: 1px solid #bfdbfe;
-}
-
-/* Thanh màu trên thẻ */
-.statistics-page .top-grid .stat-card-expected::before {
-  background: #0ea5e9;
-}
-
-/* Ghi chú số đơn */
-.statistics-page .stat-card-expected small {
-  font-size: 11px;
-  font-weight: 600;
-  color: #64748b;
-}
-
-/* Laptop và tablet */
-@media (max-width: 1100px) {
-  .statistics-page .top-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .statistics-page .top-grid .stat-card:first-child {
-    grid-column: auto;
-  }
-}
-
-/* Điện thoại */
-@media (max-width: 680px) {
-  .statistics-page .top-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* ===== BIEU DO SO SANH DOANH THU ===== */
-
-.statistics-page .revenue-comparison-card {
-  margin: 22px 0;
-  padding: 24px;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 16px;
-  box-shadow: 0 5px 22px rgba(31, 41, 70, 0.05);
-}
-
-.statistics-page .revenue-comparison-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 16px;
-  padding-bottom: 18px;
-  border-bottom: 1px solid #e2e8f0;
-}
-
-.statistics-page .revenue-comparison-header h3 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 700;
-  color: #1e293b;
-}
-
-.statistics-page .revenue-comparison-header h3 i {
-  margin-right: 8px;
-  color: #2563eb;
-}
-
-.statistics-page .revenue-comparison-filters {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.statistics-page .revenue-comparison-filters select,
-.statistics-page .revenue-comparison-filters input {
-  height: 38px;
-  padding: 8px 12px;
-  border: 1px solid #cbd5e1;
-  border-radius: 9px;
-  background: #ffffff;
-  color: #334155;
-  font-size: 13px;
-  outline: none;
-}
-
-.statistics-page .revenue-comparison-filters input {
-  width: 105px;
-}
-
-.statistics-page .revenue-comparison-filters select:focus,
-.statistics-page .revenue-comparison-filters input:focus {
-  border-color: #2563eb;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
-}
-
-.statistics-page .revenue-comparison-chart {
-  width: 100%;
-  height: 350px;
-  margin-top: 22px;
-  position: relative;
-}
-
-.statistics-page .comparison-note {
-  margin: 16px 0 0;
-  color: #64748b;
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.statistics-page .comparison-message {
-  padding: 40px 16px;
-  text-align: center;
-  font-size: 14px;
-  color: #64748b;
-}
-
-@media (max-width: 680px) {
-  .statistics-page .revenue-comparison-card {
-    padding: 16px;
-  }
-
-  .statistics-page .revenue-comparison-filters {
-    width: 100%;
-    flex-wrap: wrap;
-  }
-
-  .statistics-page .revenue-comparison-chart {
-    height: 280px;
-  }
-}
-
-/* ===== CHUYEN CHE DO THONG KE ===== */
-
-.statistics-view-navigation {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.statistics-view-navigation button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 11px 15px;
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.statistics-view-navigation button:hover {
-  background: rgba(255, 255, 255, 0.24);
-}
-
-.statistics-view-navigation button.active {
-  background: #fff;
-  color: #2563eb;
-  border-color: #fff;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-}
-
-@media (max-width: 900px) {
-  .statistics-view-navigation {
-    width: 100%;
-    justify-content: flex-start;
-  }
-
-  .statistics-view-navigation button {
-    flex: 1;
-    min-width: 145px;
-  }
-}
-
-/* ===== GIAO DIEN GUI MAIL TONG KET ===== */
-
-.statistics-page .report-email-section {
-  margin-top: 22px;
-}
-
-.statistics-page .report-email-card {
-  max-width: 900px;
-  margin: 0 auto;
-  padding: 28px;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 16px;
-  box-shadow: 0 5px 22px rgba(31, 41, 70, 0.06);
-}
-
-.statistics-page .report-email-header {
-  padding-bottom: 20px;
-  margin-bottom: 24px;
-  border-bottom: 1px solid #e2e8f0;
-}
-
-.statistics-page .report-email-heading {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.statistics-page .report-email-icon {
-  width: 54px;
-  height: 54px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #eff6ff;
-  color: #2563eb;
-  font-size: 25px;
-  border-radius: 14px;
-}
-
-.statistics-page .report-email-heading h3 {
-  margin: 0 0 8px;
-  color: #1e293b;
-  font-size: 20px;
-  font-weight: 700;
-}
-
-.statistics-page .report-email-heading p {
-  margin: 0;
-  color: #64748b;
-  font-size: 13px;
-}
-
-.statistics-page .report-email-form {
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
-}
-
-.statistics-page .report-email-field {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-}
-
-.statistics-page .report-email-field label {
-  font-size: 13px;
-  font-weight: 600;
-  color: #334155;
-}
-
-.statistics-page .report-email-field label i {
-  color: #2563eb;
-  margin-right: 5px;
-}
-
-.statistics-page .report-email-field input {
-  width: 100%;
-  height: 44px;
-  padding: 10px 14px;
-  border: 1px solid #cbd5e1;
-  border-radius: 10px;
-  background: #ffffff;
-  color: #1e293b;
-  font-size: 14px;
-  outline: none;
-}
-
-.statistics-page .report-email-field input:focus {
-  border-color: #2563eb;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
-}
-
-.statistics-page .report-email-date-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
-}
-
-.statistics-page .report-email-preview {
-  padding: 20px;
-  background: #f8fbff;
-  border: 1px solid #dbeafe;
-  border-radius: 12px;
-}
-
-.statistics-page .report-email-preview h4 {
-  margin: 0 0 16px;
-  font-size: 14px;
-  font-weight: 700;
-  color: #1e40af;
-}
-
-.statistics-page .report-email-preview-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.statistics-page .report-email-preview-grid span {
-  font-size: 13px;
-  color: #475569;
-}
-
-.statistics-page .report-email-preview-grid i {
-  color: #2563eb;
-  margin-right: 7px;
-}
-
-.statistics-page .report-email-actions {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 15px;
-}
-
-.statistics-page .report-email-note {
-  color: #64748b;
-  font-size: 12px;
-}
-
-.statistics-page .report-email-submit {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 9px;
-  padding: 12px 24px;
-  border: none;
-  border-radius: 10px;
-  background: #2563eb;
-  color: #ffffff;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.statistics-page .report-email-submit:hover:not(:disabled) {
-  background: #1d4ed8;
-}
-
-.statistics-page .report-email-submit:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.statistics-page .report-email-alert {
-  padding: 13px 16px;
-  border-radius: 10px;
-  font-size: 13px;
-}
-
-.statistics-page .report-email-error {
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  color: #b91c1c;
-}
-
-.statistics-page .report-email-success {
-  background: #f0fdf4;
-  border: 1px solid #bbf7d0;
-  color: #15803d;
-}
-
-@media (max-width: 680px) {
-  .statistics-page .report-email-card {
-    padding: 18px;
-  }
-
-  .statistics-page .report-email-date-grid,
-  .statistics-page .report-email-preview-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .statistics-page .report-email-submit {
-    width: 100%;
-  }
-}
-
-/* ===== HEADER NEN SANG THEO GIAO DIEN THAM KHAO ===== */
-.statistics-page .dashboard-hero {
-  background: transparent;
-  box-shadow: none;
-  border: 0;
-  border-radius: 0;
-  color: #172b4d;
-  padding: 0;
-  margin-bottom: 20px;
-  overflow: visible;
-  min-height: 100px;
-}
-
-.statistics-page .dashboard-hero::after {
-  content: none;
-  display: none;
-}
-
-.statistics-page .dashboard-eyebrow {
-  color: #5a82ad;
-  font-size: 12px;
-  letter-spacing: 0;
-  text-transform: none;
-  font-weight: 600;
-  margin-bottom: 7px;
-}
-
-.statistics-page .dashboard-hero h1 {
-  color: #111827;
-  font-size: 26px;
-  font-weight: 750;
-  margin-bottom: 10px;
-}
-
-.statistics-page .dashboard-hero p {
-  color: #64748b;
-  font-size: 14px;
-}
-
-.statistics-page .dashboard-hero-mark {
-  display: inline-flex;
-  background: #eff8ff;
-  border: 1px solid #d7e8fa;
-  border-radius: 24px;
-  color: #5680a8;
-  padding: 10px 16px;
-  font-size: 13px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.statistics-page .dashboard-hero-mark i {
-  color: #5680a8;
-  font-size: 15px;
-}
-
-.statistics-page .statistics-view-navigation {
-  justify-content: flex-start;
-  margin-bottom: 20px;
-  padding-bottom: 0;
-  gap: 10px;
-}
-
-.statistics-page .statistics-view-navigation button {
-  background: #ffffff;
-  border: 1px solid #dce4ee;
-  border-radius: 10px;
-  color: #52657a;
-  font-size: 13px;
-  font-weight: 600;
-  box-shadow: 0 2px 6px rgba(30, 60, 90, 0.03);
-}
-
-.statistics-page .statistics-view-navigation button:hover {
-  color: #2563eb;
-  border-color: #b7d4f9;
-  background: #f5faff;
-}
-
-.statistics-page .statistics-view-navigation button.active {
-  color: #2563eb;
-  background: #edf5ff;
-  border-color: #b8d6ff;
-  box-shadow: none;
-}
-
-@media (max-width: 680px) {
-  .statistics-page .dashboard-hero {
-    min-height: 0;
-    padding: 0;
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  .statistics-page .dashboard-hero h1 {
-    font-size: 23px;
-  }
-
-  .statistics-page .statistics-view-navigation button {
-    flex: 1 1 145px;
-    min-width: 0;
-  }
-}
 </style>

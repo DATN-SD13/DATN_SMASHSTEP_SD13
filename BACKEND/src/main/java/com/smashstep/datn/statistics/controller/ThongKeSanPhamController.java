@@ -121,7 +121,36 @@ public class ThongKeSanPhamController {
                         "denNgay",
                         denNgay.plusDays(1).atStartOfDay()
                 )
+                .setHint("jakarta.persistence.query.timeout", 15000)
                 .getResultList();
+
+        // Fetch images independently: combining image selection and sales/refund aggregates
+        // can produce a very expensive SQL Server execution plan.
+        Map<Long, Object> images = new LinkedHashMap<>();
+        for (Object imageRow : entityManager.createNativeQuery("""
+
+            WITH product_images AS (
+                SELECT img.id_san_pham AS product_id, img.url_anh, img.is_anh_chinh, img.id
+                FROM hinh_anh_san_pham img
+                WHERE img.id_san_pham IS NOT NULL
+                  AND img.url_anh IS NOT NULL AND LTRIM(RTRIM(img.url_anh))<>''
+                UNION ALL
+                SELECT variant.id_san_pham, img.url_anh, img.is_anh_chinh, img.id
+                FROM hinh_anh_san_pham img
+                JOIN san_pham_chi_tiet variant ON variant.id=img.id_san_pham_chi_tiet
+                WHERE (img.id_san_pham IS NULL OR img.id_san_pham<>variant.id_san_pham)
+                  AND img.url_anh IS NOT NULL AND LTRIM(RTRIM(img.url_anh))<>''
+            ), ranked_images AS (
+                SELECT product_id, url_anh,
+                       ROW_NUMBER() OVER (PARTITION BY product_id
+                           ORDER BY CASE WHEN is_anh_chinh=1 THEN 0 ELSE 1 END, id) AS position
+                FROM product_images
+            )
+            SELECT product_id, url_anh FROM ranked_images WHERE position=1
+            """).setHint("jakarta.persistence.query.timeout", 15000).getResultList()) {
+            Object[] image = (Object[]) imageRow;
+            images.put(((Number) image[0]).longValue(), image[1]);
+        }
 
         List<Map<String, Object>> result = new ArrayList<>();
 
@@ -137,6 +166,7 @@ public class ThongKeSanPhamController {
             product.put("revenue", values[4]);
             product.put("stock", values[5]);
             product.put("returned", values[6]);
+            product.put("imageUrl", images.get(((Number) values[0]).longValue()));
 
             result.add(product);
         }
