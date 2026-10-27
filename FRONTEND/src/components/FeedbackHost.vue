@@ -1,10 +1,12 @@
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
+import { useRoute } from 'vue-router'
 import ProductToast from '../modules/admin/product/components/ProductToast.vue'
 import { useProductToast } from '../modules/admin/product/composables/useProductToast'
 import '../modules/admin/product/product.css'
 
 const confirmation = ref(null)
+const route = useRoute()
 const busy = ref(false)
 const { show } = useProductToast()
 function cancel() {
@@ -12,6 +14,7 @@ function cancel() {
   confirmation.value?.onCancel?.()
   confirmation.value = null
 }
+watch(() => route.fullPath, () => { if (!busy.value) cancel() })
 function confirmEvent(event) {
   if (!busy.value && !confirmation.value && typeof event.detail?.onConfirm === 'function') confirmation.value = event.detail
   else event.detail?.onCancel?.()

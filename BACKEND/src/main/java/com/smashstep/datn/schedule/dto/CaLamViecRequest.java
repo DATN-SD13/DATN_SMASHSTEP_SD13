@@ -11,6 +11,7 @@ import lombok.Setter;
 public class CaLamViecRequest {
 
     @NotBlank(message = "Ten ca khong duoc de trong")
+    @jakarta.validation.constraints.Size(max=255)
     private String tenCa;
 
     @NotNull(message = "Gio bat dau khong duoc de trong")
@@ -21,5 +22,6 @@ public class CaLamViecRequest {
     @Pattern(regexp = "^([01]\\d|2[0-3]):[0-5]\\d$", message = "Gio ket thuc khong hop le (HH:mm)")
     private String gioKetThuc;
 
+    @jakarta.validation.constraints.Size(max=1000)
     private String moTa;
 }

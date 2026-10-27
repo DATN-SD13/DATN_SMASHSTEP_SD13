@@ -25,6 +25,71 @@ public class EmailService {
     @org.springframework.beans.factory.annotation.Value("${spring.mail.password:}")
     private String password;
 
+    public record OrderEmailLine(String name,String variant,int quantity,String unitPrice,String total,String image) {
+        public OrderEmailLine(String name,String variant,int quantity,String unitPrice,String total){this(name,variant,quantity,unitPrice,total,null);}
+    }
+    public record OrderEmail(String code,String customer,String receiver,String phone,String address,String method,String status,
+                             boolean paid,String subtotal,String discount,String shipping,String total,
+                             java.util.List<OrderEmailLine> lines,String url,boolean voucherApplied,String shippingCarrier) {
+        public OrderEmail(String code,String customer,String receiver,String phone,String address,String method,String status,
+                          boolean paid,String subtotal,String discount,String shipping,String total,java.util.List<OrderEmailLine> lines,String url){
+            this(code,customer,receiver,phone,address,method,status,paid,subtotal,discount,shipping,total,lines,url,
+                    discount!=null && !discount.replaceAll("[^0-9]","").matches("0*"),null);
+        }
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private OrderEmailImages orderImages = new OrderEmailImages();
+
+    public void sendOrderConfirmationEmail(String to,OrderEmail order) {sendOrderEmail(to,order,false);}
+    public void sendOrderStatusEmail(String to,OrderEmail order) {sendOrderEmail(to,order,true);}
+    private void sendOrderEmail(String to,OrderEmail order,boolean update) {
+        var prepared=orderImages.prepare(order);
+        var content=OrderEmailTemplate.render(prepared.order(),update);
+        sendBranded(to,"SmashStep - "+(update?"Cập nhật đơn hàng ":"Xác nhận đơn hàng ")+order.code(),content.html(),content.text(),prepared.images());
+    }
+
+    private void sendBranded(String to,String subject,String html,String text) {
+        sendBranded(to,subject,html,text,java.util.List.of());
+    }
+    private void sendBranded(String to,String subject,String html,String text,java.util.List<OrderEmailImages.InlineImage> images) {
+        var sender=senderFor(to);
+        try {
+            var message=sender.createMimeMessage();
+            // Order images belong to the HTML, not to a separate attachment container.
+            int multipartMode=images.isEmpty()?MimeMessageHelper.MULTIPART_MODE_MIXED_RELATED:MimeMessageHelper.MULTIPART_MODE_RELATED;
+            var helper=new MimeMessageHelper(message,multipartMode,"UTF-8");
+            helper.setFrom(from,"SmashStep");helper.setReplyTo(from,"SmashStep");helper.setTo(to);helper.setSubject(subject);
+            helper.setSentDate(new java.util.Date());
+            helper.setText(text,html);
+            for(var image:images){
+                // Keep CID rendering with a readable filename if the client lists the image.
+                var part=new jakarta.mail.internet.MimeBodyPart();
+                part.setDataHandler(new jakarta.activation.DataHandler(new jakarta.mail.util.ByteArrayDataSource(image.bytes(),image.contentType())));
+                part.setFileName(inlineImageName(image));
+                part.setDisposition(jakarta.mail.Part.INLINE);
+                part.setHeader("Content-ID","<"+image.cid()+">");
+                helper.getMimeMultipart().addBodyPart(part);
+            }
+            sender.send(message);
+        } catch(Exception e){throw new IllegalStateException("Không gửi được email SmashStep",e);}
+    }
+    private static String inlineImageName(OrderEmailImages.InlineImage image) {
+        if ("ss-brand".equals(image.cid())) return "SmashStep.png";
+        if ("ss-ghn".equals(image.cid())) return "GHN.png";
+        String suffix = switch (image.contentType()) {
+            case "image/png" -> ".png";
+            case "image/webp" -> ".webp";
+            case "image/jpeg" -> ".jpg";
+            default -> ".bin";
+        };
+        if (image.cid().matches("ss-item-[0-9]{1,6}")) {
+            int number = Integer.parseInt(image.cid().substring("ss-item-".length())) + 1;
+            return "San-pham-" + number + suffix;
+        }
+        return "Anh-san-pham" + suffix;
+    }
+
     public String configurationError() {
         if (host == null || host.isBlank() || "localhost".equalsIgnoreCase(host) || "127.0.0.1".equals(host)) {
             return "SMTP chưa hợp lệ: cấu hình MAIL_HOST=smtp.gmail.com.";

@@ -60,7 +60,7 @@ public class DemoCardPayment {
         Session(Long owner,Request request,Quote quote,Instant now,String channel) {
             this.owner=owner;
             this.request=new Request(List.copyOf(request.items()),request.voucherCode(),request.paymentMethodId(),request.receiver(),
-                    request.note(),request.requestId(),request.expectedTotal(),request.saveAddress(),request.makeDefaultAddress());
+                    request.note(),request.requestId(),request.expectedTotal(),request.saveAddress(),request.makeDefaultAddress(),request.deliveryPoint(),request.receiveOrderEmails());
             this.requestId=request.requestId(); this.quote=quote;
             this.channel=channel;
             this.code="VNPAY_SANDBOX".equals(channel)?"SB"+UUID.randomUUID().toString().replace("-","").toUpperCase(Locale.ROOT):"DEMO-"+UUID.randomUUID();
@@ -92,6 +92,10 @@ public class DemoCardPayment {
         }
         var quoted=commerce.demoQuote(owner,request);
         if(!quoted.canCheckout()) throw AppException.badRequest(quoted.message());
+        commerce.validateQuotedOffer(owner,request.items(),quoted);
+        // Persist the voucher that was actually quoted, so a confirmed receipt always posts the same discount.
+        if(!Objects.equals(voucherCode(request.voucherCode()),voucherCode(quoted.voucherCode())))
+            throw AppException.conflict("Phiếu giảm giá vừa thay đổi. Vui lòng cập nhật ưu đãi trước khi thanh toán.");
         if(request.expectedTotal()==null || request.expectedTotal().compareTo(quoted.total())!=0)
             throw AppException.conflict("Giá hoặc phí vận chuyển vừa thay đổi. Vui lòng kiểm tra lại tổng tiền thử.");
         synchronized(sessions) {
@@ -100,6 +104,9 @@ public class DemoCardPayment {
             capacity(owner); var session=new Session(owner,request,quoted,clock.instant(),channel); sessions.put(session.code,session);
             return view(session);
         }
+    }
+    private static String voucherCode(String code) {
+        return code==null || code.isBlank()?null:code.trim().toLowerCase(Locale.ROOT);
     }
     private Session prior(Long owner,Request request,String channel) {
         for(var s:sessions.values()) if(s.owner.equals(owner) && s.requestId.equals(request.requestId())) {

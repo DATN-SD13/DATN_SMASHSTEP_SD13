@@ -6,7 +6,8 @@ import java.util.*;
 public final class DeliveryFailureRules {
     private DeliveryFailureRules() {}
     public static long attempts(List<LichSuHoaDon> rows) {
-        return rows.stream().filter(r -> Integer.valueOf(9).equals(r.getTrangThai())).count();
+        return rows.stream().filter(r -> Integer.valueOf(9).equals(r.getTrangThai())
+                && !com.smashstep.datn.storefront.checkout.OrderEmailNotifications.technical(r.getGhiChu())).count();
     }
     public static void validate(int from, int to, boolean delivery, long count, String reason) {
         if (!delivery || !(from==3 && to==9 || from==9 && to==3)) throw AppException.badRequest("Chuyển trạng thái giao hàng không hợp lệ");

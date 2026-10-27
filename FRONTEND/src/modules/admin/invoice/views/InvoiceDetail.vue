@@ -2,12 +2,14 @@
 import GhnLogo from '../../../../components/GhnLogo.vue'
 import { useProductToast } from '../../product/composables/useProductToast'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import { invoiceService } from '../services/invoiceService'
 import api from '../../../../utils/api'
 import { imageUrl } from '../../product/services/imageUtils'
 import Select2Field from '../components/Select2Field.vue'
+import { confirmAction } from '../../../../utils/feedback'
+import { invoiceQrSvg } from '../services/invoiceQr'
 
 const route = useRoute()
 const router = useRouter()
@@ -96,6 +98,15 @@ const confirmSubmitting = ref(false)
 const showCancelModal = ref(false)
 const { show: showToast } = useProductToast()
 let invoiceLoadVersion = 0
+let printTimer
+let disposed = false
+function allowInvoiceNavigation() {
+  if (!updatingStatus.value && !confirmSubmitting.value) return true
+  showLocalToast('info', 'Đang xử lý', 'Vui lòng chờ thao tác hóa đơn hoàn tất trước khi chuyển trang.')
+  return false
+}
+onBeforeRouteLeave(allowInvoiceNavigation)
+onBeforeRouteUpdate(allowInvoiceNavigation)
 
 const deliverySteps = [
   { key: 'waiting', label: 'Chờ xác nhận', icon: 'bi-hourglass-split', value: 0 },
@@ -293,11 +304,7 @@ const voucherLabel = computed(() => {
 
 const isGHN = computed(() => String(invoice.value?.shippingCarrier || '').trim().toUpperCase() === 'GHN' || String(invoice.value?.shippingCarrier || '').toUpperCase().includes('GIAO HÀNG NHANH'))
 
-const qrCodeUrl = computed(() => {
-  const code = invoice.value?.code || route.params.code || ''
-  const payload = `SMASHSTEP|${code}`
-  return `https://quickchart.io/qr?text=${encodeURIComponent(payload)}&size=140&margin=1`
-})
+const qrCodeSvg = computed(() => invoiceQrSvg(invoice.value?.code || route.params.code || ''))
 
 function formatDate(value) {
   if (!value) return '—'
@@ -320,6 +327,7 @@ function mapInvoice(data) {
     id: data?.id,
     code: data?.maHoaDon || route.params.code,
     employee: data?.tenNhanVien || 'Chưa cập nhật',
+    creator: Number(data?.maLoaiHoaDon) === 1 ? 'Khách hàng' : (data?.tenNguoiTao || data?.maNhanVien || data?.tenNhanVien || 'Chưa cập nhật'),
     employeeId: data?.idNhanVien,
     employeeCode: data?.maNhanVien || '—',
     customer: data?.tenKhachHang || data?.hoTenNguoiNhan || 'Khách lẻ',
@@ -533,7 +541,7 @@ function closeCancelModal() {
 // }
 function showLocalToast(type, title, message) { showToast(type, message, title) }
 
-async function saveStatus() {
+async function saveStatus(confirmed = false) {
   if (updatingStatus.value || confirmSubmitting.value || !invoice.value) return
   const newCode = Number(selectedStatus.value)
   const currentCode = Number(invoice.value?.statusCode)
@@ -560,6 +568,17 @@ async function saveStatus() {
     return
   }
 
+  if (confirmed !== true) {
+    const code = invoice.value.code
+    const statusLabel = editableStatusOptions.value.find(option => option.value === newCode)?.label || 'trạng thái kế tiếp'
+    confirmAction(`Chuyển hóa đơn ${code} sang “${statusLabel}”?`, () => {
+      if (disposed || invoice.value?.code !== code || invoice.value?.statusCode !== currentCode || Number(selectedStatus.value) !== newCode) {
+        showLocalToast('error', 'Hóa đơn đã thay đổi', 'Vui lòng mở lại và xác nhận đúng hóa đơn cần cập nhật.'); return
+      }
+      return saveStatus(true)
+    }, { title: 'Xác nhận cập nhật hóa đơn', confirmText: 'Xác nhận' })
+    return
+  }
   updatingStatus.value = true
   try {
     const response = await invoiceService.updateStatus(invoice.value.code, {
@@ -587,8 +606,9 @@ async function saveStatus() {
 
     // Giữ yêu cầu cũ: khi chuyển sang Đã xác nhận thì mở hộp thoại in.
     if (newCode === 1 && currentCode !== 1) {
-      await new Promise(resolve => window.setTimeout(resolve, 150))
-      printInvoice()
+      const code = invoice.value.code
+      window.clearTimeout(printTimer)
+      printTimer = window.setTimeout(() => { if (!disposed && invoice.value?.code === code) printInvoice() }, 150)
     }
   } catch (error) {
     const message = error?.response?.data?.message || error?.message || 'Không thể cập nhật trạng thái hóa đơn.'
@@ -660,7 +680,7 @@ function historyStatusLabel(item) {
 }
 
 function historyActor(item) {
-  return item?.tenNhanVien || (item?.idNhanVien != null ? `Nhân viên #${item.idNhanVien}` : 'Hệ thống / chưa xác định')
+  return item?.tenKhachHang || item?.tenNhanVien || (item?.idNhanVien != null ? `Nhân viên #${item.idNhanVien}` : 'Hệ thống / chưa xác định')
 }
 
 function historyAction(item) {
@@ -668,10 +688,18 @@ function historyAction(item) {
   return item?.trangThai ? `Chuyển sang trạng thái: ${item.trangThai}` : 'Cập nhật hóa đơn'
 }
 
-function printInvoice() {
+async function printInvoice() {
+  if (!canPrintInvoice.value) return
+  // Inline SVG is ready locally; let Vue finish rendering before opening print preview.
+  await nextTick()
   if (!canPrintInvoice.value) return
   document.body.classList.add('invoice-print-mode')
-  window.setTimeout(() => window.print(), 50)
+  await nextTick()
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
+      if (document.body.classList.contains('invoice-print-mode')) window.print()
+    })
+  })
 }
 
 function clearPrintMode() {
@@ -688,10 +716,12 @@ function stepDate(status) {
 }
 
 onMounted(async () => {
+  const code = route.params.code
   await loadInvoice()
-  if (route.query?.print === '1' && canPrintInvoice.value) { await nextTick(); printInvoice() }
+  if (!disposed && invoice.value?.code === code && route.query?.print === '1' && canPrintInvoice.value) { await nextTick(); printInvoice() }
 })
 watch(() => route.params.code, () => {
+  window.clearTimeout(printTimer)
   showEditOrderModal.value = false
   showCancelModal.value = false
   showHistoryModal.value = false
@@ -699,6 +729,8 @@ watch(() => route.params.code, () => {
   loadInvoice()
 })
 onUnmounted(() => {
+  disposed = true
+  window.clearTimeout(printTimer)
   invoiceLoadVersion += 1
   window.removeEventListener('afterprint', clearPrintMode)
   clearPrintMode()
@@ -728,7 +760,7 @@ onUnmounted(() => {
       <section v-if="invoice" class="invoice-summary-strip">
         <div><span>Mã Đơn Hàng:</span><strong>{{ invoice.code }}</strong></div>
         <div><span>Ngày Tạo:</span><strong>{{ invoice.date }}</strong></div>
-        <div><span>Tạo bởi:</span><strong>{{ invoice.employeeCode !== '—' ? invoice.employeeCode : invoice.employee }}</strong></div>
+        <div><span>Tạo bởi:</span><strong>{{ invoice.creator }}</strong></div>
         <div><span>Cập Nhật Gần Nhất:</span><strong>{{ invoice.updatedDate }}</strong></div>
         <div><span>Loại đơn:</span><strong>{{ invoice.orderType }}</strong></div>
         <div><span>Hình thức nhận:</span><strong>{{ invoice.receiveMethod }}</strong></div>
@@ -974,6 +1006,11 @@ onUnmounted(() => {
 
         <div class="product-table-wrap">
           <table class="product-table table table-hover align-middle mb-0">
+            <colgroup>
+              <col style="width:4%" /><col style="width:11%" /><col style="width:6%" />
+              <col style="width:24%" /><col style="width:9%" /><col style="width:5%" /><col style="width:7%" />
+              <col style="width:11%" /><col style="width:10%" /><col style="width:13%" />
+            </colgroup>
             <thead>
               <tr>
                 <th>STT</th>
@@ -986,7 +1023,6 @@ onUnmounted(() => {
                 <th>Thời gian</th>
                 <th>Giảm giá</th>
                 <th>Đơn giá</th>
-                <th>Thành tiền</th>
               </tr>
             </thead>
             <tbody>
@@ -1021,12 +1057,11 @@ onUnmounted(() => {
                   {{ invoice.date?.split(' ')[1] || invoice.date }}
                   <small>{{ invoice.date?.split(' ')[0] || '' }}</small>
                 </td>
-                <td><div v-if="item.discountPercent != null" class="line-discount"><span>{{ item.discountPercent }}%</span><small v-if="item.originalPrice > item.price">−{{ money((item.originalPrice - item.price) * item.quantity) }}</small></div><span v-else class="discount-empty">—</span></td>
+                <td><div v-if="Number(item.discountPercent) > 0" class="line-discount"><span>{{ item.discountPercent }}%</span><small v-if="item.originalPrice > item.price">−{{ money((item.originalPrice - item.price) * item.quantity) }}</small></div><span v-else class="discount-empty">—</span></td>
                 <td class="nowrap"><del v-if="item.originalPrice > item.price" class="historical-price">{{ money(item.originalPrice) }}</del><strong :class="{ 'historical-sale': item.originalPrice > item.price }">{{ money(item.price) }}</strong></td>
-                <td class="product-total">{{ money(item.lineTotal) }}</td>
               </tr>
               <tr v-if="!filteredItems.length">
-                <td colspan="11" class="empty-products">
+                <td colspan="10" class="empty-products">
                   {{ invoice.items?.length ? 'Không có sản phẩm phù hợp với bộ lọc.' : 'Không có sản phẩm.' }}
                 </td>
               </tr>
@@ -1044,7 +1079,7 @@ onUnmounted(() => {
           <div class="print-header-right">
             <div class="print-title">HÓA ĐƠN BÁN HÀNG</div>
             <div class="print-qr">
-              <img :src="qrCodeUrl" :alt="`Mã QR ${invoice.code}`" />
+              <div class="invoice-qr-image" role="img" :aria-label="`Mã QR ${invoice.code}`" v-html="qrCodeSvg"></div>
               <span>Quét mã: {{ invoice.code }}</span>
             </div>
           </div>
@@ -1467,7 +1502,7 @@ onUnmounted(() => {
 .history-modal-dialog{max-width:760px}.history-modal{max-height:85vh}.history-body{overflow-y:auto;max-height:65vh}.history-loading,.history-empty{min-height:180px;display:flex;align-items:center;justify-content:center;color:#8798a1;font-size:12px}.history-empty{flex-direction:column;gap:8px}.history-empty i{font-size:30px;color:#c3d0d6}.history-empty p{margin:0}.history-timeline{position:relative;padding:5px 4px 5px 42px}.history-timeline:before{content:"";position:absolute;left:13px;top:12px;bottom:12px;width:2px;background:#dce9ef}.history-item{position:relative;padding-bottom:16px}.history-item:last-child{padding-bottom:0}.history-dot{position:absolute;left:-42px;top:2px;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:#e8f5fb;color:#1689cf;border:1px solid #cde8f5;z-index:1;font-size:12px}.history-card{border:1px solid #e5edf1;border-radius:11px;padding:13px 14px;background:#fff}.history-card-top{display:flex;align-items:center;justify-content:space-between;gap:12px}.history-card-top strong{font-size:12px;color:#334d59}.history-card-top span{font-size:10px;color:#93a1a8;white-space:nowrap}.history-meta{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:7px}.history-meta span{font-size:10px;color:#7c909a}.history-meta i{color:#1689cf;margin-right:3px}.history-card p{margin:8px 0 0;color:#526a76;font-size:11px;line-height:1.5}
 @media(max-width:1050px){.detail-layout{grid-template-columns:minmax(0,1.4fr) minmax(260px,.9fr)}.info-grid{grid-template-columns:1fr}.timeline{grid-template-columns:repeat(3,minmax(0,1fr));row-gap:20px}.timeline:before{display:none}}
 @media(max-width:760px){.page-title-actions{width:100%;justify-content:flex-end}.page-title-actions .back-list-button{flex:1}.invoice-toast{left:12px;right:12px;top:78px;min-width:0;max-width:none}.detail-page{padding:15px}.detail-layout{grid-template-columns:1fr}.info-grid{grid-template-columns:1fr}.panel{padding:16px}.timeline{grid-template-columns:repeat(3,minmax(0,1fr));row-gap:18px}.step-label{font-size:10px}.back-link{font-size:13px}.status-info-grid{grid-template-columns:1fr}.customer-fields{grid-template-columns:1fr}.history-modal-dialog{margin:10px}.history-body{max-height:65vh}.timeline-actions{align-items:center;justify-content:flex-end}.soft-button,.edit-order-button,.cancel-order-button{width:auto}.payment-history-actions{display:flex;flex-direction:column}}
-.cancel-order-button{min-width:0;height:34px;border-radius:8px;padding:0 11px;font-size:11px;font-weight:700;background:#dc3545;border-color:#dc3545}.cancel-order-button:hover{background:#bb2d3b;border-color:#bb2d3b}.cancel-confirm-icon{border-color:#dc3545;color:#dc3545}.cancel-warning{margin:8px 0 0;color:#c64f5b;font-size:11px}.cancel-confirm-button{min-width:120px}.print-invoice{display:none}.print-header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1689cf;padding-bottom:14px;margin-bottom:18px}.print-brand{font-size:22px;font-weight:800;letter-spacing:1px}.print-subtitle{font-size:9px;letter-spacing:2px;margin-top:3px}.print-header-right{display:flex;align-items:flex-start;gap:18px}.print-title{font-size:18px;font-weight:800;padding-top:4px}.print-qr{display:flex;flex-direction:column;align-items:center;gap:3px}.print-qr img{width:82px;height:82px;display:block;object-fit:contain}.print-qr span{font-size:7px;color:#666;white-space:nowrap}.print-meta-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px 28px;margin-bottom:20px}.print-meta-grid div{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid #ddd;padding-bottom:5px;font-size:10px}.print-meta-grid span{color:#666}.print-product-table{width:100%;border-collapse:collapse;font-size:10px}.print-product-table th,.print-product-table td{border:1px solid #ccc;padding:7px 6px;text-align:left}.print-product-table th{font-weight:700;background:#f5f5f5}.print-summary{width:300px;margin:18px 0 0 auto;font-size:10px}.print-summary div{display:flex;justify-content:space-between;padding:5px 0}.print-grand-total{border-top:2px solid #222;margin-top:5px;padding-top:9px!important;font-size:13px;font-weight:800}.print-payment{margin-top:20px;padding-top:10px;border-top:1px solid #ddd;font-size:10px}.print-payment div{margin:4px 0}.print-payment span{font-weight:700}.print-shipping{margin-top:20px;padding-top:10px;border-top:1px solid #ddd;font-size:10px}.print-shipping h3{font-size:12px;margin:0 0 8px;font-weight:800}.print-shipping div{margin:4px 0}.print-shipping span{font-weight:700}.print-footer{text-align:center;margin-top:28px;font-size:10px;font-style:italic}
+.cancel-order-button{min-width:0;height:34px;border-radius:8px;padding:0 11px;font-size:11px;font-weight:700;background:#dc3545;border-color:#dc3545}.cancel-order-button:hover{background:#bb2d3b;border-color:#bb2d3b}.cancel-confirm-icon{border-color:#dc3545;color:#dc3545}.cancel-warning{margin:8px 0 0;color:#c64f5b;font-size:11px}.cancel-confirm-button{min-width:120px}.print-invoice{display:none}.print-header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1689cf;padding-bottom:14px;margin-bottom:18px}.print-brand{font-size:22px;font-weight:800;letter-spacing:1px}.print-subtitle{font-size:9px;letter-spacing:2px;margin-top:3px}.print-header-right{display:flex;align-items:flex-start;gap:18px}.print-title{font-size:18px;font-weight:800;padding-top:4px}.print-qr{display:flex;flex-direction:column;align-items:center;gap:3px}.invoice-qr-image{width:82px;height:82px}.invoice-qr-image :deep(svg){display:block;width:100%;height:100%}.print-qr span{font-size:7px;color:#666;white-space:nowrap}.print-meta-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px 28px;margin-bottom:20px}.print-meta-grid div{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid #ddd;padding-bottom:5px;font-size:10px}.print-meta-grid span{color:#666}.print-product-table{width:100%;border-collapse:collapse;font-size:10px}.print-product-table th,.print-product-table td{border:1px solid #ccc;padding:7px 6px;text-align:left}.print-product-table th{font-weight:700;background:#f5f5f5}.print-summary{width:300px;margin:18px 0 0 auto;font-size:10px}.print-summary div{display:flex;justify-content:space-between;padding:5px 0}.print-grand-total{border-top:2px solid #222;margin-top:5px;padding-top:9px!important;font-size:13px;font-weight:800}.print-payment{margin-top:20px;padding-top:10px;border-top:1px solid #ddd;font-size:10px}.print-payment div{margin:4px 0}.print-payment span{font-weight:700}.print-shipping{margin-top:20px;padding-top:10px;border-top:1px solid #ddd;font-size:10px}.print-shipping h3{font-size:12px;margin:0 0 8px;font-weight:800}.print-shipping div{margin:4px 0}.print-shipping span{font-weight:700}.print-footer{text-align:center;margin-top:28px;font-size:10px;font-style:italic}
 .error-panel {
   display: flex;
   align-items: flex-start;
@@ -1653,7 +1688,9 @@ onUnmounted(() => {
 .product-reset-button:hover{background:#edf8fd}
 
 .product-table-wrap{
-  width:100%;
+  width:calc(100% - 40px);
+  margin:0 20px 16px;
+  border-radius:10px;
   overflow-x:auto;
   overflow-y:hidden;
   scrollbar-width:thin;
@@ -1718,6 +1755,41 @@ onUnmounted(() => {
 .product-total{color:#1681c3!important;font-weight:750}
 .nowrap{white-space:nowrap!important}
 .empty-products{text-align:center!important;color:#91a0a8!important;padding:22px!important}
+
+/* Cột cố định cho số liệu, phần còn lại dành cho tên và thuộc tính sản phẩm. */
+.product-table{table-layout:fixed;min-width:1320px}
+.product-table th{height:46px;background:#edf5fa;padding:10px 12px;font-size:11px;line-height:1.4}
+.product-table td{padding:16px 12px;font-size:12px;line-height:1.5}
+.product-table th:nth-child(1),.product-table td:nth-child(1),
+.product-table th:nth-child(3),.product-table td:nth-child(3),
+.product-table th:nth-child(6),.product-table td:nth-child(6),
+.product-table th:nth-child(7),.product-table td:nth-child(7){text-align:center}
+.product-table th:nth-child(9),.product-table td:nth-child(9),
+.product-table th:nth-child(10),.product-table td:nth-child(10),
+.product-table th:nth-child(11),.product-table td:nth-child(11){text-align:right;font-variant-numeric:tabular-nums}
+.product-table td.product-info-cell{min-width:0;white-space:normal;overflow-wrap:anywhere}
+.product-table .product-info-cell strong{font-size:12px;line-height:1.5}
+.product-table .product-info-cell small{font-size:10px;line-height:1.5;color:#8195a0}
+.product-table .product-thumb{width:48px;height:48px;margin:auto;border-radius:10px}
+.product-table .product-thumb img{object-fit:contain}
+.product-table .product-code{white-space:normal;overflow-wrap:anywhere;font-size:11px}
+.product-table .product-time{font-size:11px;font-variant-numeric:tabular-nums}
+.product-table .product-time small{font-size:10px}
+.product-table .line-discount{justify-items:end}
+.product-table .line-discount small{font-size:10px}
+.product-table .historical-price{font-size:11px}
+.product-table .product-total{font-size:12px}
+.product-table tbody tr:last-child td{border-bottom:0}
+
+/* Bảng sản phẩm: tất cả tiêu đề và giá trị căn trái theo yêu cầu. */
+.product-table{min-width:1170px}
+.product-table th,.product-table td{text-align:left!important}
+.product-table .product-thumb{margin-left:0;margin-right:0}
+.product-table .line-discount{justify-items:start;text-align:left}
+
+/* Chia đều phần rộng còn lại, không để riêng cột sản phẩm hút hết khoảng trống. */
+.product-table .line-discount>span{background:#fff0f3;color:#d32c50}
+.product-table .line-discount small{color:#d32c50}
 
 @media(max-width:1100px){
   .product-filter-box{grid-template-columns:1fr 1fr 1fr}

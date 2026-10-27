@@ -32,4 +32,5 @@ public class RegisterRequest {
     @Size(min = 6, max = 72, message = "Mật khẩu phải có từ 6 đến 72 ký tự")
     @AccountText(AccountRules.Kind.PASSWORD)
     private String password;
+
 }

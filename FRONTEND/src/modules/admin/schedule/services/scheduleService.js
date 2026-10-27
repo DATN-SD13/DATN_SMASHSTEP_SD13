@@ -81,8 +81,21 @@ const scheduleService = {
     const fd = new FormData()
     fd.append('file', file)
     return unwrap(await api.post('/lich-lam-viec/import-excel', fd, {
-      headers: { 'Content-Type': 'multipart/form-data' }
+      headers: { 'Content-Type': undefined }, timeout: 60000
     }))
+  },
+
+  async previewImport(file) {
+    const fd = new FormData(); fd.append('file', file)
+    return unwrap(await api.post('/lich-lam-viec/import-excel/preview', fd, {
+      headers: { 'Content-Type': undefined }, timeout: 60000
+    }))
+  },
+  async confirmImport(body) {
+    return unwrap(await api.post('/lich-lam-viec/import-excel/confirm', body))
+  },
+  async thayNhanVien(id, maNhanVien) {
+    return unwrap(await api.post(`/lich-lam-viec/${id}/thay-nhan-vien`, { maNhanVien }))
   },
 
   async xuatExcelLichSu(params = {}) {

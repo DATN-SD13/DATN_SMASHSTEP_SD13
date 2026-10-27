@@ -39,6 +39,7 @@ const router = createRouter({
     { path: '/khach-hang/dang-nhap',         component: CustomerLogin,      meta: { public: true, guestOnly: true } },
     { path: '/khach-hang/quen-mat-khau',     component: ForgotPassword, meta: { public: true, guestOnly: true } },
     { path: '/khach-hang/dat-lai-mat-khau',  component: ResetPassword,  meta: { public: true } },
+    { path: '/nhan-vien/dat-lai-mat-khau', component: ResetPassword, meta: { public: true } },
     { path: '/khach-hang/trang-chu',         component: CustomerHome,  meta: { requiresAuth: true, userType: 'KHACH_HANG' } },
 
     // ── Admin area (requiresAuth + NHAN_VIEN) ───────────
@@ -80,6 +81,7 @@ const router = createRouter({
     { path: '/thiet-lap-bien-the', redirect: '/thuoc-tinh' },
 
     { path: '/khach-hang',      component: CustomerList, meta: { title: 'Khách hàng', requiresAuth: true, userType: 'NHAN_VIEN' } },
+    { path: '/ho-tro-truc-tuyen', component: () => import('../modules/admin/chat/views/ChatSupportView.vue'), meta: { title: 'Hỗ trợ trực tuyến', requiresAuth: true, userType: 'NHAN_VIEN' } },
     { path: '/khach-hang/them', component: AddCustomer,  meta: { title: 'Thêm khách hàng', parent: { label: 'Khách hàng', to: '/khach-hang' }, requiresAuth: true, userType: 'NHAN_VIEN' } },
 
     { path: '/nhan-vien',       component: EmployeeList,   meta: { title: 'Nhân viên', requiresAuth: true, userType: 'NHAN_VIEN', role: 'ADMIN' } },
@@ -100,7 +102,7 @@ const router = createRouter({
 // ── Navigation Guard ──────────────────────────────────────
 router.beforeEach((to, _from, next) => {
   // Lazy import store để tránh circular dep trước khi app mount
-  import('../stores/auth').then(({ useAuthStore }) => {
+  import('../stores/auth').then(async ({ useAuthStore }) => {
     const auth = useAuthStore()
 
     // Trang chỉ dành cho guest: nếu đã login thì redirect đúng chỗ
@@ -117,6 +119,15 @@ router.beforeEach((to, _from, next) => {
         ? '/khach-hang/dang-nhap'
         : '/dang-nhap'
       return next({ path: loginPath, query: { redirect: to.fullPath } })
+    }
+
+    if (auth.userType === 'NHAN_VIEN') {
+      try { await auth.refreshSession() }
+      catch {
+        if (!auth.isAuthenticated) return next('/dang-nhap')
+        return next(false)
+      }
+      if (!auth.isAuthenticated) return next('/dang-nhap')
     }
 
     // Khách hàng cố vào khu vực admin → về trang khách hàng

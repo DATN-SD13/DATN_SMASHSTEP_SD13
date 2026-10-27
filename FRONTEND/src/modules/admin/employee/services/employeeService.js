@@ -3,6 +3,7 @@ import api from '../../../../utils/api'
 const unwrap = (response) => response?.data?.data
 
 const employeeService = {
+  async sendPasswordReset(email) { return unwrap(await api.post('/auth/quen-mat-khau', { email, userType: 'NHAN_VIEN' })) },
   async downloadImportTemplate() { return (await api.get('/nhan-vien/excel/mau', { responseType: 'blob' })).data },
   async previewImport(file) { const data = new FormData(); data.append('file', file); return unwrap(await api.post('/nhan-vien/excel/xem-truoc', data, { headers: { 'Content-Type': undefined }, timeout: 60000 })) },
   async confirmImport(payload) { return unwrap(await api.post('/nhan-vien/excel/xac-nhan', payload, { timeout: 120000 })) },

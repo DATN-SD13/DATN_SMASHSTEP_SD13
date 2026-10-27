@@ -22,7 +22,7 @@ async function allAttributes(type) {
 
 export const productAttributeService = {
   options: async (keys = attributeTypes.map(type => type.key)) =>
-    Object.fromEntries(await Promise.all(keys.map(async key => [key, await allAttributes(key)]))),
+    Object.fromEntries(await Promise.all(keys.map(async key => [key, (await allAttributes(key)).filter(row => key !== 'sizes' || /^(?:(?:3[5-9]|4[0-5])(?:[.,]5)?|46)$/.test(String(row.ten ?? '').trim()))]))),
   list: (type, params) => api.get(`/product-attributes/${type}`, { params }).then(r => r.data),
   get: (type, id) => api.get(`/product-attributes/${type}/${id}`).then(r => r.data),
   checkDuplicate: (type, data) => api.post(`/product-attributes/${type}/check-duplicate`, data).then(r => r.data),

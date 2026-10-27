@@ -20,6 +20,11 @@ const router = useRouter()
 const auth = useAuthStore()
 const MAX_ORDERS = 5
 const catalog = ref([]), catalogPage = ref(0), catalogPages = ref(0)
+const catalogVisiblePages = computed(() => {
+  const count = Math.max(1, catalogPages.value);
+  const from = Math.max(0, Math.min(catalogPage.value - 2, count - 5));
+  return Array.from({ length: Math.min(5, count) }, (_, i) => from + i);
+})
 const loading = ref(false), busy = ref(false), ready = ref(false), error = ref('')
 const customers = ref([]), customerSearch = ref(''), employeeName = ref('')
 const choosingCustomer = ref(false), customerResults = ref([]), customerLoading = ref(false), customerSearchError = ref('')
@@ -27,10 +32,11 @@ const employeeId = ref(null), methods = ref([]), voucherSupported = ref(false)
 let quoteVersion = 0, quoteTimer
 const orders = ref([]), activeId = ref(null)
 const order = computed(() => orders.value.find(o => o.id === activeId.value) || null)
-const deliveryLoading = ref(false), syncingStock = ref(false)
+const deliveryLoading = ref(false), syncingStock = ref(false), refreshingPrices = ref(false)
 const checkingVoucher = ref(false), betterVoucherDialog = ref(null)
 let stockSyncTimer, stockPollTimer, stockSyncPromise = null, stockSyncPending = false
-const operationLocked = computed(() => auth.loggingOut || checkingVoucher.value || Boolean(betterVoucherDialog.value) || shippingLoading.value || deliveryLoading.value || Boolean(deliveryEditor.value) || busy.value || !ready.value || Boolean(checkoutDialog.value) || Boolean(pendingPayment.value) || recoveryBlocked.value)
+let pricingRefreshPromise = null
+const operationLocked = computed(() => (refreshingPrices.value && cartWarnings.value.length > 0) || auth.loggingOut || checkingVoucher.value || Boolean(betterVoucherDialog.value) || shippingLoading.value || deliveryLoading.value || Boolean(deliveryEditor.value) || busy.value || !ready.value || Boolean(checkoutDialog.value) || Boolean(pendingPayment.value) || recoveryBlocked.value)
 const locked = computed(() => operationLocked.value || Boolean(bankAccepted.value))
 const picking = ref(false), q = ref(''), colorFilter = ref(''), sizeFilter = ref('')
 const categoryFilter = ref(''), brandFilter = ref(''), attributes = ref({})
@@ -140,9 +146,9 @@ const validVouchers = computed(() => order.value?.quote?.vouchers || [])
 const buyMoreSuggestions = computed(() => (order.value?.quote?.buyMoreSuggestions || []).filter(v =>
   Number(v.amountNeeded) > 0 && Number(v.amountNeeded) <= 500000))
 
-async function calculateQuote(suggest = true) {
+async function calculateQuote(suggest = true, background = false) {
   const target = order.value, version = ++quoteVersion
-  if (bankAccepted.value || auth.loggingOut || checkingVoucher.value || betterVoucherDialog.value || !target?.items.length || !quoteInput.value.paymentMethodId || busy.value || pendingPayment.value || checkoutDialog.value || recoveryBlocked.value) return
+  if (bankAccepted.value || auth.loggingOut || checkingVoucher.value || betterVoucherDialog.value || !target?.items.length || !quoteInput.value.paymentMethodId || busy.value || pendingPayment.value || (checkoutDialog.value && !background) || recoveryBlocked.value) return
   if (target.delivery.enabled && !shippingReady.value) return
   const fingerprint = quoteSignature.value
   target.quoteError = ''
@@ -150,6 +156,11 @@ async function calculateQuote(suggest = true) {
     const result = await salesService.tinhTien(quoteInput.value)
     if (!alive || version !== quoteVersion || order.value?.id !== target.id || fingerprint !== quoteSignature.value) return
     if (bankAccepted.value && Number(bankAccepted.value.total) !== Number(result.total)) bankAccepted.value = null
+    // A payment dialog must never retain an amount computed before a price/voucher change.
+    if (background && checkoutDialog.value && (Number(checkoutDialog.value.total) !== Number(result.total)
+        || result.selectedVoucherError || Number(target.quote?.discount || 0) !== Number(result.discount || 0))) {
+      checkoutDialog.value = null
+    }
     target.quote = result; target.quotedSignature = fingerprint
     const best = result.vouchers?.[0]
     const nextCode = best?.code || ''
@@ -157,12 +168,14 @@ async function calculateQuote(suggest = true) {
     if ((target.autoVoucher && target.voucherCode.toLowerCase() !== nextCode.toLowerCase())
         || result.selectedVoucherError) {
       if (result.selectedVoucherError) target.autoVoucher = true
+      checkoutDialog.value = null
       target.voucherCode = nextCode
       target.quoteError = ''
       if (await saveOrder(target)) await calculateQuote(false)
     }
   } catch (e) {
     if (alive && version === quoteVersion && order.value?.id === target.id && fingerprint === quoteSignature.value) {
+      if (background) checkoutDialog.value = null
       target.quote = null; target.quoteError = message(e)
       if (e.response?.status === 409 && !busy.value && !locked.value) await reviewChangedCart(target)
     }
@@ -183,8 +196,9 @@ async function loadPaymentOptions() {
     for (const o of orders.value) if (!paymentChoices.value.some(m => m.value === o.paymentMode)) o.paymentMode = paymentChoices.value[0]?.value || 'CASH'
   } catch (e) { error.value = message(e) }
 }
+const preparingCheckout = ref(false)
 watch([quoteSignature, busy], () => {
-  if (bankAccepted.value || checkoutDialog.value || pendingPayment.value) return
+  if (refreshingPrices.value || preparingCheckout.value || bankAccepted.value || checkoutDialog.value || pendingPayment.value) return
   ++quoteVersion; clearTimeout(quoteTimer)
   if (order.value) { order.value.quote = null; order.value.quotedSignature = '' }
   if (!busy.value) quoteTimer = setTimeout(calculateQuote, 250)
@@ -435,8 +449,23 @@ async function readyCheckout() {
   return canPay.value
 }
 async function createPaymentDialog() {
-  if (stockSyncPromise) await stockSyncPromise
+  await waitForPosRefresh()
   if (!(await readyCheckout())) return
+  const target = order.value, before = paymentContext()
+  preparingCheckout.value = true
+  busy.value = true
+  try {
+    const revision = await salesService.ghiNhanChoThanhToan(target.id, target.revision)
+    if (!alive || order.value?.id !== target.id || before !== paymentContext()) return
+    target.revision = revision
+    target.saved = signature(target)
+    target.quotedSignature = quoteSignature.value
+  } catch (e) {
+    error.value = message(e)
+    showError(error.value, 'Chưa thể mở xác nhận thanh toán')
+    try { await reloadOrders() } catch {}
+    return
+  } finally { busy.value = false; preparingCheckout.value = false }
   qrFailed.value = false
   checkoutDialog.value = { payload: checkoutPayload(), invoiceCode: order.value.name,
     total: payable.value, change: change.value, bank: transferred.value, context: paymentContext(), confirmed: false,
@@ -481,7 +510,8 @@ async function pay() {
     return
   }
   if (checkingVoucher.value || betterVoucherDialog.value) return
-  if (stockSyncPromise) await stockSyncPromise
+  await waitForPosRefresh()
+  if (busy.value || checkoutDialog.value || pendingPayment.value || bankAccepted.value) return
   if (!(await readyCheckout())) return
   if (checkingVoucher.value || betterVoucherDialog.value) return
   checkingVoucher.value = true
@@ -552,9 +582,9 @@ function clearCheckout() {
   catch { recoveryBlocked.value = true; error.value = 'Không cập nhật được phiên thanh toán; tải lại trang để kiểm tra.'; return false }
 }
 async function confirmPayment() {
-  if (stockSyncPromise) await stockSyncPromise
+  await waitForPosRefresh()
   const dialog = checkoutDialog.value
-  if (!dialog || busy.value || syncingStock.value || (dialog.bank > 0 && !dialog.confirmed)) return
+  if (!dialog || busy.value || refreshingPrices.value || syncingStock.value || (dialog.bank > 0 && !dialog.confirmed)) return
   if (dialog.context !== paymentContext()) {
     checkoutDialog.value = null; error.value = 'Thông tin hóa đơn đã thay đổi. Vui lòng mở lại mã QR và kiểm tra số tiền.'; return
   }
@@ -633,15 +663,15 @@ function rememberCustomers(drafts) {
 function requestStockSync() {
   stockSyncPending = true
   clearTimeout(stockSyncTimer)
-  if (!alive || bankAccepted.value || auth.loggingOut || checkingVoucher.value || betterVoucherDialog.value || busy.value || syncingStock.value || shippingLoading.value || deliveryLoading.value || deliveryEditor.value || pendingPayment.value || recoveryBlocked.value
+  if (!alive || bankAccepted.value || auth.loggingOut || checkingVoucher.value || betterVoucherDialog.value || refreshingPrices.value || busy.value || syncingStock.value || shippingLoading.value || deliveryLoading.value || deliveryEditor.value || pendingPayment.value || recoveryBlocked.value
       || (typeof document !== 'undefined' && document.visibilityState === 'hidden')) return
   stockSyncTimer = setTimeout(() => { stockSyncTimer = null; syncCartStock() }, 150)
 }
-watch([bankAccepted, () => auth.loggingOut, checkingVoucher, betterVoucherDialog, busy, shippingLoading, deliveryLoading, deliveryEditor, pendingPayment, recoveryBlocked], () => { if (stockSyncPending) requestStockSync() })
+watch([refreshingPrices, checkoutDialog, bankAccepted, () => auth.loggingOut, checkingVoucher, betterVoucherDialog, busy, shippingLoading, deliveryLoading, deliveryEditor, pendingPayment, recoveryBlocked], () => { if (stockSyncPending) requestStockSync() })
 
 async function syncCartStock() {
   if (stockSyncPromise) { stockSyncPending = true; return stockSyncPromise }
-  if (!alive || !ready.value || bankAccepted.value || auth.loggingOut || checkingVoucher.value || betterVoucherDialog.value || busy.value || syncingStock.value || shippingLoading.value || deliveryLoading.value || deliveryEditor.value
+  if (!alive || !ready.value || bankAccepted.value || auth.loggingOut || checkingVoucher.value || betterVoucherDialog.value || refreshingPrices.value || busy.value || syncingStock.value || shippingLoading.value || deliveryLoading.value || deliveryEditor.value
       || pendingPayment.value || recoveryBlocked.value
       || (typeof document !== 'undefined' && document.visibilityState === 'hidden')) { stockSyncPending = true; return }
   stockSyncPending = false
@@ -659,7 +689,13 @@ async function syncCartStock() {
       if (String(previous.revision) === String(d.revision)) {
         for (const fresh of d.items) {
           const item = previous.items.find(i => i.id === fresh.id)
-          if (item) { item.stock = fresh.stock; item.available = fresh.available; item.currentPrice = fresh.currentPrice }
+          if (item) {
+            item.stock = fresh.stock; item.available = fresh.available; item.currentPrice = fresh.currentPrice
+            if (Number(item.price) === Number(fresh.currentPrice)) {
+              item.originalPrice = fresh.originalPrice; item.discounted = fresh.discounted === true
+              item.discountPercent = fresh.discountPercent ?? 0
+            }
+          }
         }
         return previous
       }
@@ -695,7 +731,46 @@ async function syncCartStock() {
   } finally { syncingStock.value = false }
   })()
   try { await stockSyncPromise }
-  finally { stockSyncPromise = null; if (alive && stockSyncPending) requestStockSync() }
+  finally {
+    stockSyncPromise = null
+    if (alive) await refreshPosPricing()
+    if (alive && stockSyncPending) requestStockSync()
+  }
+}
+
+// Refresh only uncommitted sales. Accepted bank transfers and recovery requests keep their original payload.
+function refreshPosPricing() {
+  if (pricingRefreshPromise) return pricingRefreshPromise
+  pricingRefreshPromise = performPriceRefresh().finally(() => { pricingRefreshPromise = null })
+  return pricingRefreshPromise
+}
+async function waitForPosRefresh() {
+  if (stockSyncPromise) await stockSyncPromise
+  if (pricingRefreshPromise) await pricingRefreshPromise
+}
+async function performPriceRefresh() {
+  const target = order.value
+  if (!alive || !ready.value || refreshingPrices.value || bankAccepted.value || auth.loggingOut
+      || busy.value || checkingVoucher.value || betterVoucherDialog.value || shippingLoading.value
+      || deliveryLoading.value || deliveryEditor.value || pendingPayment.value || recoveryBlocked.value
+      || !target?.items.length) return
+  refreshingPrices.value = true
+  clearTimeout(quoteTimer)
+  try {
+    if (target.items.some(i => i.currentPrice != null && Number(i.price) !== Number(i.currentPrice))) {
+      checkoutDialog.value = null
+      await reviewChangedCart(target)
+    }
+    if (alive && order.value?.id === target.id) await calculateQuote(false, true)
+  } finally {
+    refreshingPrices.value = false
+    // An edit made while the background quote was in flight invalidates that response.
+    // Requote the edited cart without disabling inputs on every polling cycle.
+    if (alive && order.value?.items.length && !quoteReady.value && !checkoutDialog.value
+        && !bankAccepted.value && !pendingPayment.value && !busy.value) {
+      clearTimeout(quoteTimer); quoteTimer = setTimeout(calculateQuote, 250)
+    }
+  }
 }
 
 async function reloadOrders() {
@@ -772,16 +847,16 @@ async function reviewChangedCart(target) {
     item.currentPrice = current.price; item.available = true
     if (Number(item.price) !== Number(current.price)) changed.push({ item, current })
   })
-  const priceKey = changed.map(({ item, current }) => `${item.id}:${current.price}`).join('|')
-  if (changed.length && target.lastPricePrompt !== priceKey) {
-    target.lastPricePrompt = priceKey
-    confirmAction('Giá sản phẩm đã thay đổi. Cập nhật giá mới rồi kiểm tra lại tổng tiền?', async () => {
-    if (locked.value || order.value?.id !== target.id) return
+  if (!alive || bankAccepted.value || pendingPayment.value || recoveryBlocked.value || auth.loggingOut
+      || order.value?.id !== target.id) return
+  if (changed.length) {
+    checkoutDialog.value = null
+    target.quote = null; target.quotedSignature = ''
     for (const { item, current } of changed) Object.assign(item, current, { qty: item.qty, currentPrice: current.price })
-    await saveOrder(order.value, 'Cập nhật giá sản phẩm trong giỏ hàng thành công.')
-  }, { title: 'Xác nhận giá mới', confirmText: 'Cập nhật giá' })
+    await saveOrder(target)
   }
 }
+
 async function switchOrder(id) {
   if (stockSyncPromise) await stockSyncPromise
   if (locked.value || !(await saveOrder())) return
@@ -1025,7 +1100,7 @@ onMounted(async () => {
       window.addEventListener('focus', requestStockSync)
       window.addEventListener('online', requestStockSync)
       document.addEventListener('visibilitychange', requestStockSync)
-      stockPollTimer = window.setInterval(requestStockSync, 4000)
+      stockPollTimer = window.setInterval(requestStockSync, 2000)
       requestStockSync()
     }
   } catch (e) { error.value = message(e) }
@@ -1067,18 +1142,18 @@ onBeforeUnmount(() => { unregisterLogoutGuard(); if (typeof window !== 'undefine
             <button class="ss-btn primary" :disabled="locked || !order" @click="openPicker">Chọn sản phẩm</button>
           </div>
           <div class="ss-table-wrap">
-            <table class="ss-table" style="min-width:640px">
-              <thead><tr><th class="w-stt c">STT</th><th>Ảnh sản phẩm</th><th>Mã sản phẩm</th><th>Tên sản phẩm</th><th>Màu sắc</th><th class="c">Kích cỡ</th><th class="c">Số lượng</th><th class="r">Đơn giá</th><th class="c">Thao tác</th></tr></thead>
+            <table class="ss-table pos-left-table pos-cart-table" style="min-width:640px">
+              <thead><tr><th class="w-stt">STT</th><th>Ảnh sản phẩm</th><th>Mã sản phẩm</th><th>Tên sản phẩm</th><th>Màu sắc</th><th>Kích cỡ</th><th>Số lượng</th><th>Đơn giá</th><th>Thao tác</th></tr></thead>
               <tbody>
                 <tr v-for="(i, idx) in order?.items || []" :key="i.code">
-                  <td class="c">{{ idx + 1 }}</td>
+                  <td>{{ idx + 1 }}</td>
                   <td><ProductThumbnail :url="imageSources[i.id]" :item="badgeItem(i)" :alt="i.name" /></td><td :title="i.code"><span class="ss-code">{{ i.productCode || i.code }}</span></td>
                   <td class="cart-product-name"><span class="ss-strong">{{ i.name }}</span></td>
                   <td>{{ i.color }}</td>
-                  <td class="c">{{ i.size }}</td>
-                  <td class="c"><div class="qty"><button :disabled="locked || i.qty <= 1" aria-label="Giảm số lượng" @click="setQty(i, i.qty - 1)">−</button><input :disabled="locked" :value="i.qty" inputmode="numeric" @change="setQty(i, $event.target.value, $event.target)" /><button :disabled="locked || i.qty >= i.stock || i.qty >= 10000" aria-label="Tăng số lượng" @click="setQty(i, i.qty + 1)">+</button></div></td>
-                  <td class="r nowrap" :title="i.campaignName || ''"><del v-if="i.discounted" class="pos-price-old">{{ money(i.originalPrice) }}</del><strong :class="{'sale-price': i.discounted}">{{ money(i.price) }}</strong></td>
-                  <td class="c"><button class="ss-icon-btn danger" :disabled="locked" title="Xóa" @click="removeItem(i.code)"><i class="bi bi-trash3"></i></button></td>
+                  <td>{{ i.size }}</td>
+                  <td><div class="qty"><button :disabled="locked || i.qty <= 1" aria-label="Giảm số lượng" @click="setQty(i, i.qty - 1)">−</button><input :disabled="locked" :value="i.qty" inputmode="numeric" @change="setQty(i, $event.target.value, $event.target)" /><button :disabled="locked || i.qty >= i.stock || i.qty >= 10000" aria-label="Tăng số lượng" @click="setQty(i, i.qty + 1)">+</button></div></td>
+                  <td class="nowrap" :title="i.campaignName || ''"><del v-if="i.discounted" class="pos-price-old">{{ money(i.originalPrice) }}</del><strong :class="{'sale-price': i.discounted}">{{ money(i.price) }}</strong></td>
+                  <td><button class="ss-icon-btn danger" :disabled="locked" title="Xóa" @click="removeItem(i.code)"><i class="bi bi-trash3"></i></button></td>
                 </tr>
               </tbody>
             </table>
@@ -1122,15 +1197,15 @@ onBeforeUnmount(() => { unregisterLogoutGuard(); if (typeof window !== 'undefine
           <div class="ss-head"><div class="ss-head-icon"><i class="bi bi-receipt"></i></div><h2>Thông tin đơn hàng</h2><span class="ss-spacer"></span><label class="delivery-toggle"><span>Giao hàng</span><input type="checkbox" role="switch" aria-label="Giao hàng" :checked="order.delivery.enabled" :disabled="locked" @change="toggleDelivery($event.target.checked)" /><span class="delivery-switch-track" aria-hidden="true"></span></label></div>
           <div v-if="selectedVoucher && quoteReady" class="voucher-card"><div><i class="bi bi-check2-circle"></i> {{ bestSelected ? 'Đang áp dụng phiếu tốt nhất' : 'Phiếu đang áp dụng' }}<button class="ss-icon-btn" :disabled="locked" aria-label="Bỏ phiếu" @click="applyVoucher('')">×</button></div><div><b>{{ selectedVoucher.code }} <small>{{ selectedVoucher.form === 2 ? 'Cá nhân' : 'Công khai' }}</small></b><span class="voucher-badge">{{ voucherLabel(selectedVoucher) }}</span></div><div><span>Giá trị giảm</span><b>−{{ money(order.quote.discount) }}</b></div></div>
           <div class="ss-field voucher-selector"><label class="ss-label" for="pos-voucher">Phiếu giảm giá</label>
-            <span class="pos-select2"><PosSelect :allow-clear="false" dropdown-parent-selector=".ss-modal" aria-label="Phiếu giảm giá" id="pos-voucher" :model-value="order.voucherCode" :disabled="locked || !count" @change="applyVoucher($event)">
+            <span class="pos-select2"><PosSelect :allow-clear="false" dropdown-parent-selector=".ss-modal" dropdown-class="pos-voucher-dropdown" aria-label="Phiếu giảm giá" id="pos-voucher" :model-value="order.voucherCode" :disabled="locked || !count" @change="applyVoucher($event)">
               <option value="">Không sử dụng phiếu</option>
-              <optgroup v-for="form in [2, 1]" :key="form" :label="form === 2 ? 'Phiếu cá nhân của khách' : 'Phiếu công khai'">
+              <optgroup v-for="form in [2, 1].filter(f => validVouchers.some(v => Number(v.form || 1) === f))" :key="form" :label="form === 2 ? 'Phiếu cá nhân của khách' : 'Phiếu công khai'">
                 <option v-for="v in validVouchers.filter(v => Number(v.form || 1) === form)" :key="v.code" :value="v.code">{{ v.code }} · {{ voucherLabel(v) }} · Giảm {{ money(v.discount) }}</option>
               </optgroup>
               <optgroup v-if="order.quote?.ineligibleVouchers?.length" label="Chưa đủ điều kiện">
                 <option v-for="v in order.quote.ineligibleVouchers" :key="v.code" disabled>{{ v.form === 2 ? 'Cá nhân · ' : '' }}{{ v.code }} · {{ v.reason }}</option>
               </optgroup>
-              <option v-if="order.voucherCode && !validVouchers.some(v => v.code.toLowerCase() === order.voucherCode.toLowerCase())" :value="order.voucherCode">{{ order.voucherCode }}</option>
+              <option v-if="!quoteReady && order.voucherCode && !validVouchers.some(v => v.code.toLowerCase() === order.voucherCode.toLowerCase())" :value="order.voucherCode">{{ order.voucherCode }}</option>
             </PosSelect></span>
             <small v-if="validVouchers[0]" class="ss-hint">Phiếu tốt nhất: {{ validVouchers[0].code }} · giảm {{ money(validVouchers[0].discount) }}</small>
           </div>
@@ -1189,7 +1264,7 @@ onBeforeUnmount(() => { unregisterLogoutGuard(); if (typeof window !== 'undefine
         </div></section>
         <section class="delivery-section"><h3>Địa chỉ giao hàng</h3><p v-if="deliveryFields.address" class="field-error" role="alert">{{ deliveryFields.address }}</p>
           <label v-for="a in addresses" :key="a.id" class="address-choice"><input type="radio" :value="a.id" v-model="deliveryEditor.addressId" :disabled="busy || shippingLoading" @change="selectDeliveryAddress(a)" /><span><b>{{ a.receiverName }}</b> · {{ a.receiverPhone }}<small v-if="a.isDefault" class="voucher-badge">Mặc định</small><br />{{ a.fullAddress }}</span></label>
-          <label class="address-choice"><input type="radio" :value="null" v-model="deliveryEditor.addressId" :disabled="busy || shippingLoading" /> Sử dụng địa chỉ khác</label>
+          <label class="address-choice"><input type="radio" :value="null" v-model="deliveryEditor.addressId" :disabled="busy || shippingLoading" /> {{ selectedCustomer ? 'Sử dụng địa chỉ khác' : 'Nhập địa chỉ giao hàng' }}</label>
           <div v-if="!deliveryEditor.addressId" class="delivery-grid">
             <label>Tỉnh/Thành phố *<span class="pos-select2"><PosSelect :allow-clear="false" dropdown-parent-selector=".ss-modal" aria-label="Tỉnh/Thành phố" v-model="addressForm.province" :disabled="busy || shippingLoading || areasLoading" @change="changeProvince" @blur="validateDeliveryField('province')" :class="{'is-invalid': deliveryFields.province}" :aria-invalid="Boolean(deliveryFields.province)" aria-describedby="delivery-province-error"><option value="">Chọn tỉnh/thành</option><option v-for="a in provinces" :key="a.id" :value="a.id">{{ a.ten }}</option></PosSelect></span><small v-if="deliveryFields.province" id="delivery-province-error" class="field-error" role="alert">{{ deliveryFields.province }}</small></label>
             <label>Phường/Xã *<span class="pos-select2"><PosSelect :allow-clear="false" dropdown-parent-selector=".ss-modal" aria-label="Phường/Xã" v-model="addressForm.ward" @change="validateDeliveryField('ward')" @blur="validateDeliveryField('ward')" :class="{'is-invalid': deliveryFields.ward}" :aria-invalid="Boolean(deliveryFields.ward)" aria-describedby="delivery-ward-error" :disabled="busy || shippingLoading || !addressForm.province || areasLoading"><option value="">Chọn phường/xã</option><option v-for="a in wards" :key="a.id" :value="a.id">{{ a.ten }}</option></PosSelect></span><small v-if="deliveryFields.ward" id="delivery-ward-error" class="field-error" role="alert">{{ deliveryFields.ward }}</small></label>
@@ -1215,13 +1290,13 @@ onBeforeUnmount(() => { unregisterLogoutGuard(); if (typeof window !== 'undefine
           <label>Size<span class="pos-select2"><PosSelect :allow-clear="false" dropdown-parent-selector=".ss-modal" aria-label="Size" v-model="sizeFilter"><option value="">Tất cả size</option><option v-for="a in attributes.sizes || []" :key="a.id" :value="a.giaTri || a.ten">{{ a.giaTri || a.ten }}</option></PosSelect></span></label><label>Danh mục<span class="pos-select2"><PosSelect :allow-clear="false" dropdown-parent-selector=".ss-modal" aria-label="Danh mục" v-model="categoryFilter"><option value="">Tất cả danh mục</option><option v-for="a in attributes.categories || []" :key="a.id" :value="a.id">{{ a.ten }}</option></PosSelect></span></label><label>Thương hiệu<span class="pos-select2"><PosSelect :allow-clear="false" dropdown-parent-selector=".ss-modal" aria-label="Thương hiệu" v-model="brandFilter"><option value="">Tất cả thương hiệu</option><option v-for="a in attributes.brands || []" :key="a.id" :value="a.id">{{ a.ten }}</option></PosSelect></span></label>
         </div>
         <div class="ss-table-wrap">
-          <table class="ss-table" style="min-width:600px">
-            <thead><tr><th>STT</th><th>Ảnh sản phẩm</th><th>Mã sản phẩm</th><th>Tên sản phẩm</th><th>Màu</th><th class="c">Size</th><th class="r">Tồn kho</th><th class="r">Giá</th><th class="c"></th></tr></thead>
+          <table class="ss-table pos-left-table" style="min-width:600px">
+            <thead><tr><th>STT</th><th>Ảnh sản phẩm</th><th>Mã sản phẩm</th><th>Tên sản phẩm</th><th>Màu</th><th>Size</th><th>Tồn kho</th><th>Giá</th><th></th></tr></thead>
             <tbody>
               <tr v-for="(v, idx) in shown" :key="v.code">
-                <td>{{ catalogPage * 10 + idx + 1 }}</td><td><ProductThumbnail :url="imageSources[v.id]" :item="badgeItem(v)" :alt="v.name" /></td><td :title="v.code"><span class="ss-code">{{ v.productCode }}</span><small class="sku">{{ v.code }}</small></td><td class="ss-strong">{{ v.name }}</td><td>{{ v.color }}</td><td class="c">{{ v.size }}</td>
-                <td class="r">{{ v.stock }}</td><td class="r nowrap" :title="[v.campaignCode, v.campaignName].filter(Boolean).join(' · ')"><del v-if="v.discounted" class="pos-price-old">{{ money(v.originalPrice) }}</del><strong :class="{'sale-price': v.discounted}">{{ money(v.price) }}</strong></td>
-                <td class="c"><button class="ss-btn sm" :disabled="locked || !order || !canAddItem(v)" @click="addItem(v)"><i class="bi bi-plus-lg"></i> Thêm</button></td>
+                <td>{{ catalogPage * 10 + idx + 1 }}</td><td><ProductThumbnail :url="imageSources[v.id]" :item="badgeItem(v)" :alt="v.name" /></td><td :title="v.code"><span class="ss-code">{{ v.productCode }}</span><small class="sku">{{ v.code }}</small></td><td class="ss-strong">{{ v.name }}</td><td>{{ v.color }}</td><td>{{ v.size }}</td>
+                <td>{{ v.stock }}</td><td class="nowrap" :title="[v.campaignCode, v.campaignName].filter(Boolean).join(' · ')"><del v-if="v.discounted" class="pos-price-old">{{ money(v.originalPrice) }}</del><strong :class="{'sale-price': v.discounted}">{{ money(v.price) }}</strong></td>
+                <td><button class="ss-btn sm" :disabled="locked || !order || !canAddItem(v)" @click="addItem(v)"><i class="bi bi-plus-lg"></i> Thêm</button></td>
               </tr>
               <tr v-if="loading"><td colspan="9" class="ss-empty">Đang tải sản phẩm...</td></tr>
               <tr v-else-if="!shown.length"><td colspan="9" class="ss-empty"><i class="bi bi-inbox"></i>Không tìm thấy sản phẩm.</td></tr>
@@ -1229,9 +1304,11 @@ onBeforeUnmount(() => { unregisterLogoutGuard(); if (typeof window !== 'undefine
           </table>
         </div>
         <div class="ss-actions">
-          <button class="ss-btn" :disabled="loading || catalogPage === 0" @click="catalogPage--">Trước</button>
-          <span>Trang {{ catalogPage + 1 }}/{{ catalogPages || 1 }}</span>
-          <button class="ss-btn" :disabled="loading || catalogPage + 1 >= catalogPages" @click="catalogPage++">Sau</button>
+          <nav class="ss-pages" aria-label="Phân trang chọn sản phẩm">
+            <button type="button" :disabled="loading || catalogPage === 0" aria-label="Trang trước" @click="catalogPage--"><i class="bi bi-chevron-left" aria-hidden="true"></i></button>
+            <button v-for="n in catalogVisiblePages" :key="n" type="button" :class="{ active: n === catalogPage }" :disabled="loading" :aria-label="'Trang ' + (n + 1)" :aria-current="n === catalogPage ? 'page' : undefined" @click="catalogPage = n">{{ n + 1 }}</button>
+            <button type="button" :disabled="loading || catalogPage + 1 >= catalogPages" aria-label="Trang sau" @click="catalogPage++"><i class="bi bi-chevron-right" aria-hidden="true"></i></button>
+          </nav>
           <button class="ss-btn primary" @click="picking = false">Xong</button>
         </div>
       </div>
@@ -1277,7 +1354,7 @@ onBeforeUnmount(() => { unregisterLogoutGuard(); if (typeof window !== 'undefine
           <dt>Tiền thừa</dt><dd>{{ money(completedReceipt.change) }}</dd>
         </dl>
         <p v-for="p in completedReceipt.payments" :key="p.transactionCode">{{ p.methodName }}: {{ money(p.amount) }}</p>
-        <div class="ss-actions"><button class="ss-btn" @click="completedReceipt = null">Tiếp tục bán</button><button class="ss-btn" @click="openInvoice()">Xem chi tiết hóa đơn</button></div>
+        <div class="ss-actions"><button class="ss-btn" @click="completedReceipt = null">Tiếp tục bán</button><button class="ss-btn" @click="openInvoice()">Xem chi tiết hóa đơn</button><button class="ss-btn primary" @click="openInvoice(true)"><i class="bi bi-printer"></i> In hóa đơn</button></div>
       </section>
     </div>
   </AdminLayout>
@@ -1298,7 +1375,7 @@ onBeforeUnmount(() => { unregisterLogoutGuard(); if (typeof window !== 'undefine
 
 .pos-thumb{width:54px;height:54px;object-fit:cover;border-radius:8px}.pos-filters{display:flex;gap:12px;margin:12px 0}.pos-save-actions{display:flex;align-items:center;gap:8px;color:var(--ss-muted)}
 .pos-price-old{display:block;opacity:.6;font-size:10px}.pos-discount{display:inline-block;margin-left:5px;padding:2px 5px;border-radius:5px;background:#e7f5ff;color:#147fb4;font-size:10px;font-weight:700}
-.pos-receipt{max-width:570px;overflow-y:auto}.pos-receipt>.ss-head,.pos-receipt>.ss-actions{flex-shrink:0}.receipt-details{display:grid;grid-template-columns:minmax(95px,140px) minmax(0,1fr);gap:8px 16px;margin:20px 0;flex-shrink:0}.receipt-details dt{font-weight:500;color:var(--ss-muted)}.receipt-details dd{margin:0;overflow-wrap:anywhere;font-weight:600}
+.pos-receipt{max-width:640px;overflow-y:auto}.pos-receipt>.ss-head,.pos-receipt>.ss-actions{flex-shrink:0}.pos-receipt>.ss-actions{flex-wrap:wrap}.pos-receipt>h2{font-size:22px;line-height:1.4;margin:0 0 12px}.receipt-details{display:grid;grid-template-columns:minmax(95px,140px) minmax(0,1fr);gap:8px 16px;margin:20px 0;flex-shrink:0}.receipt-details dt{font-weight:500;color:var(--ss-muted)}.receipt-details dd{margin:0;overflow-wrap:anywhere;font-weight:600}
 
 .pos { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
 .grow { min-height: 520px; }
@@ -1323,6 +1400,23 @@ onBeforeUnmount(() => { unregisterLogoutGuard(); if (typeof window !== 'undefine
 .qty button:hover { background: var(--ss-primary-soft); color: var(--ss-primary); }
 .qty input { width: 36px; height: 28px; border: 0; text-align: center; font-size: 12px; outline: none; }
 @media (max-width: 1100px) { .pos { grid-template-columns: 1fr; } }
+
+/* Popup phiếu nằm ngoài cây DOM của POS nên dùng selector toàn cục có lớp riêng. */
+:global(.pos-voucher-dropdown .select2-dropdown){border:1px solid #d8e5f1;border-radius:12px;background:#fff;box-shadow:0 12px 32px rgba(22,53,88,.14);overflow:hidden;color:#24435f;font-family:inherit;font-size:13px;line-height:1.5}
+:global(.pos-voucher-dropdown .select2-search--dropdown){padding:10px;border-bottom:1px solid #edf2f8;background:#f8fbff}
+:global(.pos-voucher-dropdown .select2-search__field){width:100%;min-height:38px;padding:8px 12px;border:1px solid #d8e5f1;border-radius:8px;background:#fff;outline:none;font:inherit;box-sizing:border-box}
+:global(.pos-voucher-dropdown .select2-search__field:focus){border-color:#2879e3;box-shadow:0 0 0 2px rgba(40,121,227,.1)}
+:global(.pos-voucher-dropdown .select2-results__options){scrollbar-width:thin}
+:global(.pos-voucher-dropdown .select2-results>.select2-results__options){max-height:280px}
+:global(.pos-voucher-dropdown .select2-results__group){padding:9px 12px;background:#f1f6fc;color:#647c96;font-size:11px;font-weight:700;letter-spacing:.02em}
+:global(.pos-voucher-dropdown .select2-results__option[aria-selected]){padding:10px 12px;line-height:1.5;overflow-wrap:anywhere;border-bottom:1px solid #f1f5fa}
+:global(.pos-voucher-dropdown .select2-results__option--highlighted[aria-selected]){background:#eaf3ff;color:#1764c0}
+:global(.pos-voucher-dropdown .select2-results__option[aria-selected=true]){background:#eaf8f2;color:#13845b;font-weight:650}
+:global(.pos-voucher-dropdown .select2-results__option[aria-disabled=true]){color:#98a6b5;background:#fafbfd;font-size:12px}
+
+.pos-left-table th,.pos-left-table td{text-align:left!important}
+.pos-left-table .qty{margin-left:0;margin-right:0}
+.pos-left-table .qty input{text-align:left;padding-left:8px}
 </style>
 
 <style scoped>
@@ -1351,15 +1445,66 @@ onBeforeUnmount(() => { unregisterLogoutGuard(); if (typeof window !== 'undefine
 .delivery-toggle input:focus-visible+.delivery-switch-track{outline:2px solid var(--ss-primary);outline-offset:3px}
 .delivery-toggle input:disabled+.delivery-switch-track{opacity:.5;cursor:not-allowed}
 .delivery-hint{padding:10px 12px;border-radius:8px;background:#fff7e8;color:#925b13;font-size:12px;line-height:1.6}
+
+/* Popup phiếu nằm ngoài cây DOM của POS nên dùng selector toàn cục có lớp riêng. */
+:global(.pos-voucher-dropdown .select2-dropdown){border:1px solid #d8e5f1;border-radius:12px;background:#fff;box-shadow:0 12px 32px rgba(22,53,88,.14);overflow:hidden;color:#24435f;font-family:inherit;font-size:13px;line-height:1.5}
+:global(.pos-voucher-dropdown .select2-search--dropdown){padding:10px;border-bottom:1px solid #edf2f8;background:#f8fbff}
+:global(.pos-voucher-dropdown .select2-search__field){width:100%;min-height:38px;padding:8px 12px;border:1px solid #d8e5f1;border-radius:8px;background:#fff;outline:none;font:inherit;box-sizing:border-box}
+:global(.pos-voucher-dropdown .select2-search__field:focus){border-color:#2879e3;box-shadow:0 0 0 2px rgba(40,121,227,.1)}
+:global(.pos-voucher-dropdown .select2-results__options){scrollbar-width:thin}
+:global(.pos-voucher-dropdown .select2-results>.select2-results__options){max-height:280px}
+:global(.pos-voucher-dropdown .select2-results__group){padding:9px 12px;background:#f1f6fc;color:#647c96;font-size:11px;font-weight:700;letter-spacing:.02em}
+:global(.pos-voucher-dropdown .select2-results__option[aria-selected]){padding:10px 12px;line-height:1.5;overflow-wrap:anywhere;border-bottom:1px solid #f1f5fa}
+:global(.pos-voucher-dropdown .select2-results__option--highlighted[aria-selected]){background:#eaf3ff;color:#1764c0}
+:global(.pos-voucher-dropdown .select2-results__option[aria-selected=true]){background:#eaf8f2;color:#13845b;font-weight:650}
+:global(.pos-voucher-dropdown .select2-results__option[aria-disabled=true]){color:#98a6b5;background:#fafbfd;font-size:12px}
+
+.pos-left-table th,.pos-left-table td{text-align:left!important}
+.pos-left-table .qty{margin-left:0;margin-right:0}
+.pos-left-table .qty input{text-align:left;padding-left:8px}
 </style>
 
 <style scoped>
 .qty button:disabled,.qty button:disabled:hover{opacity:.4;color:var(--ss-muted);background:var(--ss-surface);cursor:not-allowed}
 .ss-btn:disabled{opacity:.45;cursor:not-allowed}
+
+/* Popup phiếu nằm ngoài cây DOM của POS nên dùng selector toàn cục có lớp riêng. */
+:global(.pos-voucher-dropdown .select2-dropdown){border:1px solid #d8e5f1;border-radius:12px;background:#fff;box-shadow:0 12px 32px rgba(22,53,88,.14);overflow:hidden;color:#24435f;font-family:inherit;font-size:13px;line-height:1.5}
+:global(.pos-voucher-dropdown .select2-search--dropdown){padding:10px;border-bottom:1px solid #edf2f8;background:#f8fbff}
+:global(.pos-voucher-dropdown .select2-search__field){width:100%;min-height:38px;padding:8px 12px;border:1px solid #d8e5f1;border-radius:8px;background:#fff;outline:none;font:inherit;box-sizing:border-box}
+:global(.pos-voucher-dropdown .select2-search__field:focus){border-color:#2879e3;box-shadow:0 0 0 2px rgba(40,121,227,.1)}
+:global(.pos-voucher-dropdown .select2-results__options){scrollbar-width:thin}
+:global(.pos-voucher-dropdown .select2-results>.select2-results__options){max-height:280px}
+:global(.pos-voucher-dropdown .select2-results__group){padding:9px 12px;background:#f1f6fc;color:#647c96;font-size:11px;font-weight:700;letter-spacing:.02em}
+:global(.pos-voucher-dropdown .select2-results__option[aria-selected]){padding:10px 12px;line-height:1.5;overflow-wrap:anywhere;border-bottom:1px solid #f1f5fa}
+:global(.pos-voucher-dropdown .select2-results__option--highlighted[aria-selected]){background:#eaf3ff;color:#1764c0}
+:global(.pos-voucher-dropdown .select2-results__option[aria-selected=true]){background:#eaf8f2;color:#13845b;font-weight:650}
+:global(.pos-voucher-dropdown .select2-results__option[aria-disabled=true]){color:#98a6b5;background:#fafbfd;font-size:12px}
+
+.pos-left-table th,.pos-left-table td{text-align:left!important}
+.pos-left-table .qty{margin-left:0;margin-right:0}
+.pos-left-table .qty input{text-align:left;padding-left:8px}
 </style>
 
 <style scoped>
 .shipping-provider-label { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+/* Popup phiếu nằm ngoài cây DOM của POS nên dùng selector toàn cục có lớp riêng. */
+:global(.pos-voucher-dropdown .select2-dropdown){border:1px solid #d8e5f1;border-radius:12px;background:#fff;box-shadow:0 12px 32px rgba(22,53,88,.14);overflow:hidden;color:#24435f;font-family:inherit;font-size:13px;line-height:1.5}
+:global(.pos-voucher-dropdown .select2-search--dropdown){padding:10px;border-bottom:1px solid #edf2f8;background:#f8fbff}
+:global(.pos-voucher-dropdown .select2-search__field){width:100%;min-height:38px;padding:8px 12px;border:1px solid #d8e5f1;border-radius:8px;background:#fff;outline:none;font:inherit;box-sizing:border-box}
+:global(.pos-voucher-dropdown .select2-search__field:focus){border-color:#2879e3;box-shadow:0 0 0 2px rgba(40,121,227,.1)}
+:global(.pos-voucher-dropdown .select2-results__options){scrollbar-width:thin}
+:global(.pos-voucher-dropdown .select2-results>.select2-results__options){max-height:280px}
+:global(.pos-voucher-dropdown .select2-results__group){padding:9px 12px;background:#f1f6fc;color:#647c96;font-size:11px;font-weight:700;letter-spacing:.02em}
+:global(.pos-voucher-dropdown .select2-results__option[aria-selected]){padding:10px 12px;line-height:1.5;overflow-wrap:anywhere;border-bottom:1px solid #f1f5fa}
+:global(.pos-voucher-dropdown .select2-results__option--highlighted[aria-selected]){background:#eaf3ff;color:#1764c0}
+:global(.pos-voucher-dropdown .select2-results__option[aria-selected=true]){background:#eaf8f2;color:#13845b;font-weight:650}
+:global(.pos-voucher-dropdown .select2-results__option[aria-disabled=true]){color:#98a6b5;background:#fafbfd;font-size:12px}
+
+.pos-left-table th,.pos-left-table td{text-align:left!important}
+.pos-left-table .qty{margin-left:0;margin-right:0}
+.pos-left-table .qty input{text-align:left;padding-left:8px}
 </style>
 
 <style scoped>
@@ -1387,6 +1532,23 @@ onBeforeUnmount(() => { unregisterLogoutGuard(); if (typeof window !== 'undefine
 .voucher-new-total dt, .voucher-new-total dd { color: #1679de; font-weight: 700; }
 .voucher-upgrade .ss-actions { flex-wrap: wrap; }
 @media (max-width: 480px) { .voucher-upgrade .ss-actions > button { width: 100%; } }
+
+/* Popup phiếu nằm ngoài cây DOM của POS nên dùng selector toàn cục có lớp riêng. */
+:global(.pos-voucher-dropdown .select2-dropdown){border:1px solid #d8e5f1;border-radius:12px;background:#fff;box-shadow:0 12px 32px rgba(22,53,88,.14);overflow:hidden;color:#24435f;font-family:inherit;font-size:13px;line-height:1.5}
+:global(.pos-voucher-dropdown .select2-search--dropdown){padding:10px;border-bottom:1px solid #edf2f8;background:#f8fbff}
+:global(.pos-voucher-dropdown .select2-search__field){width:100%;min-height:38px;padding:8px 12px;border:1px solid #d8e5f1;border-radius:8px;background:#fff;outline:none;font:inherit;box-sizing:border-box}
+:global(.pos-voucher-dropdown .select2-search__field:focus){border-color:#2879e3;box-shadow:0 0 0 2px rgba(40,121,227,.1)}
+:global(.pos-voucher-dropdown .select2-results__options){scrollbar-width:thin}
+:global(.pos-voucher-dropdown .select2-results>.select2-results__options){max-height:280px}
+:global(.pos-voucher-dropdown .select2-results__group){padding:9px 12px;background:#f1f6fc;color:#647c96;font-size:11px;font-weight:700;letter-spacing:.02em}
+:global(.pos-voucher-dropdown .select2-results__option[aria-selected]){padding:10px 12px;line-height:1.5;overflow-wrap:anywhere;border-bottom:1px solid #f1f5fa}
+:global(.pos-voucher-dropdown .select2-results__option--highlighted[aria-selected]){background:#eaf3ff;color:#1764c0}
+:global(.pos-voucher-dropdown .select2-results__option[aria-selected=true]){background:#eaf8f2;color:#13845b;font-weight:650}
+:global(.pos-voucher-dropdown .select2-results__option[aria-disabled=true]){color:#98a6b5;background:#fafbfd;font-size:12px}
+
+.pos-left-table th,.pos-left-table td{text-align:left!important}
+.pos-left-table .qty{margin-left:0;margin-right:0}
+.pos-left-table .qty input{text-align:left;padding-left:8px}
 </style>
 
 <style scoped>
@@ -1396,6 +1558,23 @@ onBeforeUnmount(() => { unregisterLogoutGuard(); if (typeof window !== 'undefine
   .ss-modal[aria-label="Chọn sản phẩm"] > .ss-head { flex-wrap: wrap; }
   .catalog-reset-btn { order: 1; width: 100%; justify-content: center; }
 }
+
+/* Popup phiếu nằm ngoài cây DOM của POS nên dùng selector toàn cục có lớp riêng. */
+:global(.pos-voucher-dropdown .select2-dropdown){border:1px solid #d8e5f1;border-radius:12px;background:#fff;box-shadow:0 12px 32px rgba(22,53,88,.14);overflow:hidden;color:#24435f;font-family:inherit;font-size:13px;line-height:1.5}
+:global(.pos-voucher-dropdown .select2-search--dropdown){padding:10px;border-bottom:1px solid #edf2f8;background:#f8fbff}
+:global(.pos-voucher-dropdown .select2-search__field){width:100%;min-height:38px;padding:8px 12px;border:1px solid #d8e5f1;border-radius:8px;background:#fff;outline:none;font:inherit;box-sizing:border-box}
+:global(.pos-voucher-dropdown .select2-search__field:focus){border-color:#2879e3;box-shadow:0 0 0 2px rgba(40,121,227,.1)}
+:global(.pos-voucher-dropdown .select2-results__options){scrollbar-width:thin}
+:global(.pos-voucher-dropdown .select2-results>.select2-results__options){max-height:280px}
+:global(.pos-voucher-dropdown .select2-results__group){padding:9px 12px;background:#f1f6fc;color:#647c96;font-size:11px;font-weight:700;letter-spacing:.02em}
+:global(.pos-voucher-dropdown .select2-results__option[aria-selected]){padding:10px 12px;line-height:1.5;overflow-wrap:anywhere;border-bottom:1px solid #f1f5fa}
+:global(.pos-voucher-dropdown .select2-results__option--highlighted[aria-selected]){background:#eaf3ff;color:#1764c0}
+:global(.pos-voucher-dropdown .select2-results__option[aria-selected=true]){background:#eaf8f2;color:#13845b;font-weight:650}
+:global(.pos-voucher-dropdown .select2-results__option[aria-disabled=true]){color:#98a6b5;background:#fafbfd;font-size:12px}
+
+.pos-left-table th,.pos-left-table td{text-align:left!important}
+.pos-left-table .qty{margin-left:0;margin-right:0}
+.pos-left-table .qty input{text-align:left;padding-left:8px}
 </style>
 
 <style scoped>
@@ -1411,6 +1590,23 @@ onBeforeUnmount(() => { unregisterLogoutGuard(); if (typeof window !== 'undefine
 .ss-modal :deep(.select2-container--open .select2-dropdown) { z-index: 20; border-color: var(--ss-border); border-radius: 8px; overflow: hidden; font-size: 12px; color: var(--ss-text); }
 .ss-modal :deep(.select2-search__field) { border: 1px solid var(--ss-border); border-radius: 6px; padding: 8px; outline-color: var(--ss-primary); }
 .ss-modal :deep(.select2-results__option--highlighted[aria-selected]) { background: var(--ss-primary); color: #fff; }
+
+/* Popup phiếu nằm ngoài cây DOM của POS nên dùng selector toàn cục có lớp riêng. */
+:global(.pos-voucher-dropdown .select2-dropdown){border:1px solid #d8e5f1;border-radius:12px;background:#fff;box-shadow:0 12px 32px rgba(22,53,88,.14);overflow:hidden;color:#24435f;font-family:inherit;font-size:13px;line-height:1.5}
+:global(.pos-voucher-dropdown .select2-search--dropdown){padding:10px;border-bottom:1px solid #edf2f8;background:#f8fbff}
+:global(.pos-voucher-dropdown .select2-search__field){width:100%;min-height:38px;padding:8px 12px;border:1px solid #d8e5f1;border-radius:8px;background:#fff;outline:none;font:inherit;box-sizing:border-box}
+:global(.pos-voucher-dropdown .select2-search__field:focus){border-color:#2879e3;box-shadow:0 0 0 2px rgba(40,121,227,.1)}
+:global(.pos-voucher-dropdown .select2-results__options){scrollbar-width:thin}
+:global(.pos-voucher-dropdown .select2-results>.select2-results__options){max-height:280px}
+:global(.pos-voucher-dropdown .select2-results__group){padding:9px 12px;background:#f1f6fc;color:#647c96;font-size:11px;font-weight:700;letter-spacing:.02em}
+:global(.pos-voucher-dropdown .select2-results__option[aria-selected]){padding:10px 12px;line-height:1.5;overflow-wrap:anywhere;border-bottom:1px solid #f1f5fa}
+:global(.pos-voucher-dropdown .select2-results__option--highlighted[aria-selected]){background:#eaf3ff;color:#1764c0}
+:global(.pos-voucher-dropdown .select2-results__option[aria-selected=true]){background:#eaf8f2;color:#13845b;font-weight:650}
+:global(.pos-voucher-dropdown .select2-results__option[aria-disabled=true]){color:#98a6b5;background:#fafbfd;font-size:12px}
+
+.pos-left-table th,.pos-left-table td{text-align:left!important}
+.pos-left-table .qty{margin-left:0;margin-right:0}
+.pos-left-table .qty input{text-align:left;padding-left:8px}
 </style>
 
 <style scoped>
@@ -1423,4 +1619,29 @@ onBeforeUnmount(() => { unregisterLogoutGuard(); if (typeof window !== 'undefine
 .ss-modal > :deep(.select2-container--open) {
   z-index: 20;
 }
+
+/* Popup phiếu nằm ngoài cây DOM của POS nên dùng selector toàn cục có lớp riêng. */
+:global(.pos-voucher-dropdown .select2-dropdown){border:1px solid #d8e5f1;border-radius:12px;background:#fff;box-shadow:0 12px 32px rgba(22,53,88,.14);overflow:hidden;color:#24435f;font-family:inherit;font-size:13px;line-height:1.5}
+:global(.pos-voucher-dropdown .select2-search--dropdown){padding:10px;border-bottom:1px solid #edf2f8;background:#f8fbff}
+:global(.pos-voucher-dropdown .select2-search__field){width:100%;min-height:38px;padding:8px 12px;border:1px solid #d8e5f1;border-radius:8px;background:#fff;outline:none;font:inherit;box-sizing:border-box}
+:global(.pos-voucher-dropdown .select2-search__field:focus){border-color:#2879e3;box-shadow:0 0 0 2px rgba(40,121,227,.1)}
+:global(.pos-voucher-dropdown .select2-results__options){scrollbar-width:thin}
+:global(.pos-voucher-dropdown .select2-results>.select2-results__options){max-height:280px}
+:global(.pos-voucher-dropdown .select2-results__group){padding:9px 12px;background:#f1f6fc;color:#647c96;font-size:11px;font-weight:700;letter-spacing:.02em}
+:global(.pos-voucher-dropdown .select2-results__option[aria-selected]){padding:10px 12px;line-height:1.5;overflow-wrap:anywhere;border-bottom:1px solid #f1f5fa}
+:global(.pos-voucher-dropdown .select2-results__option--highlighted[aria-selected]){background:#eaf3ff;color:#1764c0}
+:global(.pos-voucher-dropdown .select2-results__option[aria-selected=true]){background:#eaf8f2;color:#13845b;font-weight:650}
+:global(.pos-voucher-dropdown .select2-results__option[aria-disabled=true]){color:#98a6b5;background:#fafbfd;font-size:12px}
+
+.pos-left-table th,.pos-left-table td{text-align:left!important}
+.pos-left-table .qty{margin-left:0;margin-right:0}
+.pos-left-table .qty input{text-align:left;padding-left:8px}
+
+/* Center only the cart quantity and action columns. */
+.pos-left-table.pos-cart-table th:nth-child(7),
+.pos-left-table.pos-cart-table td:nth-child(7),
+.pos-left-table.pos-cart-table th:nth-child(9),
+.pos-left-table.pos-cart-table td:nth-child(9) { text-align: center !important; }
+.pos-left-table.pos-cart-table .qty input { text-align: center; padding-left: 0; padding-right: 0; }
+.ss-modal[aria-label="Chọn sản phẩm"] { width: min(1080px, calc(100vw - 32px)); min-width: 0; }
 </style>

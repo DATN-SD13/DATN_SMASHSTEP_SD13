@@ -26,6 +26,10 @@ const exporting = ref(false)
 const exportToast = ref({ visible: false, type: 'success', message: '' })
 let exportToastTimer = null
 let loadVersion = 0
+let refreshTimer
+function refreshInvoices() {
+  if (!document.hidden && !loading.value && !exporting.value) loadInvoices(currentPage.value)
+}
 
 const statusCodes = {
   waiting: 0,
@@ -100,6 +104,8 @@ async function loadInvoices(page = 1) {
   try {
     const data = await fetchPage(params)
     if (version !== loadVersion) return
+    const availablePages = Math.max(1, Number(data.totalPages || 1))
+    if (page > availablePages) { await loadInvoices(availablePages); return }
     invoices.value = (Array.isArray(data.content) ? data.content : []).map(mapInvoice)
     currentPage.value = Number(data.page || page)
     totalPages.value = Math.max(1, Number(data.totalPages || 1))
@@ -211,9 +217,17 @@ async function exportExcel() {
   }
 }
 
-onMounted(() => loadInvoices(1))
+onMounted(() => {
+  loadInvoices(1)
+  refreshTimer = window.setInterval(refreshInvoices, 30000)
+  window.addEventListener('focus', refreshInvoices)
+  document.addEventListener('visibilitychange', refreshInvoices)
+})
 onUnmounted(() => {
   loadVersion += 1
+  window.clearInterval(refreshTimer)
+  window.removeEventListener('focus', refreshInvoices)
+  document.removeEventListener('visibilitychange', refreshInvoices)
   if (exportToastTimer) window.clearTimeout(exportToastTimer)
 })
 </script>
