@@ -1,6 +1,9 @@
 
 package com.smashstep.datn.statistics.controller;
 
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+
 import com.smashstep.datn.common.response.ApiResponse;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
@@ -156,6 +159,45 @@ public class ThongKeChuKyController {
                 "Lấy dữ liệu so sánh doanh thu thành công",
                 result
         );
+    }
+
+
+    public record SelectedRequest(String kind,List<String> periods){}
+    public record SelectedPeriod(String key,String label,LocalDate start,LocalDate end){}
+    public static List<SelectedPeriod> selectedPeriods(SelectedRequest request,LocalDate today){
+        if(request==null || request.periods()==null || request.periods().size()<2 || request.periods().size()>12
+                || !java.util.Set.of("month","quarter","year").contains(java.util.Objects.toString(request.kind(),"")))
+            throw AppException.badRequest("Chọn từ 2 đến 12 kỳ theo tháng, quý hoặc năm");
+        var result=new java.util.ArrayList<SelectedPeriod>();var unique=new java.util.HashSet<String>();
+        for(String key:request.periods()){
+            try{
+                if(key==null || !unique.add(key))throw new IllegalArgumentException();
+                LocalDate start,end;String label;
+                switch(request.kind()){
+                    case "month" -> {if(!key.matches("[0-9]{4}-[0-9]{2}"))throw new IllegalArgumentException();var month=java.time.YearMonth.parse(key);start=month.atDay(1);end=month.plusMonths(1).atDay(1);label="Tháng "+month.getMonthValue()+"/"+month.getYear();}
+                    case "quarter" -> {if(!key.matches("[0-9]{4}-Q[1-4]"))throw new IllegalArgumentException();int year=Integer.parseInt(key.substring(0,4)),quarter=Integer.parseInt(key.substring(6));start=LocalDate.of(year,(quarter-1)*3+1,1);end=start.plusMonths(3);label="Quý "+quarter+"/"+year;}
+                    default -> {if(!key.matches("[0-9]{4}"))throw new IllegalArgumentException();int year=Integer.parseInt(key);start=LocalDate.of(year,1,1);end=start.plusYears(1);label="Năm "+year;}
+                }
+                if(start.getYear()<2000 || start.getYear()>2100 || start.isAfter(today))throw new IllegalArgumentException();
+                result.add(new SelectedPeriod(key,label,start,end));
+            }catch(RuntimeException invalid){throw AppException.badRequest("Kỳ không hợp lệ, trùng nhau hoặc chưa bắt đầu: "+key);}
+        }
+        result.sort(java.util.Comparator.comparing(SelectedPeriod::start));return result;
+    }
+    @PostMapping("/so-sanh-tuy-chon")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    @Transactional(readOnly=true)
+    public ApiResponse<List<Map<String,Object>>> compareSelected(@RequestBody SelectedRequest request){
+        var today=LocalDate.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh"));var periods=selectedPeriods(request,today);
+        var rows=new java.util.ArrayList<Map<String,Object>>();SelectedPeriod previous=null;
+        for(var period:periods){
+            var row=createPeriod(period.label(),period.start(),period.end(),
+                    previous==null?period.start():previous.start(),previous==null?period.end():previous.end());
+            if(previous==null)row.put("growth",null);
+            row.put("key",period.key());row.put("growthBase",previous==null?null:previous.label());
+            row.put("temporary",period.end().minusDays(1).isAfter(today));rows.add(row);previous=period;
+        }
+        return ApiResponse.ok("Lấy so sánh theo kỳ đã chọn thành công",rows);
     }
 
     private Map<String, Object> createPeriod(

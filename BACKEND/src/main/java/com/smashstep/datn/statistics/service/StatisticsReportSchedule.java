@@ -26,24 +26,29 @@ public class StatisticsReportSchedule {
     private final AtomicBoolean working=new AtomicBoolean();
     private final ExecutorService worker=Executors.newSingleThreadExecutor(task->{var t=new Thread(task,"statistics-report-mail");t.setDaemon(true);return t;});
     public StatisticsReportSchedule(StatisticsReportService reports){this.reports=reports;}
-    public record Settings(String email,boolean monthlyEnabled,boolean yearlyEnabled,YearMonth monthlySince,Integer yearlySince){}
-    public record View(String email,boolean monthlyEnabled,boolean yearlyEnabled,String timezone,String lastMonthlySent,String lastYearlySent){}
+    public record Settings(String email,boolean monthlyEnabled,boolean yearlyEnabled,YearMonth monthlySince,Integer yearlySince,boolean dailyEnabled,LocalDate dailySince){
+        public Settings(String email,boolean monthly,boolean yearly,YearMonth month,Integer year){this(email,monthly,yearly,month,year,false,null);}
+    }
+    public record View(String email,boolean monthlyEnabled,boolean yearlyEnabled,String timezone,String lastMonthlySent,String lastYearlySent,boolean dailyEnabled,String lastDailySent){}
     public record Period(String kind,String key,LocalDate start,LocalDate end,ZonedDateTime due){}
 
     public synchronized View view(){
-        try{var s=read();return new View(s.email(),s.monthlyEnabled(),s.yearlyEnabled(),StatisticsReportService.ZONE.getId(),lastSent(s.email(),"month"),lastSent(s.email(),"year"));}
+        try{var s=read();return new View(s.email(),s.monthlyEnabled(),s.yearlyEnabled(),StatisticsReportService.ZONE.getId(),lastSent(s.email(),"month"),lastSent(s.email(),"year"),s.dailyEnabled(),lastSent(s.email(),"day"));}
         catch(IOException e){throw new IllegalStateException("Không đọc được cấu hình lịch gửi báo cáo",e);}
     }
-    public synchronized View save(String email,boolean monthly,boolean yearly){
+    public synchronized View save(String email,boolean monthly,boolean yearly){return save(email,monthly,yearly,false);}
+    public synchronized View save(String email,boolean monthly,boolean yearly,boolean daily){
         email=Objects.toString(email,"").trim();
-        if((monthly||yearly) && (email.length()>254 || !email.matches("^[^\\s@<>]+@[^\\s@<>]+\\.[^\\s@<>]+$")))throw AppException.badRequest("Nhập email hợp lệ trước khi bật lịch gửi tự động");
+        if((monthly||yearly||daily) && (email.length()>254 || !email.matches("^[^\\s@<>]+@[^\\s@<>]+\\.[^\\s@<>]+$")))throw AppException.badRequest("Nhập email hợp lệ trước khi bật lịch gửi tự động");
         try{
             var previous=read();var now=LocalDate.now(clock);boolean same=email.equalsIgnoreCase(previous.email());
             var settings=new Settings(email,monthly,yearly,
                     monthly && same && previous.monthlyEnabled()?previous.monthlySince():YearMonth.from(now),
-                    yearly && same && previous.yearlyEnabled()?previous.yearlySince():now.getYear());
+                    yearly && same && previous.yearlyEnabled()?previous.yearlySince():now.getYear(),daily,
+                    daily && same && previous.dailyEnabled()?previous.dailySince():now);
             var p=new Properties();p.setProperty("email",settings.email());p.setProperty("monthly",String.valueOf(monthly));p.setProperty("yearly",String.valueOf(yearly));
             p.setProperty("monthlySince",settings.monthlySince().toString());p.setProperty("yearlySince",settings.yearlySince().toString());
+            p.setProperty("daily",String.valueOf(daily));p.setProperty("dailySince",settings.dailySince().toString());
             writeAtomic(root().resolve("settings.properties"),p);
             return view();
         }catch(IOException e){throw new IllegalStateException("Không lưu được lịch gửi báo cáo",e);}
@@ -54,12 +59,20 @@ public class StatisticsReportSchedule {
         if(!Files.exists(file))return new Settings("",false,false,YearMonth.from(now),now.getYear());
         var p=new Properties();try(var input=Files.newInputStream(file)){p.load(input);}
         try{return new Settings(p.getProperty("email",""),Boolean.parseBoolean(p.getProperty("monthly","false")),Boolean.parseBoolean(p.getProperty("yearly","false")),
-                YearMonth.parse(p.getProperty("monthlySince",YearMonth.from(now).toString())),Integer.valueOf(p.getProperty("yearlySince",String.valueOf(now.getYear()))));}
+                YearMonth.parse(p.getProperty("monthlySince",YearMonth.from(now).toString())),Integer.valueOf(p.getProperty("yearlySince",String.valueOf(now.getYear()))),Boolean.parseBoolean(p.getProperty("daily","false")),LocalDate.parse(p.getProperty("dailySince",now.toString())));}
         catch(RuntimeException e){throw new IOException("Cấu hình lịch báo cáo không hợp lệ",e);}
     }
     public static List<Period> duePeriods(Settings settings,ZonedDateTime instant){
         var now=instant.withZoneSameInstant(StatisticsReportService.ZONE);var result=new ArrayList<Period>();
         if(settings.email()==null || settings.email().isBlank())return result;
+        if(settings.dailyEnabled() && settings.dailySince()!=null){
+            var first=settings.dailySince();
+            if(first.getYear()<2000 || first.getYear()>2100)throw new IllegalArgumentException("Invalid daily schedule year");
+            for(var day=first;day.isBefore(now.toLocalDate());day=day.plusDays(1)){
+                var due=day.plusDays(1).atTime(0,5).atZone(StatisticsReportService.ZONE);
+                if(!now.isBefore(due))result.add(new Period("day",day.toString(),day,day,due));
+            }
+        }
         if(settings.monthlyEnabled() && settings.monthlySince()!=null){
             var start=settings.monthlySince();
             if(start.getYear()<2000 || start.getYear()>2100)throw new IllegalArgumentException("Invalid schedule year");

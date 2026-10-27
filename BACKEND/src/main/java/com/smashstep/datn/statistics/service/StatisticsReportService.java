@@ -44,6 +44,7 @@ public class StatisticsReportService {
         if(start.isAfter(LocalDate.now(ZONE)))throw AppException.badRequest("Không gửi báo cáo cho kỳ chưa bắt đầu");
     }
     public static String periodTitle(LocalDate start,LocalDate end){
+        if(start.equals(end))return "ngày "+start.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
         if(start.equals(LocalDate.of(start.getYear(),1,1)) && end.equals(LocalDate.of(start.getYear(),12,31)))return "năm "+start.getYear();
         var month=YearMonth.from(start);
         if(start.equals(month.atDay(1)) && end.equals(month.atEndOfMonth()))return "tháng "+month.format(DateTimeFormatter.ofPattern("MM/yyyy"));

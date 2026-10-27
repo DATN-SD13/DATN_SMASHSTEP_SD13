@@ -8,6 +8,7 @@ import { showError, showSuccess } from '../utils/feedback'
 import NhanCaModal from '../modules/admin/schedule/components/NhanCaModal.vue'
 import KetThucCaModal from '../modules/admin/schedule/components/KetThucCaModal.vue'
 import AdminAiWidget from '../modules/admin/admin-ai/components/AdminAiWidget.vue'
+import StaffNotificationBell from '../components/StaffNotificationBell.vue'
 
 const route     = useRoute()
 const router    = useRouter()
@@ -465,6 +466,8 @@ const crumbs = computed(() => ({
           
           <button type="button" class="bell" @click="openCaActivePanel" :title="caHienTaiSo ? 'Đang ở ca ' + caHienTaiSo : 'Ngoài giờ ca'">{{ caHienTaiSo || '—' }}</button>
 
+          <StaffNotificationBell v-if="authStore.isStaff" />
+
           <!-- User dropdown -->
           <div class="user-wrap" v-click-outside="closeUserMenu">
             <button type="button" class="pill user" @click="toggleUserMenu">
@@ -723,7 +726,7 @@ const crumbs = computed(() => ({
   background: #fff; border-bottom: 1px solid var(--ss-border);
   position: sticky; top: 0; z-index: 20;
 }
-.crumb { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.crumb { display: flex; align-items: center; gap: 10px; min-width: 0; flex:1; }
 .menu-btn {
   width: 40px; height: 40px; flex: 0 0 40px;
   border: 1px solid var(--ss-border); border-radius: 10px; background: #fff;

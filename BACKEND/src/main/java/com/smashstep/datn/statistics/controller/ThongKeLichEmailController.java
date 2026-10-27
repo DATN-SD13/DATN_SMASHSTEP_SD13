@@ -11,9 +11,9 @@ import org.springframework.web.bind.annotation.*;
 public class ThongKeLichEmailController {
     private final StatisticsReportSchedule schedule;
     public ThongKeLichEmailController(StatisticsReportSchedule schedule){this.schedule=schedule;}
-    public record ScheduleRequest(String email,boolean monthlyEnabled,boolean yearlyEnabled){}
+    public record ScheduleRequest(String email,boolean monthlyEnabled,boolean yearlyEnabled,boolean dailyEnabled){}
     @GetMapping public ApiResponse<StatisticsReportSchedule.View> get(){return ApiResponse.ok(schedule.view());}
     @PutMapping public ApiResponse<StatisticsReportSchedule.View> save(@RequestBody ScheduleRequest request){
-        return ApiResponse.ok("Đã lưu lịch gửi tự động",schedule.save(request.email(),request.monthlyEnabled(),request.yearlyEnabled()));
+        return ApiResponse.ok("Đã lưu lịch gửi tự động",schedule.save(request.email(),request.monthlyEnabled(),request.yearlyEnabled(),request.dailyEnabled()));
     }
 }

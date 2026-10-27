@@ -608,7 +608,8 @@ async function confirmPayment() {
     bankAccepted.value = { context: dialog.context, total: dialog.total, invoiceCode: dialog.invoiceCode,
       payload: JSON.parse(JSON.stringify(dialog.payload)) }
     checkoutDialog.value = null
-    showSuccess('Đã xác nhận nhận tiền chuyển khoản. Bấm Thanh toán để hoàn tất hóa đơn.', 'Xác nhận chuyển khoản')
+    // Keep the accepted payload and request ID for recovery if finalization fails.
+    await performPayment(saved)
     return
   }
   dialog.payload.transferConfirmed = false
@@ -1235,7 +1236,7 @@ onBeforeUnmount(() => { unregisterLogoutGuard(); if (typeof window !== 'undefine
             <input class="ss-input" type="text" inputmode="decimal" :value="cashDisplay" @input="inputCash" :disabled="locked" aria-label="Tiền mặt khách đưa" autocomplete="off" placeholder="Tự điền bằng số tiền khách cần trả" /><small class="ss-hint">Điền sẵn đúng số tiền cần trả. Có thể sửa nếu khách đưa số tiền khác.</small></div>
           <div v-else class="kv"><span>Cần chuyển khoản:</span><b>{{ money(payable) }}</b></div>
           <small v-if="cashError" class="cash-error" role="alert">{{ cashError }}</small>
-          <p v-if="order.paymentMode === 'BANK' && bankConfirmed" class="bank-confirmed" role="status"><i class="bi bi-check-circle"></i> Đã xác nhận nhận tiền. Phiếu và số tiền đã được chốt; bấm Thanh toán để hoàn tất, không chuyển khoản thêm.</p>
+          <p v-if="order.paymentMode === 'BANK' && bankConfirmed" class="bank-confirmed" role="status"><i class="bi bi-check-circle"></i> Đã xác nhận nhận tiền. Hóa đơn chưa hoàn tất; bấm Thanh toán để thử hoàn tất lại, không chuyển khoản thêm.</p>
           <div class="kv"><span>Tiền thừa trả khách</span><b>{{ money(change) }}</b></div>
           <div class="ss-field"><span class="ss-label strong">Ghi chú thanh toán</span>
             <textarea class="ss-textarea" v-model="order.note" @change="saveOrder(order, 'Cập nhật ghi chú thanh toán thành công.')" maxlength="960" :disabled="locked" placeholder="Ghi chú thêm nếu cần"></textarea></div>
