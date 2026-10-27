@@ -93,7 +93,7 @@ public interface LichLamViecRepository extends JpaRepository<LichLamViec, Long> 
     @Query(value = """
         SELECT l.* FROM lich_lam_viec l
         JOIN ca_lam_viec c ON l.id_ca_lam_viec = c.id
-        WHERE l.trang_thai IN (0, 1)
+        WHERE l.trang_thai IN (0, 1, 4)
           AND (
             CASE
               WHEN c.gio_ket_thuc >= c.gio_bat_dau

@@ -37,6 +37,7 @@ const f = reactive({
 
 // ── Trạng thái ────────────────────────────────────────────
 const STATUS = {
+  4: { label: 'Chưa nhận ca', cls: 'warn' },
   0: { label: 'Chờ giao ca',  cls: 'warn'    },
   1: { label: 'Giao ca',      cls: 'info'    },
   2: { label: 'Vắng mặt',    cls: 'danger'  },
@@ -228,7 +229,7 @@ function initials(name) {
                 <th>Vai trò</th>
                 <th>Ca làm việc</th>
                 <th>Thời gian</th>
-                <th class="c">Doanh thu</th>
+                <th class="c">Thu/hoàn thuần</th>
                 <th class="c">Trạng thái</th>
                 <th>Ghi chú</th>
               </tr>
@@ -278,7 +279,7 @@ function initials(name) {
                   </td>
 
                   <!-- Doanh thu -->
-                  <td class="c revenue">{{ fmtMoney(row.doanhThu) }}</td>
+                  <td class="c revenue">{{ fmtMoney(row.doanhThu) }}<details v-if="row.daChot" class="settlement-detail"><summary>Biên bản kết ca</summary><div>Đầu ca: {{ fmtMoney(row.tienMatDauCa) }}</div><div>Tiền mặt dự kiến: {{ fmtMoney(row.tienMatDuKien) }}</div><div>Đã kiểm đếm: {{ row.tienMatThucTe == null ? 'Chưa xác nhận' : fmtMoney(row.tienMatThucTe) }}</div><div>Chênh lệch: {{ row.chenhLech == null ? 'Chưa đối soát' : fmtMoney(row.chenhLech) }}</div><small v-if="row.tuDongKetThuc">Tự đóng khi hết giờ; chưa kiểm đếm tiền thực tế</small></details></td>
 
                   <!-- Trạng thái -->
                   <td class="c">
@@ -397,3 +398,5 @@ function initials(name) {
 @keyframes spin { to { transform: rotate(360deg); } }
 
 </style>
+
+<style scoped>.settlement-detail{margin-top:8px;text-align:left;font-size:12px;font-weight:400;line-height:1.8;min-width:190px}.settlement-detail summary{color:#168fce;cursor:pointer;font-weight:600}.settlement-detail small{color:#9b6b26;display:block;white-space:normal;max-width:230px}</style>

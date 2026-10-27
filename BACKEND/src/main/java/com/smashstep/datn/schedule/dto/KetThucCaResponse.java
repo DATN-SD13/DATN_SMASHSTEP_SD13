@@ -22,4 +22,11 @@ public class KetThucCaResponse {
     private BigDecimal tongTienCuoiCa;
     private BigDecimal doanhThuCa;  // Tổng doanh thu trong ca
     private String ghiChuKetCa;
+    private BigDecimal tienMatDauCa;
+    private BigDecimal tienMatDuKien;
+    private BigDecimal tienMatThucTe;
+    private BigDecimal chenhLech;
+    private BigDecimal thanhToanKhac;
+    private boolean daChot;
+    private boolean tuDongKetThuc;
 }

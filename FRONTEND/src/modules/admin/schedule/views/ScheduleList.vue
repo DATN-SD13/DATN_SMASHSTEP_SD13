@@ -64,8 +64,9 @@ const shiftOptionsActive = computed(() =>
 
 // ── Trạng thái ────────────────────────────────────────────
 const STATUS = {
+  4: { label: 'Chưa nhận ca', cls: 'warn' },
   0: { label: 'Chờ giao ca', cls: 'warn' },
-  1: { label: 'Giao ca',     cls: 'success' },
+  1: { label: 'Đang làm',   cls: 'success' },
   2: { label: 'Vắng mặt',   cls: 'danger' },
   3: { label: 'Đã kết thúc', cls: '' }
 }
@@ -374,9 +375,10 @@ const editForm      = reactive({ trangThai: 0, ghiChu: '' })
 
 const TRANG_THAI_OPTIONS = [
   { value: 0, label: 'Chờ giao ca'  },
-  { value: 1, label: 'Giao ca'      },
+  { value: 1, label: 'Đang làm — nhận từ ca cá nhân' },
+  { value: 3, label: 'Đã kết thúc — chốt từ ca cá nhân' },
   { value: 2, label: 'Vắng mặt'    },
-  { value: 3, label: 'Đã kết thúc' }
+  { value: 4, label: 'Chưa nhận ca' }
 ]
 
 function openEditModal(row) {

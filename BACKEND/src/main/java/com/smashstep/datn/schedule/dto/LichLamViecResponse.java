@@ -24,4 +24,12 @@ public class LichLamViecResponse {
     private Integer    trangThai;
     private String     trangThaiLabel;
     private String     ghiChu;
+    private java.time.LocalDateTime nhanCaLuc;
+    private java.time.LocalDateTime ketCaLuc;
+    private BigDecimal tienMatDauCa;
+    private BigDecimal tienMatDuKien;
+    private BigDecimal tienMatThucTe;
+    private BigDecimal chenhLech;
+    private boolean daChot;
+    private boolean tuDongKetThuc;
 }

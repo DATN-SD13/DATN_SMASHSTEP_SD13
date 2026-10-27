@@ -167,11 +167,15 @@ async function checkCaDangLam() {
     console.log('[KetThucCa] API response:', res.data, '| data:', data)
     ketThucCaData.value = data
   } catch (e) {
+    ketThucCaData.value = null
     console.warn('[KetThucCa] Lỗi khi check:', e)
+    return false
   }
 }
 
-function openKetThucCaModal() {
+async function openKetThucCaModal() {
+  const refreshed = await checkCaDangLam()
+  if (refreshed === false) { showError('Không thể tải số tiền cuối ca. Vui lòng thử lại.'); return }
   if (ketThucCaData.value) {
     showKetThucCaModal.value = true
   }
@@ -181,11 +185,14 @@ function closeKetThucCaModal() {
   showKetThucCaModal.value = false
 }
 
+const closingShift = ref(false)
 async function onKetThucCaConfirm(payload) {
-  if (!ketThucCaData.value) return
+  if (!ketThucCaData.value || closingShift.value) return
+  closingShift.value = true
   try {
     await api.post(`/lich-lam-viec/${ketThucCaData.value.lichLamViecId}/ket-thuc-ca`, {
-      ghiChuKetCa: payload.ghiChu || null
+      ghiChuKetCa: payload.ghiChu || null,
+      tienMatThucTe: payload.tienMatThucTe
     })
     showSuccess('Đã kết thúc ca thành công!')
     showKetThucCaModal.value = false
@@ -197,7 +204,7 @@ async function onKetThucCaConfirm(payload) {
     ])
   } catch (err) {
     showError(err.response?.data?.message || 'Không thể kết thúc ca', 'Lỗi')
-  }
+  } finally { closingShift.value = false }
 }
 
 async function checkGiaoCa() {
@@ -251,10 +258,10 @@ onUnmounted(() => {
   if (giaoCaTimer) clearInterval(giaoCaTimer)
 })
 
-function onNhanCaConfirmed() {
+async function onNhanCaConfirmed() {
   nhanCaData.value = null
   showSuccess('Đã xác nhận nhận ca thành công!')
-  loadCaData()
+  await Promise.all([loadCaData(), checkCaDangLam()])
 }
 
 function onNhanCaRejected() {
@@ -628,6 +635,7 @@ const crumbs = computed(() => ({
   <!-- Modal kết thúc ca -->
   <KetThucCaModal
     :show="showKetThucCaModal"
+    :loading="closingShift"
     :ca-data="ketThucCaData"
     @close="closeKetThucCaModal"
     @confirm="onKetThucCaConfirm"
