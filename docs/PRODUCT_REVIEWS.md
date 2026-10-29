@@ -22,3 +22,11 @@ Chạy `Database/09_danh_gia_san_pham.sql` trên database SmashStep hiện có t
 - API danh mục và chi tiết sản phẩm bổ sung `averageRating`, `reviewCount`. Danh sách lấy thống kê gộp theo trang, không truy vấn từng thẻ sản phẩm.
 
 Đánh giá được lưu trong SQL Server, không mất khi tải lại trang hoặc khởi động backend. Không tạo đánh giá/dữ liệu mẫu tự động.
+
+## Ảnh trong bình luận
+
+- Mở **Đơn hàng của bạn**, chọn đánh giá ở sản phẩm đã giao/hoàn thành. Có thể kèm tối đa 5 ảnh JPG/PNG, mỗi ảnh tối đa 5 MB; xem trước, bỏ ảnh hoặc giữ ảnh khi sửa đánh giá.
+- Bấm ảnh trong đánh giá để mở lớn, dùng nút hoặc phím mũi tên chuyển ảnh và Escape để đóng.
+- Upload yêu cầu `productId` và tài khoản có quyền đánh giá sản phẩm đó. Backend kiểm tra nội dung ảnh, tối đa 20 megapixel/8.000 px mỗi chiều và mã hóa lại ảnh trước khi lưu, không chỉ dựa vào tên tệp.
+- API lưu đánh giá chỉ nhận ảnh tồn tại, thuộc tài khoản hiện tại hoặc ảnh đã gắn trong chính đánh giá đó; không nhận URL ảnh bên ngoài. Bỏ trường `images` khi gọi API cũ sẽ giữ ảnh hiện có; gửi mảng rỗng để bỏ ảnh khỏi đánh giá.
+- File ảnh lưu ngoài Git tại `BACKEND/uploads/reviews`, đường dẫn lưu trong cột `hinh_anh`. Migration 09 cũng cập nhật bảng đã tạo trước đây. Sao lưu DB cần kèm thư mục ảnh này nếu chuyển máy.
