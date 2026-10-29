@@ -1,4 +1,4 @@
-﻿/* SMASHSTEP SD-013: canonical schema + non-destructive seed.
+/* SMASHSTEP SD-013: canonical schema + non-destructive seed.
    Source of truth: Database/01_sqlSD13.sql only.
    Creates the exact canonical schema only when this database has no user tables.
    Existing schemas are validated; never migrated, reset, dropped or reseeded.
@@ -1694,6 +1694,7 @@ BEGIN
         id_khach_hang BIGINT NOT NULL REFERENCES dbo.khach_hang(id),
         so_sao INT NOT NULL CHECK (so_sao BETWEEN 1 AND 5),
         binh_luan NVARCHAR(2000) NOT NULL,
+        hinh_anh NVARCHAR(MAX) NULL,
         ngay_tao DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
         ngay_cap_nhat DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
         CONSTRAINT UQ_danh_gia_khach_san_pham UNIQUE (id_khach_hang, id_san_pham)

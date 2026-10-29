@@ -32,7 +32,7 @@ class SalesVoucherRulesTest {
             new SalesService(
                     em,
                     new com.smashstep.datn.common.pricing.CurrentPriceService(em),
-                    new com.smashstep.datn.invoice.service.InvoiceCodeService(em));
+                    new com.smashstep.datn.invoice.service.InvoiceCodeService(em), mock(com.smashstep.datn.schedule.service.ShiftPaymentAttribution.class));
     private final PhieuGiamGia voucher = new PhieuGiamGia();
     private final PhieuGiamGiaKhachHang link = new PhieuGiamGiaKhachHang();
     private SalesRequest request;

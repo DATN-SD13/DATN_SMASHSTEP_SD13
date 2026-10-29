@@ -30,7 +30,7 @@ class HoaDonStabilizationTest {
     private final LichSuHoaDonRepository histories = mock(LichSuHoaDonRepository.class);
     private final LichSuThanhToanRepository payments = mock(LichSuThanhToanRepository.class);
     private final NhanVienRepository employees = mock(NhanVienRepository.class);
-    private final HoaDonService service = new HoaDonService(invoices, items, histories, payments, employees);
+    private final HoaDonService service = new HoaDonService(invoices, items, histories, payments, employees, mock(com.smashstep.datn.schedule.service.ShiftPaymentAttribution.class));
 
     private HoaDon invoice(int status) {
         HoaDon invoice = new HoaDon();

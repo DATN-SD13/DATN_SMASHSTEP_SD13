@@ -2,12 +2,14 @@
 import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import api from '../services/api'
 import RatingStars from './RatingStars.vue'
+import ReviewImageViewer from './ReviewImageViewer.vue'
 
 const props = defineProps({ productId: { type: [Number, String], required: true } })
 const emit = defineEmits(['updated'])
 
 const result = ref(null), page = ref(0), filter = ref(null)
 const loading = ref(false), error = ref('')
+const previewImage = ref(null)
 let controller, version = 0
 
 const summary = computed(() => result.value?.summary || { average: 0, count: 0 })
@@ -39,6 +41,7 @@ watch(() => props.productId, () => {
   page.value = 0
   filter.value = null
   result.value = null
+  previewImage.value = null
   load()
 }, { immediate: true })
 
@@ -126,6 +129,19 @@ onBeforeUnmount(() => {
             <span v-if="item.createdAt !== item.updatedAt"> · Đã chỉnh sửa</span>
           </time>
           <p>{{ item.comment }}</p>
+
+          <div v-if="item.images && item.images.length" class="review-images-row">
+            <button
+              v-for="(img, idx) in item.images"
+              :key="idx"
+              type="button"
+              class="review-thumb-btn"
+              title="Nhấn để xem ảnh phóng to"
+              @click="previewImage = {images:item.images,initial:idx}"
+            >
+              <img :src="img" alt="Ảnh thực tế từ khách hàng" loading="lazy" />
+            </button>
+          </div>
         </div>
       </article>
 
@@ -143,6 +159,8 @@ onBeforeUnmount(() => {
         </button>
       </nav>
     </template>
+
+    <ReviewImageViewer v-if="previewImage" v-bind="previewImage" @close="previewImage=null" />
   </section>
 </template>
 
@@ -259,6 +277,7 @@ onBeforeUnmount(() => {
 }
 .review-content {
   min-width: 0;
+  flex: 1;
 }
 .review-content > strong {
   display: block;
@@ -279,7 +298,34 @@ onBeforeUnmount(() => {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   line-height: 1.8;
-  margin-bottom: 0;
+  margin-bottom: 8px;
+}
+.review-images-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+}
+.review-thumb-btn {
+  padding: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+  width: 72px;
+  height: 72px;
+  cursor: pointer;
+  background: #f8fafc;
+  transition: transform 0.15s, border-color 0.15s;
+}
+.review-thumb-btn:hover {
+  transform: scale(1.05);
+  border-color: #1868bd;
+}
+.review-thumb-btn img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 .review-pagination {
   display: flex;
@@ -290,6 +336,48 @@ onBeforeUnmount(() => {
 }
 .review-pagination span {
   font-size: 13px;
+}
+.lightbox-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.lightbox-modal {
+  position: relative;
+  max-width: 90vw;
+  max-height: 85vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.lightbox-modal img {
+  max-width: 100%;
+  max-height: 85vh;
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  object-fit: contain;
+}
+.lightbox-close {
+  position: absolute;
+  top: -16px;
+  right: -16px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #fff;
+  color: #1e293b;
+  border: none;
+  font-size: 24px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
 }
 @media (max-width: 640px) {
   .reviews-panel {
