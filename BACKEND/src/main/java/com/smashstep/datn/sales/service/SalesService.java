@@ -39,6 +39,7 @@ public class SalesService {
     private final EntityManager entityManager;
     private final CurrentPriceService dichVuGiaHienTai;
     private final InvoiceCodeService dichVuMaHoaDon;
+    private final com.smashstep.datn.schedule.service.ShiftPaymentAttribution shiftPayments;
     @Autowired private KhoaGhiSanPham khoaGhiSanPham;
     private static final BigDecimal SO_KHONG = new BigDecimal("0.00");
     private static final String DIEU_KIEN_DUOC_BAN =
@@ -293,6 +294,7 @@ public class SalesService {
 
     @Transactional
     public Receipt thanhToan(SalesRequest yeuCau) {
+        shiftPayments.lockPayments();
         if (yeuCau.getIdHoaDon() != null) return thanhToanHoaDonCho(yeuCau);
         if (yeuCau.getDanhSachThanhToan() != null
                 || yeuCau.getGiaoHang() != null
@@ -393,6 +395,7 @@ public class SalesService {
                         + " | Khách đưa: "
                         + paid.toPlainString());
         entityManager.persist(phuongThuc);
+        shiftPayments.record(entityManager, phuongThuc, duLieu.nhanVien().getId());
         LichSuHoaDon ghiLichSu = new LichSuHoaDon();
         ghiLichSu.setIdHoaDon(hoaDon);
         ghiLichSu.setNguoiTao(duLieu.nhanVien().getId());
@@ -658,6 +661,7 @@ public class SalesService {
                             ? " | Nhân viên xác nhận chuyển khoản thủ công"
                             : ""));
             entityManager.persist(phuongThuc);
+            shiftPayments.record(entityManager, phuongThuc, duLieu.nhanVien().getId());
             danhSachThanhToan.add(phuongThuc);
         }
         // Persist immutable prices in existing audit rows in this same checkout transaction.

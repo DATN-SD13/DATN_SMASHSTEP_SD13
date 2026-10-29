@@ -19,8 +19,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Service
 public class StatisticsReportSchedule {
     private static final System.Logger LOG=System.getLogger(StatisticsReportSchedule.class.getName());
-    @Value("${smashstep.statistics-reports.directory:private/statistics-reports}")
-    private String directory="private/statistics-reports";
+    @Value("${smashstep.statistics-reports.directory:${user.home}/.smashstep/statistics-reports}")
+    private String directory=Path.of(System.getProperty("user.home"),".smashstep","statistics-reports").toString();
+    private List<Path> legacyDirectories=List.of(applicationDirectory().resolve("private/statistics-reports"),
+            applicationDirectory().getParent().resolve("private/statistics-reports"));
+    private boolean storageInitialized;
     private Clock clock=Clock.system(StatisticsReportService.ZONE);
     private final StatisticsReportService reports;
     private final AtomicBoolean working=new AtomicBoolean();
@@ -53,7 +56,39 @@ public class StatisticsReportSchedule {
             return view();
         }catch(IOException e){throw new IllegalStateException("Không lưu được lịch gửi báo cáo",e);}
     }
-    private Path root()throws IOException{var root=Path.of(directory).toAbsolutePath().normalize();Files.createDirectories(root);return root;}
+    private synchronized Path root()throws IOException{
+        var configured=Path.of(directory);
+        // Explicit relative overrides are also anchored to the application, never the launch cwd.
+        var root=(configured.isAbsolute()?configured:applicationDirectory().resolve(configured)).toAbsolutePath().normalize();
+        Files.createDirectories(root);
+        if(!storageInitialized){migrateLegacy(root,legacyDirectories);storageInitialized=true;}
+        return root;
+    }
+    private static Path applicationDirectory(){
+        try{
+            var location=Path.of(StatisticsReportSchedule.class.getProtectionDomain().getCodeSource().getLocation().toURI()).toAbsolutePath().normalize();
+            if(Files.isRegularFile(location))location=location.getParent();
+            if(location.getFileName()!=null && Set.of("classes","test-classes").contains(location.getFileName().toString()))location=location.getParent();
+            if(location.getFileName()!=null && "target".equals(location.getFileName().toString()))location=location.getParent();
+            return location;
+        }catch(Exception e){throw new IllegalStateException("Không xác định được thư mục ứng dụng để lưu lịch báo cáo",e);}
+    }
+    static void migrateLegacy(Path destination,List<Path> candidates)throws IOException{
+        for(var candidate:candidates){
+            var source=candidate.toAbsolutePath().normalize();
+            if(source.equals(destination) || !Files.isRegularFile(source.resolve("settings.properties"),LinkOption.NOFOLLOW_LINKS))continue;
+            copyIfAbsent(source.resolve("settings.properties"),destination.resolve("settings.properties"));
+            // Only copy settings and delivered receipts. Live lock files are not portable.
+            try(var files=Files.list(source)){
+                for(var file:files.filter(p->Files.isRegularFile(p,LinkOption.NOFOLLOW_LINKS)
+                        && p.getFileName().toString().matches("(?:day|month|year)-[0-9-]+-[0-9a-f]{64}\\.sent")).toList())
+                    copyIfAbsent(file,destination.resolve(file.getFileName()));
+            }
+        }
+    }
+    private static void copyIfAbsent(Path source,Path target)throws IOException{
+        try{Files.copy(source,target);}catch(FileAlreadyExistsException ignored){}
+    }
     private Settings read()throws IOException{
         var now=LocalDate.now(clock);var file=root().resolve("settings.properties");
         if(!Files.exists(file))return new Settings("",false,false,YearMonth.from(now),now.getYear());
@@ -68,10 +103,10 @@ public class StatisticsReportSchedule {
         if(settings.dailyEnabled() && settings.dailySince()!=null){
             var first=settings.dailySince();
             if(first.getYear()<2000 || first.getYear()>2100)throw new IllegalArgumentException("Invalid daily schedule year");
-            for(var day=first;day.isBefore(now.toLocalDate());day=day.plusDays(1)){
-                var due=day.plusDays(1).atTime(0,5).atZone(StatisticsReportService.ZONE);
-                if(!now.isBefore(due))result.add(new Period("day",day.toString(),day,day,due));
-            }
+            // One catch-up report only: the most recent completed day, after its normal due time.
+            var day=now.toLocalDate().minusDays(1);
+            var due=day.plusDays(1).atTime(0,5).atZone(StatisticsReportService.ZONE);
+            if(!day.isBefore(first) && !now.isBefore(due))result.add(new Period("day",day.toString(),day,day,due));
         }
         if(settings.monthlyEnabled() && settings.monthlySince()!=null){
             var start=settings.monthlySince();

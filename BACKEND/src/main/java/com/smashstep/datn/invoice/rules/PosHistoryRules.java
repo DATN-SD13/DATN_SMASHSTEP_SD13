@@ -16,7 +16,8 @@ public final class PosHistoryRules {
 
     public static boolean danhRieng(String note) {
         return note != null
-                && (note.startsWith(KY_THUAT)
+                && (com.smashstep.datn.schedule.service.ShiftPaymentAttribution.technical(note)
+                || note.startsWith(KY_THUAT)
                 || note.startsWith(HOAN_TAT)
                 || note.startsWith(THAO_TAC_POS)
                 || note.startsWith(com.smashstep.datn.storefront.checkout.OnlineOrderInventory.PREFIX)
@@ -26,6 +27,7 @@ public final class PosHistoryRules {
     }
 
     public static boolean hienThi(HoaDon invoice, LichSuHoaDon row) {
+        if (com.smashstep.datn.schedule.service.ShiftPaymentAttribution.technical(row.getGhiChu())) return false;
         if (row.getGhiChu() != null && (row.getGhiChu().startsWith(com.smashstep.datn.storefront.checkout.OnlineOrderInventory.PREFIX)
                 || row.getGhiChu().startsWith(com.smashstep.datn.storefront.checkout.VnpayOrderService.PREFIX)
                 || com.smashstep.datn.storefront.checkout.OrderEmailNotifications.technical(row.getGhiChu())

@@ -45,10 +45,11 @@ public class GiaoCaNghiepVu {
                 .tenCa(current.getIdCaLamViec().getTenCa()).gioBatDau(fmt(range(current).batDau()))
                 .gioKetThuc(fmt(range(current).ketThuc())).tienMatDauCa(BigDecimal.ZERO)
                 .chuyenKhoanDauCa(BigDecimal.ZERO).tongTienDauCa(BigDecimal.ZERO);
-        var previous=repo.findClosedBeforeShift(current.getNgayLam(),current.getIdCaLamViec().getGioBatDau(),
-                now(),org.springframework.data.domain.PageRequest.of(0,1));
-        if(!previous.isEmpty()){
-            var row=previous.get(0);var summary=tongKet(row);
+        var previous=repo.findClosedBeforeShift(current.getNgayLam(),current.getIdCaLamViec().getGioBatDau()).stream()
+                .filter(row -> !closedAt(row).isAfter(now()))
+                .max(Comparator.comparing(this::closedAt).thenComparing(LichLamViec::getId));
+        if(previous.isPresent()){
+            var row=previous.get();var summary=tongKet(row);
             boolean counted=summary.getTienMatThucTe()!=null;
             var cash=counted?summary.getTienMatThucTe():summary.getTienMatDuKien();
             builder.lichLamViecCaTruocId(row.getId()).tenCaTruoc(row.getIdCaLamViec().getTenCa())
@@ -60,6 +61,9 @@ public class GiaoCaNghiepVu {
                     .tongTienDauCa(cash.add(summary.getChuyenKhoanCuoiCa()));
         }
         return builder.build();
+    }
+    private LocalDateTime closedAt(LichLamViec row) {
+        return so.doc(row,true).map(SoGiaoCaStore.Phieu::ketThuc).orElseGet(() -> range(row).ketThuc());
     }
     public KetThucCaResponse dangLam(Long employee){return nearby(employee).stream().filter(r->Integer.valueOf(1).equals(r.getTrangThai()))
             .min(Comparator.comparing(r->range(r).batDau())).map(this::tongKet).orElse(null);}
@@ -84,10 +88,11 @@ public class GiaoCaNghiepVu {
     public KetThucCaResponse tongKet(LichLamViec row){
         var span=range(row);var saved=so.doc(row,true);var opening=so.doc(row,false);
         var start=opening.map(SoGiaoCaStore.Phieu::batDau).orElse(span.batDau());
-        var end=saved.map(SoGiaoCaStore.Phieu::ketThuc).orElseGet(()->now().isBefore(span.ketThuc())?now():span.ketThuc());
+        var end=saved.map(SoGiaoCaStore.Phieu::ketThuc).orElseGet(()->Integer.valueOf(3).equals(row.getTrangThai())
+                ?span.ketThuc():(now().isBefore(span.ketThuc())?now():span.ketThuc()));
         var flow=saved.map(p->new TienCaService.Tien(p.mat(),p.nganHang(),p.khac())).orElseGet(()->
                 Set.of(1,3).contains(Objects.requireNonNullElse(row.getTrangThai(),-1))
-                        ? tien.tinh(row.getIdNhanVien().getId(),start,end) : new TienCaService.Tien(BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO));
+                        ? tien.tinh(row.getIdNhanVien().getId(),row.getId(),start,end) : new TienCaService.Tien(BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO));
         var initial=saved.map(SoGiaoCaStore.Phieu::dauCa).orElseGet(()->opening.map(SoGiaoCaStore.Phieu::dauCa).orElse(BigDecimal.ZERO));
         BigDecimal actual=saved.map(SoGiaoCaStore.Phieu::thucTe).orElse(null),expected=initial.add(flow.mat());
         return KetThucCaResponse.builder().lichLamViecId(row.getId()).tenCa(row.getIdCaLamViec().getTenCa()).gioBatDau(fmt(span.batDau())).gioKetThuc(fmt(span.ketThuc()))

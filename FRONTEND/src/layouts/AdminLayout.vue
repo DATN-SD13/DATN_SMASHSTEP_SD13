@@ -98,9 +98,10 @@ function laCaHienTai(ca) {
 
 const STATUS_CA = {
   0: { label: 'Chờ giao ca',  cls: 'warn'    },
-  1: { label: 'Giao ca',      cls: 'info'    },
+  1: { label: 'Đang làm',     cls: 'info'    },
   2: { label: 'Vắng mặt',    cls: 'danger'  },
-  3: { label: 'Đã kết thúc', cls: 'success' }
+  3: { label: 'Đã kết thúc', cls: 'success' },
+  4: { label: 'Chưa nhận ca', cls: 'warn' }
 }
 
 function caStatusInfo(trangThai) {

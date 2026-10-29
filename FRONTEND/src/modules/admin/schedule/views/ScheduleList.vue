@@ -4,9 +4,11 @@ import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import SsPager from '../../../../components/SsPager.vue'
 import Select2 from '../../promotion/components/Select2.vue'
 import scheduleService from '../services/scheduleService'
+import { canSetShiftStatus, canDeleteShift } from '../services/shiftStatusRules'
 import LichLamViecImportModal from '../components/LichLamViecImportModal.vue'
 import { confirmAction, showSuccess, showError } from '../../../../utils/feedback'
 import api from '../../../../utils/api'
+import { avatarUrl } from '../../../../utils/avatar'
 
 // ── State ─────────────────────────────────────────────────
 const rows          = ref([])
@@ -19,6 +21,7 @@ const size          = ref(10)
 const pages         = ref(1)
 const totalElements = ref(0)
 const viewMode      = ref('bang')
+const failedAvatarUrls = ref(new Set())
 
 // ── Cảnh báo nhân viên bị khóa ────────────────────────────
 const lichBiKhoa        = ref([])   // lịch tương lai của NV bị khóa
@@ -68,7 +71,7 @@ const STATUS = {
   0: { label: 'Chờ giao ca', cls: 'warn' },
   1: { label: 'Đang làm',   cls: 'success' },
   2: { label: 'Vắng mặt',   cls: 'danger' },
-  3: { label: 'Đã kết thúc', cls: '' }
+  3: { label: 'Đã kết thúc', cls: 'gray' }
 }
 
 // ── Load bảng ─────────────────────────────────────────────
@@ -175,6 +178,7 @@ async function submitThayThe() {
 
 // ── Actions bảng ──────────────────────────────────────────
 function handleDelete(row) {
+  if (!canDeleteShift(row.trangThai)) return
   confirmAction(`Xóa lịch làm của ${row.tenNhanVien} ngày ${fmtNgay(row.ngayLam)}?`, async () => {
     try { await scheduleService.deleteLich(row.id); showSuccess('Đã xóa.'); load() }
     catch (e) { showError(e?.response?.data?.message || 'Xóa thất bại') }
@@ -229,7 +233,6 @@ const calMap = computed(() => {
 })
 function calCell(shiftId, ymd) { return calMap.value[`${shiftId}|${ymd}`] || [] }
 
-const SHIFT_COLORS = ['#fff0f0','#fff8e1','#f0f7ff']
 
 // ── Lịch ngày ────────────────────────────────────────────
 const currentDay = ref((() => { const d = new Date(); d.setHours(0,0,0,0); return d })())
@@ -391,6 +394,10 @@ function openEditModal(row) {
 
 async function submitEdit() {
   editError.value = ''
+  if (!canSetShiftStatus(editRow.value.trangThai, editForm.trangThai)) {
+    editError.value = 'Nhận và kết thúc ca phải thực hiện từ ca cá nhân. Ca đang làm hoặc đã chốt chỉ được sửa ghi chú.'
+    return
+  }
   editSaving.value = true
   try {
     await scheduleService.updateTrangThai(editRow.value.id, editForm.trangThai, editForm.ghiChu)
@@ -530,7 +537,7 @@ async function submitModal() {
             <i class="bi bi-arrow-left-right"></i> Xếp ca tự động
           </button>
           <button class="ss-btn sm" @click="reset">
-            <i class="bi bi-arrow-counterclockwise"></i> Đặt lại lịch
+            <i class="bi bi-arrow-counterclockwise"></i> Đặt lại bộ lọc
           </button>
           <button class="ss-btn sm" :disabled="downloadingTpl" @click="handleDownloadTemplate">
             <i :class="downloadingTpl ? 'bi bi-arrow-repeat spin' : 'bi bi-download'"></i>
@@ -566,7 +573,7 @@ async function submitModal() {
         <!-- Bảng -->
         <template v-if="viewMode==='bang'">
           <div class="ss-table-wrap">
-            <table class="ss-table" style="min-width:860px">
+            <table class="ss-table" style="min-width:1020px">
               <thead>
                 <tr>
                   <th class="w-stt c">STT</th>
@@ -575,12 +582,13 @@ async function submitModal() {
                   <th>Ca làm</th>
                   <th>Thời gian</th>
                   <th>Ngày làm</th>
+                  <th>Trạng thái</th>
                   <th>Thao tác</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-if="loading">
-                  <td colspan="7" class="ss-empty">
+                  <td colspan="8" class="ss-empty">
                     <i class="bi bi-arrow-repeat spin"></i> Đang tải dữ liệu...
                   </td>
                 </tr>
@@ -592,19 +600,20 @@ async function submitModal() {
                     <td>{{ row.tenCa }}</td>
                     <td class="nowrap">{{ row.thoiGian }}</td>
                     <td class="nowrap">{{ fmtNgay(row.ngayLam) }}</td>
+                    <td><span class="ss-pill dot" :class="STATUS[row.trangThai]?.cls">{{ STATUS[row.trangThai]?.label || 'Chưa xác định' }}</span></td>
                     <td>
                       <div class="ss-row-actions">
-                        <button class="ss-icon-btn" title="Sửa trạng thái" @click="openEditModal(row)">
+                        <button class="ss-icon-btn" :title="[1,3].includes(row.trangThai) ? 'Sửa ghi chú' : 'Sửa trạng thái và ghi chú'" @click="openEditModal(row)">
                           <i class="bi bi-pencil-square"></i>
                         </button>
-                        <button class="ss-icon-btn danger" title="Xóa" @click="handleDelete(row)">
+                        <button class="ss-icon-btn danger" :disabled="!canDeleteShift(row.trangThai)" :title="canDeleteShift(row.trangThai) ? 'Xóa lịch' : 'Không xóa ca đang làm hoặc đã kết thúc'" @click="handleDelete(row)">
                           <i class="bi bi-trash"></i>
                         </button>
                       </div>
                     </td>
                   </tr>
                   <tr v-if="!rows.length">
-                    <td colspan="7" class="ss-empty"><i class="bi bi-inbox"></i> Không có dữ liệu.</td>
+                    <td colspan="8" class="ss-empty"><i class="bi bi-inbox"></i> Không có dữ liệu.</td>
                   </tr>
                 </template>
               </tbody>
@@ -642,20 +651,17 @@ async function submitModal() {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="(item, si) in dayRows" :key="item.shift.id">
-                    <td class="cal-td-shift" :style="{ background: SHIFT_COLORS[si%3] }">
+                  <tr v-for="item in dayRows" :key="item.shift.id">
+                    <td class="cal-td-shift">
                       <div class="cal-shift-name">{{ item.shift.tenCa }}</div>
                       <div class="cal-shift-time">{{ item.shift.thoiGian }}</div>
                     </td>
-                    <td class="cal-td-cell" :style="{ background: toYMD(currentDay)===toYMD(new Date()) ? '#fff8f0':'#fff' }">
-                      <div class="cal-cell-name">{{ item.shift.tenCa }}</div>
-                      <div class="cal-cell-time">{{ item.shift.thoiGian }}</div>
-                      <div class="cal-cell-count">{{ item.list.length }} Nhân viên</div>
-                      <button class="cal-more-btn"
-                        :class="{ 'cal-more-red': toYMD(currentDay)===toYMD(new Date()) }"
+                    <td class="cal-td-cell">
+                      <button v-if="item.list.length" class="cal-assignment"
+                        :aria-label="`${item.list.length} nhân viên, ${item.shift.tenCa}, ${fmtNgay(item.ymd)}. Xem danh sách`"
                         @click="openCalDetail(item.shift, { ymd: item.ymd, display: currentDay.toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit',year:'numeric'}) })">
-                        Xem thêm
-                      </button>
+                        <span><i class="bi bi-people" aria-hidden="true"></i> {{ item.list.length }} nhân viên</span>
+                      </button><span v-else class="cal-empty" aria-label="Chưa phân lịch">—</span>
                     </td>
                   </tr>
                 </tbody>
@@ -672,24 +678,22 @@ async function submitModal() {
                     <th class="cal-th-shift">CA LÀM<br>VIỆC</th>
                     <th v-for="day in weekDays" :key="day.ymd" :class="{ 'cal-th-today': day.isToday }">
                       <div class="cal-day-lbl">{{ day.label }}</div>
-                      <div class="cal-day-date">{{ day.display }}</div>
+                      <div class="cal-day-date" :title="day.display">{{ day.display.slice(0,5) }}</div>
                     </th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="(shift, si) in calendarShifts" :key="shift.id">
-                    <td class="cal-td-shift" :style="{ background: SHIFT_COLORS[si%3] }">
+                  <tr v-for="shift in calendarShifts" :key="shift.id">
+                    <td class="cal-td-shift">
                       <div class="cal-shift-name">{{ shift.tenCa }}</div>
                       <div class="cal-shift-time">{{ shift.thoiGian }}</div>
                     </td>
                     <td v-for="day in weekDays" :key="day.ymd"
-                      class="cal-td-cell"
-                      :style="{ background: day.isToday ? '#fff8f0':'#fff' }">
-                      <div class="cal-cell-name">{{ shift.tenCa }}</div>
-                      <div class="cal-cell-time">{{ shift.thoiGian }}</div>
-                      <div class="cal-cell-count">{{ calCell(shift.id, day.ymd).length }} Nhân viên</div>
-                      <button class="cal-more-btn" :class="{ 'cal-more-red': day.isToday }"
-                        @click="openCalDetail(shift, day)">Xem thêm</button>
+                      class="cal-td-cell">
+                      <button v-if="calCell(shift.id, day.ymd).length" class="cal-assignment"
+                        :aria-label="`${calCell(shift.id, day.ymd).length} nhân viên, ${shift.tenCa}, ${day.display}. Xem danh sách`"
+                        @click="openCalDetail(shift, day)"><span><i class="bi bi-people" aria-hidden="true"></i> {{ calCell(shift.id, day.ymd).length }} nhân viên</span></button>
+                      <span v-else class="cal-empty" aria-label="Chưa phân lịch">—</span>
                     </td>
                   </tr>
                 </tbody>
@@ -725,6 +729,7 @@ async function submitModal() {
               </table>
             </div>
           </template>
+          <p v-if="calMode!=='thang'" class="cal-help">Chọn ô có nhân viên để xem danh sách và trạng thái.</p>
         </template>
       </section>
 
@@ -862,33 +867,31 @@ async function submitModal() {
 
     <!-- Modal chi tiết ô lịch -->
     <Teleport to="body">
-      <div v-if="calDetail" class="ss-modal-bg" @click.self="calDetail=null">
-        <div class="ss-modal" style="width:min(480px,100%)">
-          <div class="ss-head">
-            <div class="ss-head-icon"><i class="bi bi-calendar-day"></i></div>
-            <h2>{{ calDetail.shift.tenCa }} — {{ calDetail.day.display }}</h2>
-            <span class="ss-spacer"></span>
-            <button class="ss-icon-btn" @click="calDetail=null"><i class="bi bi-x-lg"></i></button>
-          </div>
-          <div v-if="!calDetail.list.length" class="ss-empty" style="height:80px">
-            Chưa có nhân viên nào trong ca này.
-          </div>
-          <div v-else class="ss-table-wrap">
-            <table class="ss-table">
-              <thead><tr><th>Mã NV</th><th>Họ tên</th><th>Trạng thái</th></tr></thead>
-              <tbody>
-                <tr v-for="r in calDetail.list" :key="r.id">
-                  <td><span class="ss-code">{{ r.maNhanVien }}</span></td>
-                  <td class="ss-strong">{{ r.tenNhanVien }}</td>
-                  <td><span class="ss-pill dot" :class="STATUS[r.trangThai]?.cls">{{ STATUS[r.trangThai]?.label }}</span></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <div class="ss-actions">
-            <button class="ss-btn" @click="calDetail=null">Đóng</button>
-          </div>
-        </div>
+      <div v-if="calDetail" class="ss-modal-bg" @click.self="calDetail=null" @keydown.esc="calDetail=null">
+        <section class="calendar-detail" role="dialog" aria-modal="true" aria-labelledby="calendar-detail-title">
+          <header class="calendar-detail-head">
+            <div class="calendar-detail-icon"><i class="bi bi-calendar3" aria-hidden="true"></i></div>
+            <div class="calendar-detail-heading">
+              <h2 id="calendar-detail-title">{{ calDetail.shift.tenCa }}</h2>
+              <p>{{ calDetail.day.display }}<span aria-hidden="true"> · </span>{{ calDetail.shift.thoiGian }}</p>
+            </div>
+            <button class="ss-icon-btn" aria-label="Đóng danh sách nhân viên" autofocus @click="calDetail=null"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
+          </header>
+          <div class="calendar-detail-summary"><span>Nhân viên được phân ca</span><span class="calendar-detail-count"><i class="bi bi-people" aria-hidden="true"></i> {{ calDetail.list.length }} nhân viên</span></div>
+          <div v-if="!calDetail.list.length" class="calendar-detail-empty">Chưa có nhân viên được phân vào ca này.</div>
+          <ul v-else class="calendar-detail-list" aria-label="Danh sách nhân viên trong ca">
+            <li v-for="r in calDetail.list" :key="r.id" class="calendar-detail-person">
+              <div class="calendar-person-avatar" aria-hidden="true">
+                <img v-if="avatarUrl(r.hinhAnh) && !failedAvatarUrls.has(avatarUrl(r.hinhAnh))"
+                     :src="avatarUrl(r.hinhAnh)" alt="" @error="failedAvatarUrls.add(avatarUrl(r.hinhAnh))" />
+                <i v-else class="bi bi-person"></i>
+              </div>
+              <div class="calendar-person-info"><strong>{{ r.tenNhanVien }}</strong><span>{{ r.maNhanVien }}</span></div>
+              <span class="ss-pill dot calendar-person-status" :class="STATUS[r.trangThai]?.cls">{{ STATUS[r.trangThai]?.label || 'Chưa xác định' }}</span>
+            </li>
+          </ul>
+          <footer class="calendar-detail-footer"><button class="ss-btn" @click="calDetail=null">Đóng</button></footer>
+        </section>
       </div>
     </Teleport>
 
@@ -925,12 +928,14 @@ async function submitModal() {
                 v-for="opt in TRANG_THAI_OPTIONS" :key="opt.value"
                 class="tt-option"
                 :class="{ active: editForm.trangThai === opt.value, [`cls-${opt.value}`]: true }"
+                :style="!canSetShiftStatus(editRow.trangThai, opt.value) ? { opacity: .45, cursor: 'not-allowed' } : undefined"
               >
-                <input type="radio" :value="opt.value" v-model="editForm.trangThai" style="display:none" />
+                <input type="radio" :value="opt.value" v-model="editForm.trangThai" :disabled="!canSetShiftStatus(editRow.trangThai, opt.value)" style="display:none" />
                 <span class="tt-dot"></span>
                 {{ opt.label }}
               </label>
             </div>
+            <p class="ss-hint">Nhận/kết thúc ca thực hiện từ ca cá nhân. Lịch đang làm hoặc đã kết thúc chỉ được sửa ghi chú.</p>
           </div>
 
           <div class="ss-field" style="margin-top:12px">
@@ -1005,6 +1010,21 @@ async function submitModal() {
 </template>
 
 <style scoped>
+.calendar-detail{width:min(560px,calc(100vw - 32px));max-height:calc(100dvh - 48px);display:flex;flex-direction:column;overflow:hidden;background:#fff;border:1px solid var(--ss-border);border-radius:14px;box-shadow:0 20px 60px #19364b26;color:var(--ss-text)}
+.calendar-detail-head{display:flex;align-items:center;gap:12px;padding:22px 22px 18px;flex-shrink:0}
+.calendar-detail-icon{width:44px;height:44px;display:grid;place-items:center;flex-shrink:0;background:var(--ss-primary-soft);border-radius:10px;color:var(--ss-primary);font-size:20px}
+.calendar-detail-heading{min-width:0;flex:1}.calendar-detail-heading h2{font-size:17px;font-weight:650;margin:0 0 5px;overflow-wrap:anywhere}.calendar-detail-heading p{font-size:12px;color:var(--ss-muted);margin:0;line-height:1.5}
+.calendar-detail-summary{display:flex;justify-content:space-between;align-items:center;gap:12px;background:var(--ss-surface);padding:12px 22px;border-block:1px solid var(--ss-border);font-size:12px;flex-shrink:0}
+.calendar-detail-count{display:inline-flex;align-items:center;gap:6px;color:var(--ss-muted);white-space:nowrap}
+.calendar-detail-list{list-style:none;padding:0 22px;margin:0;overflow-y:auto;min-height:0;overscroll-behavior:contain}
+.calendar-detail-person{display:flex;align-items:center;gap:12px;padding:16px 0;border-bottom:1px solid var(--ss-border)}.calendar-detail-person:last-child{border-bottom:0}
+.calendar-person-avatar{display:grid;place-items:center;width:36px;height:36px;border-radius:50%;background:#edf3f8;color:#658399;font-size:18px;flex-shrink:0;overflow:hidden}
+.calendar-person-avatar img{display:block;width:100%;height:100%;object-fit:cover}
+.calendar-person-info{display:flex;flex-direction:column;gap:3px;flex:1;min-width:0}.calendar-person-info strong{font-size:13px;font-weight:600;overflow-wrap:anywhere}.calendar-person-info>span{font-size:11px;color:var(--ss-muted)}
+.calendar-person-status{flex-shrink:0;max-width:45%;white-space:normal;line-height:1.4}.calendar-detail-footer{display:flex;justify-content:flex-end;padding:14px 22px;border-top:1px solid var(--ss-border);background:#fff;flex-shrink:0}.calendar-detail-empty{padding:30px 22px;text-align:center;color:var(--ss-muted);font-size:13px}
+@media(max-width:440px){.calendar-detail-head{padding:18px 16px}.calendar-detail-summary{padding:10px 16px}.calendar-detail-list{padding:0 16px}.calendar-detail-person{gap:9px;flex-wrap:wrap}.calendar-person-info{flex-basis:calc(100% - 48px)}.calendar-person-status{margin-left:45px;max-width:calc(100% - 45px)}.calendar-detail-footer{padding:12px 16px}}
+.ss-icon-btn:disabled{opacity:.35;cursor:not-allowed;pointer-events:auto}.cal-empty{display:block;padding:20px 0;color:var(--ss-muted);font-size:11px}.cal-person{font-size:11px;color:var(--ss-text);line-height:1.6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px}.cal-cell-count i{margin-right:3px}
+
 /* ── Banner cảnh báo NV bị khóa ───────────────────────── */
 .warn-banner {
   border: 1.5px solid #f6ad55;
@@ -1130,16 +1150,22 @@ async function submitModal() {
 .cal-nav { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
 .cal-week-label { font-size:13px; font-weight:600; color:var(--ss-text); }
 .cal-wrap { overflow-x:auto; }
-.cal-table { width:100%; border-collapse:collapse; min-width:900px; }
-.cal-th-shift { width:100px; background:var(--ss-surface); padding:10px 12px; font-size:11px; font-weight:700; color:var(--ss-muted); text-align:center; border:1px solid var(--ss-border); }
+.cal-table { width:100%; border-collapse:collapse; min-width:900px; table-layout:fixed; }
+.cal-th-shift { width:140px; background:var(--ss-surface); padding:10px 12px; font-size:11px; font-weight:700; color:var(--ss-muted); text-align:left; border:1px solid var(--ss-border); }
 .cal-table thead th { background:var(--ss-surface); padding:10px 8px; text-align:center; border:1px solid var(--ss-border); }
-.cal-th-today { background:#fff3e0 !important; }
+.cal-th-today { background:var(--ss-primary-soft) !important; box-shadow:inset 0 -2px var(--ss-primary); }
 .cal-day-lbl  { font-size:11px; font-weight:700; color:var(--ss-muted); }
 .cal-day-date { font-size:12px; font-weight:600; color:var(--ss-text); margin-top:2px; }
-.cal-td-shift { padding:14px 10px; text-align:center; border:1px solid var(--ss-border); vertical-align:middle; }
-.cal-shift-name { font-size:12px; font-weight:700; color:#e53935; margin-bottom:2px; }
+.cal-td-shift { padding:12px; text-align:left; border:1px solid var(--ss-border); vertical-align:middle; background:var(--ss-surface); }
+.cal-shift-name { font-size:12px; font-weight:600; color:var(--ss-text); margin-bottom:3px; }
 .cal-shift-time { font-size:11px; color:var(--ss-muted); }
-.cal-td-cell { padding:10px 8px; border:1px solid var(--ss-border); vertical-align:top; min-width:110px; }
+.cal-td-cell { padding:0; border:1px solid var(--ss-border); vertical-align:middle; background:#fff; height:72px; }
+.cal-td-cell .cal-empty { padding:0; text-align:center; color:#b1bdc9; font-size:16px; }
+.cal-assignment { display:flex; align-items:center; justify-content:center; width:100%; min-height:72px; height:100%; padding:12px 6px; border:0; background:transparent; color:var(--ss-text); cursor:pointer; font:inherit; font-size:12px; }
+.cal-assignment span { display:inline-flex; align-items:center; gap:6px; padding:6px 9px; border-radius:6px; background:var(--ss-primary-soft); color:var(--ss-primary); white-space:nowrap; }
+.cal-assignment:hover { background:#f5f9fd; }
+.cal-assignment:focus-visible { outline:2px solid var(--ss-primary); outline-offset:-3px; }
+.cal-help { margin:10px 0 0; font-size:11px; color:var(--ss-muted); }
 .cal-cell-name  { font-size:11px; font-weight:600; color:var(--ss-text); }
 .cal-cell-time  { font-size:11px; color:var(--ss-muted); margin-bottom:4px; }
 .cal-cell-count { font-size:11px; color:var(--ss-muted); margin-bottom:6px; }

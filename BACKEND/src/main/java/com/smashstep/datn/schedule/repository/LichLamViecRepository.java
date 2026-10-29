@@ -229,14 +229,13 @@ public interface LichLamViecRepository extends JpaRepository<LichLamViec, Long> 
     @Query("select l from LichLamViec l join fetch l.idCaLamViec join fetch l.idNhanVien where l.idNhanVien.id=:employee and l.ngayLam between :from and :to order by l.ngayLam,l.idCaLamViec.gioBatDau")
     List<LichLamViec> findForEmployee(@Param("employee") Long employee,@Param("from") LocalDate from,@Param("to") LocalDate to);
     boolean existsByIdCaLamViec_Id(Long shift);
-    /** Latest closed shift across employees; actual close time orders early/overnight closes. */
+    /** Candidates only: caller orders by immutable close receipts, never editable update timestamps. */
     @Query("""
         select l from LichLamViec l
         join fetch l.idNhanVien nv join fetch l.idCaLamViec ca
-        where l.trangThai = 3 and l.ngayCapNhat <= :now
+        where l.trangThai = 3
           and (l.ngayLam < :day or (l.ngayLam = :day and ca.gioBatDau < :start))
-        order by l.ngayCapNhat desc, l.id desc
         """)
     List<LichLamViec> findClosedBeforeShift(@Param("day") LocalDate day,
-                                            @Param("start") LocalTime start, @Param("now") LocalDateTime now, Pageable pageable);
+                                            @Param("start") LocalTime start);
 }

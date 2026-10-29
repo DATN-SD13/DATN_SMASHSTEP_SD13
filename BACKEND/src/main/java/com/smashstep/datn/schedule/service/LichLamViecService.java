@@ -181,7 +181,8 @@ public class LichLamViecService {
             throw AppException.conflict("Nhận/kết thúc ca phải thực hiện từ tài khoản được phân lịch; không đổi trạng thái ca đã nhận hoặc đã chốt");
         llv.setTrangThai(request.getTrangThai());
         if (request.getGhiChu() != null) llv.setGhiChu(request.getGhiChu());
-        llv.setNgayCapNhat(LocalDateTime.now());
+        // Preserve the legacy completion timestamp when only editing a closed shift's note.
+        if (!Integer.valueOf(3).equals(llv.getTrangThai())) llv.setNgayCapNhat(LocalDateTime.now());
 
         return toResponse(lichLamViecRepository.save(llv), false);
     }
