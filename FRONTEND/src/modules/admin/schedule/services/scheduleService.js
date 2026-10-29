@@ -12,6 +12,18 @@ const scheduleService = {
   async getCaHomNay() {
     return unwrap(await api.get('/lich-lam-viec/ca-hom-nay'))
   },
+
+  async getCaSapBatDau() {
+    return unwrap(await api.get('/lich-lam-viec/ca-sap-bat-dau'))
+  },
+
+  async xacNhanNhanCa(id) {
+    return unwrap(await api.post(`/lich-lam-viec/${id}/xac-nhan-nhan-ca`))
+  },
+
+  async chuaNhanCa(id) {
+    return unwrap(await api.post(`/lich-lam-viec/${id}/chua-nhan-ca`))
+  },
   async getLichNhanVienBiKhoa() {
     return unwrap(await api.get('/lich-lam-viec/nhan-vien-bi-khoa'))
   },
@@ -55,8 +67,8 @@ const scheduleService = {
     return unwrap(await api.post('/lich-lam-viec', payload))
   },
 
-  async updateTrangThai(id, trangThai, ghiChu = '') {
-    return unwrap(await api.patch(`/lich-lam-viec/${id}/trang-thai`, { trangThai, ghiChu }))
+  async updateTrangThai(id, trangThai, ghiChu = '', lyDoDieuChinh = '') {
+    return unwrap(await api.patch(`/lich-lam-viec/${id}/trang-thai`, { trangThai, ghiChu, lyDoDieuChinh }))
   },
 
   async deleteLich(id) {

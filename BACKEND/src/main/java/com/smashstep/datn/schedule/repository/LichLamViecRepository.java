@@ -11,6 +11,7 @@ import org.springframework.stereotype.Repository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 
 @Repository
@@ -92,15 +93,17 @@ public interface LichLamViecRepository extends JpaRepository<LichLamViec, Long> 
     @Query(value = """
         SELECT l.* FROM lich_lam_viec l
         JOIN ca_lam_viec c ON l.id_ca_lam_viec = c.id
-        WHERE l.trang_thai IN (0, 1)
-          AND (
+        WHERE l.trang_thai IN (0, 1, 4)
+          AND ((l.trang_thai IN (0, 4) AND
+            DATEADD(minute, 15, CAST(CONVERT(varchar, l.ngay_lam, 23) + ' ' + CONVERT(varchar, c.gio_bat_dau, 108) AS datetime2)) < :now)
+          OR (
             CASE
               WHEN c.gio_ket_thuc >= c.gio_bat_dau
                 THEN CAST(CONVERT(varchar, l.ngay_lam, 23) + ' ' + CONVERT(varchar, c.gio_ket_thuc, 108) AS datetime2)
               ELSE
                 CAST(CONVERT(varchar, DATEADD(day, 1, l.ngay_lam), 23) + ' ' + CONVERT(varchar, c.gio_ket_thuc, 108) AS datetime2)
             END
-          ) <= :now
+          ) <= :now)
         """, nativeQuery = true)
     List<LichLamViec> findExpiredLich(@Param("now") LocalDateTime now);
 
@@ -123,8 +126,118 @@ public interface LichLamViecRepository extends JpaRepository<LichLamViec, Long> 
             @Param("batDau")     LocalDateTime batDau,
             @Param("ketThuc")    LocalDateTime ketThuc
     );
+
+    /**
+     * Tính tổng doanh thu tiền mặt (maPhuongThuc = 'TIEN_MAT') của nhân viên trong ca.
+     */
+    @Query("""
+        SELECT COALESCE(SUM(h.thanhTien), 0)
+        FROM HoaDon h
+        WHERE h.idNhanVien.id = :nhanVienId
+          AND h.ngayThanhToan >= :batDau
+          AND h.ngayThanhToan < :ketThuc
+          AND h.ngayThanhToan IS NOT NULL
+          AND (h.trangThai = 5 OR h.trangThai = 8)
+          AND h.idPhuongThucThanhToan.maPhuongThuc = 'TIEN_MAT'
+        """)
+    BigDecimal tinhDoanhThuTienMat(
+            @Param("nhanVienId") Long nhanVienId,
+            @Param("batDau")     LocalDateTime batDau,
+            @Param("ketThuc")    LocalDateTime ketThuc
+    );
+
+    /**
+     * Tính tổng doanh thu chuyển khoản (maPhuongThuc = 'CHUYEN_KHOAN') của nhân viên trong ca.
+     */
+    @Query("""
+        SELECT COALESCE(SUM(h.thanhTien), 0)
+        FROM HoaDon h
+        WHERE h.idNhanVien.id = :nhanVienId
+          AND h.ngayThanhToan >= :batDau
+          AND h.ngayThanhToan < :ketThuc
+          AND h.ngayThanhToan IS NOT NULL
+          AND (h.trangThai = 5 OR h.trangThai = 8)
+          AND h.idPhuongThucThanhToan.maPhuongThuc = 'CHUYEN_KHOAN'
+        """)
+    BigDecimal tinhDoanhThuChuyenKhoan(
+            @Param("nhanVienId") Long nhanVienId,
+            @Param("batDau")     LocalDateTime batDau,
+            @Param("ketThuc")    LocalDateTime ketThuc
+    );
+
+    /**
+     * Ca hôm nay của một nhân viên cụ thể (query trực tiếp theo nhanVienId).
+     */
+    @Query("""
+        SELECT l FROM LichLamViec l
+        JOIN FETCH l.idNhanVien nv
+        LEFT JOIN FETCH nv.idVaiTro vt
+        JOIN FETCH l.idCaLamViec ca
+        WHERE nv.id = :nhanVienId
+          AND l.ngayLam = :ngayLam
+        ORDER BY ca.gioBatDau ASC
+        """)
+    List<LichLamViec> findCaHomNayCuaNhanVien(
+            @Param("nhanVienId") Long nhanVienId,
+            @Param("ngayLam")    LocalDate ngayLam
+    );
+
+    /**
+     * Tìm ca làm việc hôm nay của nhân viên có trangThai IN (0,4) — chưa nhận hoặc chưa xác nhận.
+     * Trả về các ca có giờ bắt đầu nằm trong khoảng [tuGio, denGio].
+     * Sử dụng native query để tránh vấn đề type mismatch giữa TIME và các parameter.
+     */
+    @Query(value = """
+        SELECT l.* FROM lich_lam_viec l
+        JOIN nhan_vien nv ON nv.id = l.id_nhan_vien
+        JOIN ca_lam_viec ca ON ca.id = l.id_ca_lam_viec
+        WHERE nv.id = :nhanVienId
+          AND l.ngay_lam = :ngayLam
+          AND l.trang_thai IN (0, 4)
+          AND CAST(ca.gio_bat_dau AS TIME) >= CAST(:tuGio AS TIME)
+          AND CAST(ca.gio_bat_dau AS TIME) <= CAST(:denGio AS TIME)
+        ORDER BY ca.gio_bat_dau ASC
+        """, nativeQuery = true)
+    List<LichLamViec> findCaSapBatDau(
+            @Param("nhanVienId") Long nhanVienId,
+            @Param("ngayLam")    LocalDate ngayLam,
+            @Param("tuGio")      LocalTime tuGio,
+            @Param("denGio")     LocalTime denGio
+    );
+
+    /**
+     * Tìm ca liền trước của nhân viên (ca đã kết thúc gần nhất, trangThai = 3 hoặc 1).
+     * Sử dụng CAST để tránh lỗi TIME comparison.
+     */
+    @Query(value = """
+        SELECT TOP 1 l.* FROM lich_lam_viec l
+        JOIN ca_lam_viec c ON l.id_ca_lam_viec = c.id
+        WHERE l.id_nhan_vien = :nhanVienId
+          AND l.trang_thai IN (1, 3)
+          AND (
+            l.ngay_lam < :ngayLam
+            OR (
+              l.ngay_lam = :ngayLam
+              AND CAST(c.gio_bat_dau AS TIME) < CAST(:gioBatDau AS TIME)
+            )
+          )
+        ORDER BY l.ngay_lam DESC, c.gio_bat_dau DESC
+        """, nativeQuery = true)
+    LichLamViec findCaTruocNhat(
+            @Param("nhanVienId") Long nhanVienId,
+            @Param("ngayLam")    LocalDate ngayLam,
+            @Param("gioBatDau")  LocalTime gioBatDau
+    );
     @Query("select l from LichLamViec l join fetch l.idCaLamViec join fetch l.idNhanVien where l.idNhanVien.id=:employee and l.ngayLam between :from and :to order by l.ngayLam,l.idCaLamViec.gioBatDau")
     List<LichLamViec> findForEmployee(@Param("employee") Long employee,@Param("from") LocalDate from,@Param("to") LocalDate to);
     boolean existsByIdCaLamViec_Id(Long shift);
-
+    /** Candidates only: caller orders by immutable close receipts, never editable update timestamps. */
+    @Query("""
+        select l from LichLamViec l
+        join fetch l.idNhanVien nv join fetch l.idCaLamViec ca
+        where l.trangThai = 3
+          and (l.ngayLam < :day or (l.ngayLam = :day and ca.gioBatDau < :start))
+        """)
+    List<LichLamViec> findClosedBeforeShift(@Param("day") LocalDate day,
+                                            @Param("start") LocalTime start);
 }

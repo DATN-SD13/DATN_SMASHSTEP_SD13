@@ -31,6 +31,7 @@ import java.util.Map;
 public class LichLamViecController {
 
     private final LichLamViecService lichLamViecService;
+    private final com.smashstep.datn.schedule.service.GiaoCaNghiepVu giaoCa;
     private final VaiTroRepository   vaiTroRepository;
     private final com.smashstep.datn.schedule.service.LichLamViecImportService nhapExcel;
 
@@ -74,6 +75,63 @@ public class LichLamViecController {
             throw com.smashstep.datn.common.exception.AppException.forbidden("Cần đăng nhập tài khoản nhân viên");
         return ApiResponse.ok("Ca hôm nay",
                 lichLamViecService.getCaHomNay(details.userId()));
+    }
+
+    /**
+     * Kiểm tra ca sắp bắt đầu trong 15 phút (trangThai 0 hoặc 4).
+     * Dùng cho popup giao ca tự động ở frontend.
+     * Trả về null trong data nếu không có ca nào cần xác nhận.
+     */
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    @GetMapping("/ca-sap-bat-dau")
+    public ApiResponse<com.smashstep.datn.schedule.dto.GiaoCaResponse> getCaSapBatDau(
+            org.springframework.security.core.Authentication authentication
+    ) {
+        Long employee = com.smashstep.datn.schedule.service.GiaoCaNghiepVu.nhanVienHienTai();
+        return ApiResponse.ok("Ca sắp bắt đầu",
+                giaoCa.sapNhan(employee));
+    }
+
+    /** Xác nhận nhận ca — chuyển trangThai → 1 (Đang làm) */
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    @PostMapping("/{id}/xac-nhan-nhan-ca")
+    public ApiResponse<LichLamViecResponse> xacNhanNhanCa(@PathVariable Long id, @Valid @RequestBody com.smashstep.datn.schedule.dto.NhanCaRequest request) {
+        return ApiResponse.ok("Xác nhận nhận ca thành công",
+                lichLamViecService.giaoCaResponse(giaoCa.nhan(id,com.smashstep.datn.schedule.service.GiaoCaNghiepVu.nhanVienHienTai(),request)));
+    }
+
+    /** Từ chối nhận ca — chuyển trangThai → 4 (Chưa nhận ca) */
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    @PostMapping("/{id}/chua-nhan-ca")
+    public ApiResponse<LichLamViecResponse> chuaNhanCa(@PathVariable Long id) {
+        return ApiResponse.ok("Đã đánh dấu chưa nhận ca",
+                lichLamViecService.giaoCaResponse(giaoCa.chuaNhan(id,com.smashstep.datn.schedule.service.GiaoCaNghiepVu.nhanVienHienTai())));
+    }
+
+    /**
+     * Kiểm tra ca đang làm của nhân viên (trangThai = 1).
+     * Dùng để hiển thị nút "Kết thúc ca" ở frontend.
+     * Trả về null trong data nếu không có ca đang làm.
+     */
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    @GetMapping("/ca-dang-lam")
+    public ApiResponse<com.smashstep.datn.schedule.dto.KetThucCaResponse> getCaDangLam(
+            org.springframework.security.core.Authentication authentication
+    ) {
+        Long employee = com.smashstep.datn.schedule.service.GiaoCaNghiepVu.nhanVienHienTai();
+        return ApiResponse.ok("Ca đang làm",
+                giaoCa.dangLam(employee));
+    }
+
+    /** Kết thúc ca — chuyển trangThai → 3 (Đã kết thúc) */
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    @PostMapping("/{id}/ket-thuc-ca")
+    public ApiResponse<LichLamViecResponse> ketThucCa(
+            @PathVariable Long id,
+            @Valid @RequestBody com.smashstep.datn.schedule.dto.KetThucCaRequest request
+    ) {
+        return ApiResponse.ok("Kết thúc ca thành công",
+                lichLamViecService.giaoCaResponse(giaoCa.ketThuc(id,com.smashstep.datn.schedule.service.GiaoCaNghiepVu.nhanVienHienTai(),request)));
     }
 
     /** Danh sách có phân trang + filter */

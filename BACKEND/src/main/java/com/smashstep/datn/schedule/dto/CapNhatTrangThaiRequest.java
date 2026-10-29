@@ -13,4 +13,7 @@ public class CapNhatTrangThaiRequest {
 
     @jakarta.validation.constraints.Size(max=500)
     private String ghiChu;
+
+    @jakarta.validation.constraints.Size(max=200)
+    private String lyDoDieuChinh;
 }

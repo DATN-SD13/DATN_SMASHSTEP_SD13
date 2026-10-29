@@ -1,38 +1,42 @@
 
 import api from '../../../../utils/api'
+import { createStatisticsRequests } from './statisticsRequests'
+
+const requests = createStatisticsRequests(api)
+export const cancelStatisticsRequests = () => requests.cancelAll()
 
 // API lấy dữ liệu 2 biểu đồ
 export const getStatisticsChart = (params) => {
-  return api.get('/thong-ke-tong-hop/bieu-do', { params })
+  return requests.get('/thong-ke-tong-hop/bieu-do', { params })
 }
 
 // API lấy dữ liệu 7 ô tổng quan doanh thu
 export const getStatisticsSummary = (params) => {
-  return api.get('/thong-ke-tong-hop/tong-quan', { params })
+  return requests.get('/thong-ke-tong-hop/tong-quan', { params })
 }
 
 
 // API thống kê doanh thu theo chu kỳ thời gian
 export const getStatisticsPeriod = () => {
-  return api.get('/thong-ke-tong-hop/chu-ky')
+  return requests.get('/thong-ke-tong-hop/chu-ky')
 }
 
 
 // API thống kê trạng thái đơn hàng
 export const getStatisticsOrderStatus = (params) => {
-  return api.get('/thong-ke', { params })
+  return requests.get('/thong-ke', { params })
 }
 
 
 // API thống kê doanh thu theo nhân viên
 export const getStatisticsEmployee = (params) => {
-  return api.get('/thong-ke-tong-hop/nhan-vien', { params })
+  return requests.get('/thong-ke-tong-hop/nhan-vien', { params })
 }
 
 
 // API thống kê tổng quan sản phẩm
 export const getStatisticsProduct = (params) => {
-  return api.get('/thong-ke-tong-hop/san-pham', { params })
+  return requests.get('/thong-ke-tong-hop/san-pham', { params })
 }
 
 // Reuse actual product attribute data for the dashboard brand filter.
@@ -48,3 +52,27 @@ export async function getStatisticsBrands() {
   } while (page < totalPages)
   return brands
 }
+
+/**
+ * API so sánh doanh thu theo tháng, quý hoặc năm
+ * nhomTheo: month | quarter | year
+ * nam: năm cần thống kê
+ */
+export const getStatisticsRevenueComparison = (params) => {
+  return requests.get('/thong-ke-tong-hop/so-sanh-doanh-thu',
+    { params }
+  );
+};
+
+/**
+ * API gửi báo cáo tổng kết doanh thu qua email
+ */
+export const sendStatisticsReportEmail = (data) => {
+  return api.post(
+    "/thong-ke-tong-hop/gui-email-tong-ket",
+    data
+  );
+};
+
+export const getStatisticsEmailSchedule = () => api.get('/thong-ke-tong-hop/lich-gui-email')
+export const saveStatisticsEmailSchedule = (data) => api.put('/thong-ke-tong-hop/lich-gui-email', data)

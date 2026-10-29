@@ -47,6 +47,7 @@ public class HoaDonService {
     private final LichSuHoaDonRepository lichSuHoaDonRepository;
     private final LichSuThanhToanRepository lichSuThanhToanRepository;
     private final NhanVienRepository nhanVienRepository;
+    private final com.smashstep.datn.schedule.service.ShiftPaymentAttribution shiftPayments;
     @jakarta.persistence.PersistenceContext private jakarta.persistence.EntityManager entityManager;
     @org.springframework.beans.factory.annotation.Autowired private InvoiceCodeService dichVuMaHoaDon;
     @org.springframework.beans.factory.annotation.Autowired private com.smashstep.datn.storefront.checkout.OrderEmailNotifications orderMail;
@@ -113,6 +114,7 @@ public class HoaDonService {
 
     @Transactional
     public HoaDonDetailDto capNhatTrangThai(String ma, CapNhatTrangThaiHoaDonDto request) {
+        shiftPayments.lockPayments();
         if (request != null
                 && (com.smashstep.datn.invoice.rules.PosPriceSnapshot.metadata(request.getGhiChu())
                 || com.smashstep.datn.invoice.rules.ReturnedGoodsRules.reserved(request.getGhiChu())
@@ -263,8 +265,10 @@ public class HoaDonService {
             com.smashstep.datn.sales.service.TonKhoHoaDonCho.hoanKhiHuy(entityManager, hoaDon);
         if (request.getTrangThai() == 6)
             com.smashstep.datn.storefront.checkout.OnlineOrderInventory.restore(entityManager, hoaDon);
-        if (request.getTrangThai() == 5)
-            com.smashstep.datn.storefront.checkout.OnlineOrderInventory.collectCodOnCompletion(entityManager, hoaDon);
+        if (request.getTrangThai() == 5) {
+            var cod = com.smashstep.datn.storefront.checkout.OnlineOrderInventory.collectCodOnCompletion(entityManager, hoaDon);
+            if (cod != null) shiftPayments.record(entityManager, cod, idNhanVienThaoTac);
+        }
         hoaDon.setTrangThai(request.getTrangThai());
         hoaDon.setNgayCapNhat(LocalDateTime.now());
 
@@ -287,6 +291,7 @@ public class HoaDonService {
 
     @Transactional
     public HoaDonDetailDto xuLyGiaoThatBai(String ma, com.smashstep.datn.invoice.dto.XuLyGiaoThatBaiDto request) {
+        shiftPayments.lockPayments();
         dichVuMaHoaDon.lockInvoiceCreation();
         var h=hoaDonRepository.findByMaHoaDonForUpdate(ma).orElseThrow(() -> AppException.notFound("Không tìm thấy hóa đơn"));
         Integer previousStatus=h.getTrangThai();
@@ -340,6 +345,7 @@ public class HoaDonService {
                 refund.setMaGiaoDich("REFUND-"+h.getId()+"-"+java.util.UUID.randomUUID());
                 refund.setMoTa("Nhân viên " + actor + " xác nhận đã hoàn thực tế; chứng từ: " + request.getMaHoanTien().trim());
                 refund.setThoiGian(LocalDateTime.now()); entityManager.persist(refund);
+                shiftPayments.record(entityManager, refund, actor);
                 ghiXuLy(h,actor,7,"Đã xác nhận hoàn tiền thực tế: "+due.toPlainString()+" đ; chứng từ "+request.getMaHoanTien().trim());
 
             } else {

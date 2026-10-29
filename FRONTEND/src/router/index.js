@@ -36,6 +36,7 @@ const router = createRouter({
     // ── Auth (public) ───────────────────────────────────
     { path: '/dang-nhap',                    component: AdminLogin,         meta: { public: true, guestOnly: true } },
     { path: '/quen-mat-khau-quan-ly',        component: AdminForgotPassword, meta: { public: true, guestOnly: true } },
+    { path: '/dat-lai-mat-khau',             component: ResetPassword,       meta: { public: true } },
     { path: '/khach-hang/dang-nhap',         component: CustomerLogin,      meta: { public: true, guestOnly: true } },
     { path: '/khach-hang/quen-mat-khau',     component: ForgotPassword, meta: { public: true, guestOnly: true } },
     { path: '/khach-hang/dat-lai-mat-khau',  component: ResetPassword,  meta: { public: true } },

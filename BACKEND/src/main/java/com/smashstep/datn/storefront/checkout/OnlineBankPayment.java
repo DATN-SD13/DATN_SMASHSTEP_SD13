@@ -30,6 +30,7 @@ import java.util.Objects;
 @Service
 @Transactional(readOnly = true)
 public class OnlineBankPayment {
+    @Autowired private com.smashstep.datn.schedule.service.ShiftPaymentAttribution shiftPayments;
     private final EntityManager em;
     private final InvoiceCodeService codes;
     private final String bank, account, name, label;
@@ -39,30 +40,30 @@ public class OnlineBankPayment {
 
     @Autowired
     public OnlineBankPayment(EntityManager em, InvoiceCodeService codes,
-            @Value("${app.payment.qr.enabled:true}") boolean enabled,
-            @Value("${app.payment.qr.bank-bin:970422}") String bank,
-            @Value("${app.payment.qr.account:0966026145}") String account,
-            @Value("${app.payment.qr.account-name:VU CHI TUAN ANH}") String name,
-            @Value("${app.payment.qr.bank-label:MB Bank}") String label) {
+                             @Value("${app.payment.qr.enabled:true}") boolean enabled,
+                             @Value("${app.payment.qr.bank-bin:970422}") String bank,
+                             @Value("${app.payment.qr.account:0966026145}") String account,
+                             @Value("${app.payment.qr.account-name:VU CHI TUAN ANH}") String name,
+                             @Value("${app.payment.qr.bank-label:MB Bank}") String label) {
         this(em, codes, enabled, bank, account, name, label, Clock.systemDefaultZone());
     }
     OnlineBankPayment(EntityManager em, InvoiceCodeService codes, boolean enabled,
-            String bank, String account, String name, String label, Clock clock) {
+                      String bank, String account, String name, String label, Clock clock) {
         this.em = em; this.codes = codes; this.enabled = enabled;
         this.bank = bank.trim(); this.account = account.trim(); this.name = normalizeAccountName(name); this.label = label.trim();
         this.clock = clock;
     }
 
     public record Payment(String methodCode, String status, String message,
-            @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
-            BigDecimal amount, String bankLabel, String accountNumber, String accountName,
-            String memo, String qrUrl, LocalDateTime paidAt, boolean payable,
-            Instant expiresAt, Instant serverTime) {}
+                          @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
+                          BigDecimal amount, String bankLabel, String accountNumber, String accountName,
+                          String memo, String qrUrl, LocalDateTime paidAt, boolean payable,
+                          Instant expiresAt, Instant serverTime) {}
 
     public record Confirmation(@NotNull @DecimalMin("1") @Digits(integer = 13, fraction = 0) BigDecimal amount,
-            @NotBlank @Pattern(regexp = "[A-Za-z0-9][A-Za-z0-9._/\\-]{3,99}",
-                    message = "Mã giao dịch ngân hàng từ 4 đến 100 ký tự, chỉ gồm chữ, số, dấu chấm, gạch nối, gạch chéo hoặc gạch dưới") String reference,
-            @NotNull @AssertTrue(message = "Cần xác nhận đã nhận đúng tiền trên tài khoản ngân hàng") Boolean received) {}
+                               @NotBlank @Pattern(regexp = "[A-Za-z0-9][A-Za-z0-9._/\\-]{3,99}",
+                                       message = "Mã giao dịch ngân hàng từ 4 đến 100 ký tự, chỉ gồm chữ, số, dấu chấm, gạch nối, gạch chéo hoặc gạch dưới") String reference,
+                               @NotNull @AssertTrue(message = "Cần xác nhận đã nhận đúng tiền trên tài khoản ngân hàng") Boolean received) {}
 
     public boolean configured() {
         return enabled && bank.matches("[0-9]{6}") && account.matches("[A-Za-z0-9]{1,19}")
@@ -88,7 +89,7 @@ public class OnlineBankPayment {
     }
     public static boolean hasReceipt(EntityManager em, HoaDon h) {
         return h.getNgayThanhToan() != null || em.createQuery(
-                "select count(p) from LichSuThanhToan p where p.idHoaDon.id=:id and p.trangThai in (1,2)", Long.class)
+                        "select count(p) from LichSuThanhToan p where p.idHoaDon.id=:id and p.trangThai in (1,2)", Long.class)
                 .setParameter("id", h.getId()).getSingleResult() > 0;
     }
     public String memo(HoaDon h) {
@@ -135,6 +136,7 @@ public class OnlineBankPayment {
 
     @Transactional
     public Payment confirm(String code, Confirmation request) {
+        shiftPayments.lockPayments();
         Long actor = PosActor.employeeId();
         var employee = em.find(NhanVien.class, actor);
         if (employee == null || !Integer.valueOf(1).equals(employee.getTrangThai())) throw AppException.forbidden("Nhân viên không hoạt động");
@@ -163,6 +165,7 @@ public class OnlineBankPayment {
         receipt.setIdHoaDon(h); receipt.setIdPhuongThucThanhToan(h.getIdPhuongThucThanhToan());
         receipt.setSoTien(h.getThanhTien()); receipt.setMaGiaoDich(reference); receipt.setTrangThai(1); receipt.setThoiGian(now);
         receipt.setMoTa("Nhân viên " + actor + " đối soát đã nhận chuyển khoản; nội dung " + memo(h)); em.persist(receipt);
+        shiftPayments.record(em, receipt, actor);
         h.setNgayThanhToan(now); h.setNgayCapNhat(now);
         var event = new LichSuHoaDon(); event.setIdHoaDon(h); event.setNguoiTao(actor); event.setTrangThai(h.getTrangThai());
         event.setNgayTao(now); event.setGhiChu("Đã nhận đủ tiền chuyển khoản QR; giao dịch " + reference); em.persist(event);

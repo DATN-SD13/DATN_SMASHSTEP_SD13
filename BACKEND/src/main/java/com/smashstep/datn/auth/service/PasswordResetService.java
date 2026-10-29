@@ -3,6 +3,8 @@ package com.smashstep.datn.auth.service;
 import com.smashstep.datn.common.exception.AppException;
 import com.smashstep.datn.customer.entity.KhachHang;
 import com.smashstep.datn.customer.repository.KhachHangRepository;
+import com.smashstep.datn.employee.entity.NhanVien;
+import com.smashstep.datn.employee.repository.NhanVienRepository;
 import com.smashstep.datn.promotion.service.EmailService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,21 +19,23 @@ import java.time.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
-/** Expiring one-use reset links without introducing columns into the locked canonical schema.
- * Tokens are local to this application instance; restarting it invalidates outstanding links. */
+/**
+ * Expiring one-use reset links without introducing columns into the locked canonical schema.
+ * Tokens are local to this application instance; restarting it invalidates outstanding links.
+ * Supports both KhachHang (customer) and NhanVien (admin/staff) accounts.
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class PasswordResetService {
     private final KhachHangRepository khachHangRepository;
+    private final NhanVienRepository nhanVienRepository;
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
-    @org.springframework.beans.factory.annotation.Autowired
-    private com.smashstep.datn.employee.repository.NhanVienRepository nhanVienRepository;
-    @Value("${smashstep.website-url:http://localhost:5173}")
+    @Value("${smashstep.website-url:http://localhost:5174}")
     private String websiteUrl;
     @Value("${app.frontend-url:http://localhost:5173}")
-    private String employeeWebsiteUrl;
+    private String adminFrontendUrl;
     private static final int TOKEN_EXPIRY_MINUTES = 30;
     private static final SecureRandom RANDOM = new SecureRandom();
     private final Map<String, Grant> grants = new ConcurrentHashMap<>();
@@ -68,7 +72,7 @@ public class PasswordResetService {
         String key = digest(token);
         grants.put(key,new Grant(userId,password,now,now.plusSeconds(TOKEN_EXPIRY_MINUTES*60L),employee));
         try {
-            String link = (employee ? employeeWebsiteUrl : websiteUrl).replaceAll("/+$", "") + (employee ? "/nhan-vien/dat-lai-mat-khau?token=" : "/khach-hang/dat-lai-mat-khau?token=") + token;
+            String link = (employee ? adminFrontendUrl : websiteUrl).replaceAll("/+$", "") + "/dat-lai-mat-khau?token=" + token;
             emailService.sendPasswordResetEmail(address,name,link,TOKEN_EXPIRY_MINUTES);
         } catch (RuntimeException ex) {
             grants.remove(key);
@@ -102,7 +106,7 @@ public class PasswordResetService {
         grants.remove(key);
     }
 
-    @Transactional(readOnly=true)
+    @Transactional(readOnly = true)
     public boolean kiemTraToken(String token) {
         if (token == null || token.isBlank() || token.length() > 128) return false;
         Grant grant = grants.get(digest(token));
@@ -112,8 +116,8 @@ public class PasswordResetService {
     private KhachHang validCustomer(Grant grant) {
         if (grant == null || grant.employee() || !grant.expiresAt().isAfter(clock.instant())) return null;
         return khachHangRepository.findById(grant.customerId())
-            .filter(c -> Integer.valueOf(1).equals(c.getTrangThai()) && Objects.equals(c.getMatKhau(),grant.passwordSnapshot()))
-            .orElse(null);
+                .filter(c -> Integer.valueOf(1).equals(c.getTrangThai()) && Objects.equals(c.getMatKhau(),grant.passwordSnapshot()))
+                .orElse(null);
     }
     private com.smashstep.datn.employee.entity.NhanVien validEmployee(Grant grant) {
         if (grant == null || !grant.employee() || !grant.expiresAt().isAfter(clock.instant())) return null;
@@ -123,7 +127,10 @@ public class PasswordResetService {
     }
     private static String digest(String value) {
         if (value == null || value.isBlank() || value.length() > 128) return "";
-        try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8))); }
-        catch (java.security.NoSuchAlgorithmException ex) { throw new IllegalStateException(ex); }
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException ex) {
+            throw new IllegalStateException(ex);
+        }
     }
 }

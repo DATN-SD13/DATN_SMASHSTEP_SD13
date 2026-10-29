@@ -35,6 +35,7 @@ import java.util.Map;
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
+@lombok.extern.slf4j.Slf4j
 public class LichLamViecService {
 
     private final LichLamViecRepository lichLamViecRepository;
@@ -42,6 +43,8 @@ public class LichLamViecService {
     private final NhanVienRepository    nhanVienRepository;
     private final com.smashstep.datn.product.service.KhoaGhiSanPham khoaGhi;
     private final LichLamViecImportService nhapExcel;
+    @org.springframework.beans.factory.annotation.Autowired private GiaoCaNghiepVu giaoCa;
+    private java.time.Clock clock=java.time.Clock.system(java.time.ZoneId.of("Asia/Ho_Chi_Minh"));
 
     private static final DateTimeFormatter DATE_FMT     = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final DateTimeFormatter DATETIME_FMT = DateTimeFormatter.ofPattern("HH:mm\ndd/MM/yyyy");
@@ -66,11 +69,22 @@ public class LichLamViecService {
 
     // ── Ca hôm nay của nhân viên ──────────────────────────
     public List<LichLamViecResponse> getCaHomNay(Long nhanVienId) {
-        LocalDate today = LocalDate.now();
-        return lichLamViecRepository.findForEmployee(nhanVienId,today,today).stream()
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh"));
+        return lichLamViecRepository.findForEmployee(nhanVienId,today.minusDays(1),today.plusDays(1)).stream()
+                .filter(row -> today.equals(row.getNgayLam()) || Integer.valueOf(1).equals(row.getTrangThai()))
                 .map(l -> toResponse(l, false))
                 .toList();
     }
+
+    // ── Ca sắp bắt đầu cần xác nhận giao ca ──────────────
+    /**
+     * Kiểm tra xem nhân viên có ca nào sắp bắt đầu hoặc đang trong ca chưa xác nhận (trangThai 0 hoặc 4).
+     * Nếu có, trả về thông tin ca đó kèm dữ liệu tổng hợp tiền mặt/chuyển khoản của ca trước.
+     * Trả về null nếu không có ca nào cần xác nhận.
+     */
+    public com.smashstep.datn.schedule.dto.GiaoCaResponse getCaSapBatDau(Long employee){return giaoCa.sapNhan(employee);}
+    public com.smashstep.datn.schedule.dto.KetThucCaResponse getCaDangLam(Long employee){return giaoCa.dangLam(employee);}
+    public LichLamViecResponse giaoCaResponse(LichLamViec row){return toResponse(lichLamViecRepository.findById(row.getId()).orElseThrow(()->AppException.notFound("Không tìm thấy lịch làm việc")),false);}
 
     // ── Danh sách thường ───────────────────────────────────
     public PageResponse<LichLamViecResponse> getAll(
@@ -143,7 +157,7 @@ public class LichLamViecService {
     public LichLamViecResponse thayNhanVien(Long id,String code){
         khoaGhi.khoa("schedule");
         var old=lichLamViecRepository.findById(id).orElseThrow(()->AppException.notFound("Không tìm thấy lịch cần thay"));
-        if(old.getTrangThai()==null||old.getTrangThai()>1)throw AppException.conflict("Chỉ thay nhân viên của lịch chưa kết thúc/chưa đánh dấu vắng mặt");
+        if(old.getTrangThai()==null||old.getTrangThai()!=0 && old.getTrangThai()!=4)throw AppException.conflict("Chỉ thay nhân viên của lịch chưa kết thúc/chưa đánh dấu vắng mặt");
         if(code==null||code.isBlank()||code.length()>50)throw AppException.badRequest("Cần mã nhân viên thay thế hợp lệ");
         var req=new LichLamViecRequest();req.setMaNhanViens(List.of(code));req.setCaLamViecId(old.getIdCaLamViec().getId());req.setNgayLam(old.getNgayLam());
         req.setGhiChu("Thay thế "+old.getIdNhanVien().getMaNhanVien());
@@ -159,13 +173,25 @@ public class LichLamViecService {
         LichLamViec llv = lichLamViecRepository.findById(id)
                 .orElseThrow(() -> AppException.notFound("Không tìm thấy lịch làm việc"));
 
-        if (request.getTrangThai() < 0 || request.getTrangThai() > 3) {
-            throw AppException.badRequest("Trạng thái không hợp lệ (0-3)");
+        if (request.getTrangThai() < 0 || request.getTrangThai() > 4) {
+            throw AppException.badRequest("Trạng thái không hợp lệ (0-4)");
         }
 
+        var now=LocalDateTime.now(clock);
+        var reason=java.util.Objects.toString(request.getLyDoDieuChinh(),"").trim();
+        if(reason.length()>200)throw AppException.badRequest("Lý do điều chỉnh tối đa 200 ký tự");
+        QuyTacTrangThaiCa.kiemTraDieuChinh(llv,request.getTrangThai(),now,reason);
+        boolean reopening=Integer.valueOf(2).equals(llv.getTrangThai()) && request.getTrangThai()!=2;
+        String note=request.getGhiChu()==null?llv.getGhiChu():request.getGhiChu();
+        if(reopening){
+            String audit="["+now.format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss"))+"] Mở lại lịch đánh dấu vắng: "+reason;
+            note=note==null || note.isBlank()?audit:note+" | "+audit;
+        }
+        if(note!=null && note.length()>500)throw AppException.badRequest("Ghi chú gồm lý do điều chỉnh tối đa 500 ký tự; hãy rút gọn nội dung");
         llv.setTrangThai(request.getTrangThai());
-        if (request.getGhiChu() != null) llv.setGhiChu(request.getGhiChu());
-        llv.setNgayCapNhat(LocalDateTime.now());
+        llv.setGhiChu(note);
+        // Preserve the legacy completion timestamp when only editing a closed shift's note.
+        if (!Integer.valueOf(3).equals(llv.getTrangThai())) llv.setNgayCapNhat(now);
 
         return toResponse(lichLamViecRepository.save(llv), false);
     }
@@ -176,6 +202,7 @@ public class LichLamViecService {
         khoaGhi.khoa("schedule");
         LichLamViec llv = lichLamViecRepository.findById(id)
                 .orElseThrow(() -> AppException.notFound("Không tìm thấy lịch làm việc"));
+        if (Integer.valueOf(1).equals(llv.getTrangThai()) || Integer.valueOf(3).equals(llv.getTrangThai())) throw AppException.conflict("Không xóa lịch đang làm hoặc đã kết thúc để giữ biên bản giao ca");
         lichLamViecRepository.delete(llv);
     }
 
@@ -310,7 +337,7 @@ public class LichLamViecService {
                     "ngayLam yyyy-MM-dd (*)",
                     "ghiChu"
             };
-            int[] colWidths = {5000, 8000, 4000, 8000, 6000, 6000};
+            int[] colWidths = {5000, 8000, 4000, 9000, 7000, 7000};
             Row headerRow = sheet.createRow(0);
             for (int i = 0; i < headers.length; i++) {
                 Cell cell = headerRow.createCell(i);
@@ -319,8 +346,8 @@ public class LichLamViecService {
                 sheet.setColumnWidth(i, colWidths[i]);
             }
 
-            // Số dòng data tối đa hỗ trợ
-            int maxRows = 500;
+            // Số dòng data tối đa hỗ trợ (cho data validation)
+            int maxRows  = 500;
             int nvCount  = nhanViens.size();
             int caCount  = cas.size();
 
@@ -333,7 +360,7 @@ public class LichLamViecService {
                 Cell cellA = row.createCell(0);
                 cellA.setCellStyle(dStyle);
 
-                // Cột B — tenNhanVien: VLOOKUP tự động
+                // B — tenNhanVien: tự hiện theo mã NV ở cột A
                 Cell cellB = row.createCell(1);
                 if (nvCount > 0) {
                     cellB.setCellFormula(
@@ -341,13 +368,13 @@ public class LichLamViecService {
                                     + "IFERROR(VLOOKUP(A" + (r+1) + ",_NhanVien!$A:$B,2,0),\"Không tìm thấy\"))"
                     );
                 }
-                cellB.setCellStyle(roStyle);
+                cellB.setCellStyle(dStyle);
 
                 // Cột C — maCa: người dùng chọn từ danh sách
                 Cell cellC = row.createCell(2);
                 cellC.setCellStyle(dStyle);
 
-                // Cột D — tenCa: VLOOKUP tự động
+                // D — tenCa: tự hiện theo mã ca ở cột C
                 Cell cellD = row.createCell(3);
                 if (caCount > 0) {
                     cellD.setCellFormula(
@@ -355,7 +382,7 @@ public class LichLamViecService {
                                     + "IFERROR(VLOOKUP(C" + (r+1) + ",_CaLamViec!$A:$B,2,0),\"Không tìm thấy\"))"
                     );
                 }
-                cellD.setCellStyle(roStyle);
+                cellD.setCellStyle(dStyle);
 
                 // Cột E — ngayLam: người dùng nhập ngày làm
                 Cell cellE = row.createCell(4);
@@ -400,43 +427,110 @@ public class LichLamViecService {
 
             // ── Sheet hướng dẫn ──
             Sheet guide = wb.createSheet("HuongDan");
-            String[] lines = {
-                    "HƯỚNG DẪN IMPORT LỊCH LÀM VIỆC",
-                    "",
-                    "Sheet 'LichLamViec' gồm 6 cột:",
-                    "  - maNhanVien (*)          : Mã nhân viên — có dropdown gợi ý, bắt buộc",
-                    "  - Tên nhân viên (tự động) : Tự động hiện khi nhập đúng mã (không cần nhập)",
-                    "  - maCa (*)                : Mã ca làm việc — có dropdown gợi ý, bắt buộc",
-                    "  - Tên ca (tự động)        : Tự động hiện khi nhập đúng mã (không cần nhập)",
-                    "  - ngayLam (*)             : Ngày làm, định dạng yyyy-MM-dd, ví dụ: 2026-10-16, bắt buộc",
-                    "  - ghiChu                  : Ghi chú (tuỳ chọn)",
-                    "",
-                    "Lưu ý:",
-                    "  - Các cột (*) là bắt buộc.",
-                    "  - Cột 'Tên nhân viên' và 'Tên ca' chỉ để tham khảo, không cần nhập.",
-                    "  - Nếu tên hiện 'Không tìm thấy' nghĩa là mã không đúng.",
-                    "  - Lịch đã có trong DB được bỏ qua; trùng trong file hoặc chồng giờ sẽ báo lỗi.",
-                    "  - Xem trước và sửa hết lỗi rồi mới xác nhận. Có lỗi thì chưa lưu bất kỳ dòng nào.",
-                    "  - Ghi chú tối đa 500 ký tự. Bỏ qua các dòng chưa chọn nhân viên/ca và chưa nhập ghi chú.",
-                    "  - Hỗ trợ tối đa 500 dòng mỗi lần import."
+            guide.setColumnWidth(0, 14000);
+            guide.setColumnWidth(1, 14000);
+            guide.setColumnWidth(2, 8000);
+            guide.setColumnWidth(3, 14000);
+            guide.setColumnWidth(4, 8000);
+            guide.setColumnWidth(5, 8000);
+
+            // Style tiêu đề lớn
+            Font titleFont = wb.createFont();
+            titleFont.setBold(true);
+            titleFont.setFontHeightInPoints((short) 13);
+            CellStyle titleStyle = wb.createCellStyle();
+            titleStyle.setFont(titleFont);
+
+            // Style tiêu đề bảng ví dụ (giống header sheet chính)
+            CellStyle exHStyle = wb.createCellStyle();
+            exHStyle.cloneStyleFrom(hStyle);
+
+            // Style dữ liệu ví dụ
+            CellStyle exDStyle = wb.createCellStyle();
+            exDStyle.cloneStyleFrom(dStyle);
+            exDStyle.setFillForegroundColor(IndexedColors.LIGHT_YELLOW.getIndex());
+            exDStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+
+            int row = 0;
+
+            // Tiêu đề
+            Cell titleCell = guide.createRow(row++).createCell(0);
+            titleCell.setCellValue("HƯỚNG DẪN IMPORT LỊCH LÀM VIỆC");
+            titleCell.setCellStyle(titleStyle);
+
+            guide.createRow(row++); // dòng trống
+
+            // Mô tả cột
+            String[][] colDesc = {
+                    {"Mã nhân viên (*)",        "Bắt buộc. Chọn từ dropdown hoặc nhập mã nhân viên."},
+                    {"Tên nhân viên (tự động)", "Không cần nhập. Tự hiện sau khi nhập đúng mã."},
+                    {"Mã ca (*)",               "Bắt buộc. Chọn từ dropdown hoặc nhập mã ca làm việc."},
+                    {"Tên ca (tự động)",        "Không cần nhập. Tự hiện sau khi nhập đúng mã ca."},
+                    {"Ngày làm (*)",            "Bắt buộc. Định dạng dd/MM/yyyy, ví dụ: " + LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))},
+                    {"Ghi chú",                "Tuỳ chọn. Mô tả thêm nếu cần."},
             };
-            CellStyle guideStyle = wb.createCellStyle();
-            Font guideFont = wb.createFont();
-            guideStyle.setFont(guideFont);
-            for (int i = 0; i < lines.length; i++) {
-                Row r = guide.createRow(i);
-                Cell c = r.createCell(0);
-                c.setCellValue(lines[i]);
-                if (i == 0) {
-                    Font boldFont = wb.createFont();
-                    boldFont.setBold(true);
-                    boldFont.setFontHeightInPoints((short) 13);
-                    CellStyle titleStyle = wb.createCellStyle();
-                    titleStyle.setFont(boldFont);
-                    c.setCellStyle(titleStyle);
+
+            Font boldSm = wb.createFont(); boldSm.setBold(true);
+            CellStyle boldStyle = wb.createCellStyle(); boldStyle.setFont(boldSm);
+
+            for (String[] desc : colDesc) {
+                Row r = guide.createRow(row++);
+                Cell c0 = r.createCell(0); c0.setCellValue("• " + desc[0]); c0.setCellStyle(boldStyle);
+                Cell c1 = r.createCell(1); c1.setCellValue(desc[1]);
+            }
+
+            guide.createRow(row++); // dòng trống
+
+            // Lưu ý
+            Cell noteTitle = guide.createRow(row++).createCell(0);
+            noteTitle.setCellValue("LƯU Ý QUAN TRỌNG:");
+            noteTitle.setCellStyle(boldStyle);
+
+            String[] notes = {
+                    "• Không thay đổi tên sheet 'LichLamViec' và không xóa dòng tiêu đề.",
+                    "• Dòng đã có lịch trùng ca + ngày sẽ bị bỏ qua (không báo lỗi).",
+                    "• Nếu tên NV / tên ca hiện 'Không tìm thấy' nghĩa là mã không đúng.",
+                    "• Hỗ trợ tối đa 500 dòng mỗi lần import.",
+            };
+            for (String note : notes) {
+                guide.createRow(row++).createCell(0).setCellValue(note);
+            }
+
+            guide.createRow(row++); // dòng trống
+
+            // Bảng ví dụ
+            Cell exTitle = guide.createRow(row++).createCell(0);
+            exTitle.setCellValue("VÍ DỤ DỮ LIỆU:");
+            exTitle.setCellStyle(boldStyle);
+
+            // Header bảng ví dụ
+            String[] exHeaders = {"Mã nhân viên (*)", "Tên nhân viên (tự động)", "Mã ca (*)", "Tên ca (tự động)", "Ngày làm (*)", "Ghi chú"};
+            Row exHeaderRow = guide.createRow(row++);
+            for (int c = 0; c < exHeaders.length; c++) {
+                Cell cell = exHeaderRow.createCell(c);
+                cell.setCellValue(exHeaders[c]);
+                cell.setCellStyle(exHStyle);
+            }
+
+            // Dòng ví dụ từ dữ liệu thực
+            int exCount = Math.min(3, Math.min(nvCount, caCount > 0 ? 3 : 0));
+            for (int i = 0; i < exCount; i++) {
+                Row exRow = guide.createRow(row++);
+                String maNv  = nhanViens.get(i).getMaNhanVien();
+                String tenNv = nhanViens.get(i).getTenNhanVien();
+                String maCa  = cas.get(i % caCount).getMaCa();
+                String tenCa = cas.get(i % caCount).getTenCa()
+                        + " (" + fmt(cas.get(i % caCount).getGioBatDau())
+                        + "-"  + fmt(cas.get(i % caCount).getGioKetThuc()) + ")";
+                String ngay  = LocalDate.now().plusDays(i).format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+
+                String[] vals = {maNv, tenNv, maCa, tenCa, ngay, ""};
+                for (int c = 0; c < vals.length; c++) {
+                    Cell cell = exRow.createCell(c);
+                    cell.setCellValue(vals[c]);
+                    cell.setCellStyle(exDStyle);
                 }
             }
-            guide.setColumnWidth(0, 22000);
 
             // Đặt LichLamViec là sheet active
             wb.setActiveSheet(wb.getSheetIndex("LichLamViec"));
@@ -655,25 +749,46 @@ public class LichLamViecService {
      */
     @Transactional
     public int tuDongKetThuc() {
-        khoaGhi.khoa("schedule");
-        LocalDateTime now = LocalDateTime.now();
-        List<LichLamViec> expired = lichLamViecRepository.findExpiredLich(now);
-        for (LichLamViec llv : expired) {
-            llv.setTrangThai(3);
-            llv.setNgayCapNhat(now);
-            lichLamViecRepository.save(llv);
-        }
-        return expired.size();
+        return giaoCa.quaGio();
     }
 
-    private String cellStr(Cell cell) {        if (cell == null) return "";
-        return switch (cell.getCellType()) {
+    private String cellStr(Cell cell) {
+        if (cell == null) return "";
+        CellType type = cell.getCellType();
+        // Evaluate formula để lấy giá trị thực
+        if (type == CellType.FORMULA) {
+            try {
+                FormulaEvaluator evaluator = cell.getSheet().getWorkbook()
+                        .getCreationHelper().createFormulaEvaluator();
+                CellValue cv = evaluator.evaluate(cell);
+                type = cv.getCellType();
+                return switch (type) {
+                    case STRING  -> cv.getStringValue().trim();
+                    case NUMERIC -> {
+                        double num = cv.getNumberValue();
+                        if (num == 0) yield ""; // ô trống date-formatted
+                        if (DateUtil.isCellDateFormatted(cell)) {
+                            yield DateUtil.getLocalDateTime(num, false).toLocalDate()
+                                    .format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+                        }
+                        yield String.valueOf((long) num);
+                    }
+                    default -> "";
+                };
+            } catch (Exception e) {
+                return "";
+            }
+        }
+        return switch (type) {
             case STRING  -> cell.getStringCellValue().trim();
             case NUMERIC -> {
+                double num = cell.getNumericCellValue();
+                if (num == 0) yield ""; // ô trống date-formatted
                 if (DateUtil.isCellDateFormatted(cell)) {
-                    yield cell.getLocalDateTimeCellValue().toLocalDate().toString();
+                    yield cell.getLocalDateTimeCellValue().toLocalDate()
+                            .format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
                 }
-                yield String.valueOf((long) cell.getNumericCellValue());
+                yield String.valueOf((long) num);
             }
             default -> "";
         };
@@ -702,19 +817,12 @@ public class LichLamViecService {
             }
         }
 
-        // Doanh thu
-        BigDecimal doanhThu = BigDecimal.ZERO;
-        if (tinhDoanhThu && llv.getNgayLam() != null
-                && ca.getGioBatDau() != null && ca.getGioKetThuc() != null) {
-            LocalDate ngay    = llv.getNgayLam();
-            LocalTime gioBD   = ca.getGioBatDau();
-            LocalTime gioKT   = ca.getGioKetThuc();
-            LocalDateTime batDau  = ngay.atTime(gioBD);
-            LocalDate ngayKT  = gioKT.isBefore(gioBD) ? ngay.plusDays(1) : ngay;
-            LocalDateTime ketThuc = ngayKT.atTime(gioKT);
-            doanhThu = lichLamViecRepository.tinhDoanhThu(nv.getId(), batDau, ketThuc);
-            if (doanhThu == null) doanhThu = BigDecimal.ZERO;
+        var settlement = giaoCa.tongKet(llv);
+        BigDecimal doanhThu = tinhDoanhThu ? settlement.getDoanhThuCa() : BigDecimal.ZERO;
+        if (Integer.valueOf(1).equals(llv.getTrangThai()) || settlement.isDaChot()) {
+            tgBatDau = settlement.getThoiGianBatDau().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm\ndd/MM/yyyy"));
         }
+        if (settlement.isDaChot()) tgKetThuc = settlement.getThoiGianKetThuc().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm\ndd/MM/yyyy"));
 
         String vaiTro = nv.getIdVaiTro() != null ? nv.getIdVaiTro().getTenVaiTro() : "—";
 
@@ -735,6 +843,11 @@ public class LichLamViecService {
                 .trangThai(llv.getTrangThai())
                 .trangThaiLabel(trangThaiLabel(llv.getTrangThai()))
                 .ghiChu(llv.getGhiChu())
+                .nhanCaLuc((Integer.valueOf(1).equals(llv.getTrangThai())||settlement.isDaChot())?settlement.getThoiGianBatDau():null)
+                .ketCaLuc(settlement.isDaChot()?settlement.getThoiGianKetThuc():null)
+                .tienMatDauCa(settlement.getTienMatDauCa()).tienMatDuKien(settlement.getTienMatDuKien())
+                .tienMatThucTe(settlement.getTienMatThucTe()).chenhLech(settlement.getChenhLech())
+                .daChot(settlement.isDaChot()).tuDongKetThuc(settlement.isTuDongKetThuc())
                 .build();
     }
 
@@ -747,9 +860,10 @@ public class LichLamViecService {
         if (tt == null) return "";
         return switch (tt) {
             case 0 -> "Chờ giao ca";
-            case 1 -> "Giao ca";
+            case 1 -> "Đang làm";
             case 2 -> "Vắng mặt";
             case 3 -> "Đã kết thúc";
+            case 4 -> "Chưa nhận ca";
             default -> "Không xác định";
         };
     }
