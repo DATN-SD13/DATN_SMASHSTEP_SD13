@@ -8,3 +8,4 @@ dist/
 BACKEND/HELP.md
 BACKEND/uploads/
 BACKEND/private/staff-notifications/
+BACKEND/private/shift-ledger/

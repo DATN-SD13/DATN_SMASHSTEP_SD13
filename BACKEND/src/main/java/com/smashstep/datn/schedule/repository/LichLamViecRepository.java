@@ -232,12 +232,15 @@ public interface LichLamViecRepository extends JpaRepository<LichLamViec, Long> 
     List<LichLamViec> findForEmployee(@Param("employee") Long employee,@Param("from") LocalDate from,@Param("to") LocalDate to);
     boolean existsByIdCaLamViec_Id(Long shift);
     /** Candidates only: caller orders by immutable close receipts, never editable update timestamps. */
-    @Query("""
-        select l from LichLamViec l
-        join fetch l.idNhanVien nv join fetch l.idCaLamViec ca
-        where l.trangThai = 3
-          and (l.ngayLam < :day or (l.ngayLam = :day and ca.gioBatDau < :start))
-        """)
+    // SQL Server JDBC may bind LocalTime as DATETIME; compare explicit TIME values.
+    @Query(value = """
+        SELECT l.* FROM lich_lam_viec l
+        JOIN ca_lam_viec ca ON ca.id = l.id_ca_lam_viec
+        WHERE l.trang_thai = 3
+          AND (l.ngay_lam < CAST(:day AS date)
+               OR (l.ngay_lam = CAST(:day AS date)
+                   AND CAST(ca.gio_bat_dau AS time) < CAST(:start AS time)))
+        """, nativeQuery = true)
     List<LichLamViec> findClosedBeforeShift(@Param("day") LocalDate day,
                                             @Param("start") LocalTime start);
 }
