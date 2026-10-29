@@ -1682,3 +1682,22 @@ SELECT name AS canonical_table FROM sys.tables WHERE is_ms_shipped=0 ORDER BY na
 GO
 SELECT loai_hoa_don, COUNT_BIG(*) AS so_luong FROM dbo.hoa_don GROUP BY loai_hoa_don ORDER BY loai_hoa_don;
 GO
+
+GO
+-- Product reviews (additive)
+-- Additive migration: run once on the existing SmashStep database; safe to rerun.
+IF OBJECT_ID(N'dbo.danh_gia_san_pham', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.danh_gia_san_pham (
+        id BIGINT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        id_san_pham BIGINT NOT NULL REFERENCES dbo.san_pham(id),
+        id_khach_hang BIGINT NOT NULL REFERENCES dbo.khach_hang(id),
+        so_sao INT NOT NULL CHECK (so_sao BETWEEN 1 AND 5),
+        binh_luan NVARCHAR(2000) NOT NULL,
+        ngay_tao DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+        ngay_cap_nhat DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+        CONSTRAINT UQ_danh_gia_khach_san_pham UNIQUE (id_khach_hang, id_san_pham)
+    );
+    CREATE INDEX IX_danh_gia_san_pham ON dbo.danh_gia_san_pham(id_san_pham, ngay_tao DESC);
+END;
+GO
