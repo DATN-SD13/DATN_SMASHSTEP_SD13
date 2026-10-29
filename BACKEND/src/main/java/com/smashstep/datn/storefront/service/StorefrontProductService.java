@@ -26,6 +26,7 @@ import java.util.stream.Collectors;
 public class StorefrontProductService {
     private final EntityManager em;
     private final CurrentPriceService currentPrices;
+    private final com.smashstep.datn.storefront.review.ProductReviewService reviews;
     private static final int BATCH = 250;
     private static final String ELIGIBLE = "v.trangThai = 1 and v.kichHoat = true and v.giaBan > 0"
             + " and p.trangThai = 1 and v.idMauSac is not null and v.idKichThuoc is not null";
@@ -87,7 +88,8 @@ public class StorefrontProductService {
         int total = summaries.size(), from = (int) Math.min((long) input.getPage() * input.getSize(), total);
         var page = summaries.subList(from, Math.min(from + input.getSize(), total));
         var pictures = images(page.stream().map(s -> s.product.getId()).toList());
-        var content = page.stream().map(s -> response(s, pictures)).toList();
+        var ratings = reviews.summaries(page.stream().map(s -> s.product.getId()).toList());
+        var content = page.stream().map(s -> response(s, pictures, ratings)).toList();
         return new PageResponse<>(content, input.getPage(), input.getSize(), total, (total + input.getSize() - 1) / input.getSize());
     }
 
@@ -111,7 +113,7 @@ public class StorefrontProductService {
                     price.getOriginalPrice(), price.getEffectivePrice(), price.getDiscountPercent(), price.isDiscounted(),
                     mainImage(visibleImages, v.getId()), own);
         }).toList();
-        return new StorefrontProductDetailResponse(response(summary, visibleImages), variants, visibleImages);
+        return new StorefrontProductDetailResponse(response(summary, visibleImages, reviews.summaries(List.of(id))), variants, visibleImages);
     }
 
     public StorefrontFilterResponse filters() {
@@ -152,11 +154,13 @@ public class StorefrontProductService {
                 .map(Image::urlAnh).orElse(null);
     }
 
-    private StorefrontProductResponse response(Summary summary, List<Image> allImages) {
+    private StorefrontProductResponse response(Summary summary, List<Image> allImages,
+            Map<Long, com.smashstep.datn.storefront.review.ProductReviewService.Summary> ratings) {
         var p = summary.product;
         var productImages = allImages.stream().filter(i -> Objects.equals(i.productId(), p.getId())
                 && (i.variantId() == null || summary.ids.contains(i.variantId()))).toList();
         var price = summary.price;
+        var rating = ratings.getOrDefault(p.getId(), new com.smashstep.datn.storefront.review.ProductReviewService.Summary(0,0));
         return new StorefrontProductResponse(p.getId(), p.getMaSanPham(), p.getTenSanPham(),
                 p.getIdThuongHieu() == null ? null : p.getIdThuongHieu().getId(), p.getIdThuongHieu() == null ? null : p.getIdThuongHieu().getTenThuongHieu(),
                 p.getIdDanhMuc() == null ? null : p.getIdDanhMuc().getId(), p.getIdDanhMuc() == null ? null : p.getIdDanhMuc().getTenDanhMuc(),
@@ -164,7 +168,7 @@ public class StorefrontProductService {
                 p.getIdCoGiay() == null ? null : p.getIdCoGiay().getTenCoGiay(), p.getIdXuatXu() == null ? null : p.getIdXuatXu().getTenXuatXu(),
                 p.getMoTaChiTiet(), mainImage(productImages, summary.cheapestVariantId),
                 price.getOriginalPrice(), price.getEffectivePrice(), price.getDiscountPercent(), price.isDiscounted(),
-                summary.stock, summary.ids.size(), p.getNgayTao(), summary.maxDiscount);
+                summary.stock, summary.ids.size(), p.getNgayTao(), summary.maxDiscount, rating.average(), rating.count());
     }
 
     private void validate(StorefrontQuery q) {

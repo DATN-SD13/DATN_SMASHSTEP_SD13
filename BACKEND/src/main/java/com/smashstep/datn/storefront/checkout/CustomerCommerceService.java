@@ -292,7 +292,7 @@ public class CustomerCommerceService {
     }
     private Order response(HoaDon h) {
         var lines=em.createQuery("select d from HoaDonChiTiet d join fetch d.idSanPhamChiTiet v join fetch v.idSanPham left join fetch v.idMauSac left join fetch v.idKichThuoc where d.idHoaDon.id=:id order by d.id",HoaDonChiTiet.class)
-                .setParameter("id",h.getId()).getResultList().stream().map(d->{var v=d.getIdSanPhamChiTiet();return new OrderItem(v.getId(),v.getIdSanPham().getTenSanPham(),v.getSku(),v.getIdMauSac()==null?null:v.getIdMauSac().getTenMauSac(),v.getIdKichThuoc()==null?null:v.getIdKichThuoc().getGiaTri(),image(v),Objects.requireNonNullElse(d.getSoLuong(),0),d.getDonGia(),d.getThanhTien());}).toList();
+                .setParameter("id",h.getId()).getResultList().stream().map(d->{var v=d.getIdSanPhamChiTiet();return new OrderItem(v.getId(),v.getIdSanPham().getId(),v.getIdSanPham().getTenSanPham(),v.getSku(),v.getIdMauSac()==null?null:v.getIdMauSac().getTenMauSac(),v.getIdKichThuoc()==null?null:v.getIdKichThuoc().getGiaTri(),image(v),Objects.requireNonNullElse(d.getSoLuong(),0),d.getDonGia(),d.getThanhTien());}).toList();
         var history=em.createQuery("select l from LichSuHoaDon l where l.idHoaDon.id=:id order by l.ngayTao,l.id",LichSuHoaDon.class)
                 .setParameter("id",h.getId()).getResultList().stream().filter(l->!com.smashstep.datn.invoice.rules.PosHistoryRules.danhRieng(l.getGhiChu()) && !com.smashstep.datn.invoice.rules.PosPriceSnapshot.metadata(l.getGhiChu()))
                 .map(l->new Event(l.getTrangThai(),label(l.getTrangThai()),l.getGhiChu(),l.getNgayTao())).toList();
@@ -313,3 +313,4 @@ public class CustomerCommerceService {
         } catch(java.security.NoSuchAlgorithmException e) {throw new IllegalStateException(e);}
     }
 }
+
