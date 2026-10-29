@@ -1118,11 +1118,17 @@ const reportEmail = ref("");
 
 // Ngày bắt đầu và kết thúc báo cáo
 const reportType = ref('month');
+const reportDay = ref(formatDate(new Date()));
 const reportMonth = ref(formatDate(new Date()).slice(0, 7));
 const reportYear = ref(new Date().getFullYear());
 const currentReportMonth = formatDate(new Date()).slice(0, 7);
 const currentReportYear = new Date().getFullYear();
 const reportRange = computed(() => {
+  if (reportType.value === 'day') {
+    const day = String(reportDay.value || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || Number(day.slice(0, 4)) < 2000 || formatDate(new Date(day + 'T00:00:00')) !== day) return { from: '', to: '' };
+    return { from: day, to: day };
+  }
   if (reportType.value === 'month') {
     const match = String(reportMonth.value || '').match(/^(\d{4})-(\d{2})$/);
     if (!match || Number(match[2]) < 1 || Number(match[2]) > 12) return { from: '', to: '' };
@@ -1135,7 +1141,7 @@ const reportRange = computed(() => {
 });
 const reportFromDate = computed(() => reportRange.value.from);
 const reportToDate = computed(() => reportRange.value.to);
-const reportPeriodError = computed(() => !reportFromDate.value ? 'Chọn tháng hoặc năm hợp lệ.' : reportFromDate.value > formatDate(new Date()) ? 'Không gửi báo cáo cho kỳ chưa bắt đầu.' : '');
+const reportPeriodError = computed(() => !reportFromDate.value ? 'Chọn ngày, tháng hoặc năm hợp lệ.' : reportFromDate.value > formatDate(new Date()) ? 'Không gửi báo cáo cho kỳ chưa bắt đầu.' : '');
 const reportIsTemporary = computed(() => reportToDate.value > formatDate(new Date()));
 
 // Trạng thái gửi email
@@ -1202,7 +1208,7 @@ async function sendRevenueReport() {
     }
 
     reportEmailSuccess.value =
-      "Đã gửi báo cáo " + (reportType.value === 'month' ? 'tháng ' + reportMonth.value : 'năm ' + reportYear.value) + " đến " + email;
+      "Đã gửi báo cáo " + (reportType.value === 'day' ? 'ngày ' + reportDay.value.split('-').reverse().join('/') : reportType.value === 'month' ? 'tháng ' + reportMonth.value : 'năm ' + reportYear.value) + " đến " + email;
   } catch (error) {
     console.error("Lỗi gửi báo cáo email:", error);
 
@@ -1354,7 +1360,7 @@ async function saveEmailSchedule(){
   finally{scheduleSaving.value=false;}
 }
 function sentTime(value){return value?new Date(value).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'}):'Chưa gửi';}
-watch([reportType,reportMonth,reportYear],()=>{reportEmailError.value='';reportEmailSuccess.value='';});
+watch([reportType,reportDay,reportMonth,reportYear],()=>{reportEmailError.value='';reportEmailSuccess.value='';});
 
 </script>
 
@@ -1440,25 +1446,25 @@ watch([reportType,reportMonth,reportYear],()=>{reportEmailError.value='';reportE
       <RevenueComparisonPanel v-if="activeStatisticsView === 'comparison'" />
 
       <section v-if="activeStatisticsView === 'email'" class="report-layout">
-        <article class="panel"><div class="panel-heading"><div><h2>Gửi báo cáo tổng kết</h2><p>Chọn báo cáo theo tháng hoặc năm để gửi ngay.</p></div></div>
+        <article class="panel"><div class="panel-heading"><div><h2>Gửi báo cáo tổng kết</h2><p>Chọn báo cáo theo ngày, tháng hoặc năm để gửi ngay.</p></div></div>
           <form class="report-form" @submit.prevent="sendRevenueReport">
-            <div class="report-kinds" aria-label="Loại báo cáo"><button type="button" :class="{ active: reportType === 'month' }" @click="reportType = 'month'" :disabled="sendingReportEmail"><i aria-hidden="true" class="bi bi-calendar-month"></i>Tổng kết tháng</button><button type="button" :class="{ active: reportType === 'year' }" @click="reportType = 'year'" :disabled="sendingReportEmail"><i aria-hidden="true" class="bi bi-calendar3"></i>Tổng kết năm</button></div>
+            <div class="report-kinds" aria-label="Loại báo cáo"><button type="button" :class="{ active: reportType === 'day' }" :aria-pressed="reportType === 'day'" @click="reportType = 'day'" :disabled="sendingReportEmail"><i aria-hidden="true" class="bi bi-calendar-day"></i>Tổng kết ngày</button><button type="button" :class="{ active: reportType === 'month' }" :aria-pressed="reportType === 'month'" @click="reportType = 'month'" :disabled="sendingReportEmail"><i aria-hidden="true" class="bi bi-calendar-month"></i>Tổng kết tháng</button><button type="button" :class="{ active: reportType === 'year' }" :aria-pressed="reportType === 'year'" @click="reportType = 'year'" :disabled="sendingReportEmail"><i aria-hidden="true" class="bi bi-calendar3"></i>Tổng kết năm</button></div>
             <label>Email người nhận<input v-model="reportEmail" type="email" required maxlength="254" autocomplete="email" placeholder="Ví dụ: quanly@example.com" :disabled="sendingReportEmail"></label>
-            <label v-if="reportType === 'month'">Tháng báo cáo<input v-model="reportMonth" type="month" min="2000-01" :max="currentReportMonth" required :disabled="sendingReportEmail"></label>
+            <label v-if="reportType === 'day'">Ngày báo cáo<input v-model="reportDay" type="date" min="2000-01-01" :max="formatDate(new Date())" required :disabled="sendingReportEmail"></label>
+            <label v-else-if="reportType === 'month'">Tháng báo cáo<input v-model="reportMonth" type="month" min="2000-01" :max="currentReportMonth" required :disabled="sendingReportEmail"></label>
             <label v-else>Năm báo cáo<input v-model.number="reportYear" type="number" min="2000" :max="currentReportYear" required :disabled="sendingReportEmail"></label>
             <p v-if="reportPeriodError" class="error-text">{{ reportPeriodError }}</p><p v-else class="report-period-note">Khoảng báo cáo: <strong>{{ reportFromDate.split('-').reverse().join('/') }} – {{ reportToDate.split('-').reverse().join('/') }}</strong><span v-if="reportIsTemporary">Kỳ chưa kết thúc; email sẽ ghi rõ số liệu tạm tính.</span></p>
             <p v-if="reportEmailError" class="notice error" role="alert">{{ reportEmailError }}</p><p v-if="reportEmailSuccess" class="notice success" role="status">{{ reportEmailSuccess }}</p>
-            <div class="report-actions"><span><i aria-hidden="true" class="bi bi-shield-check"></i>Chỉ quản lý được gửi báo cáo</span><button class="primary-button" type="submit" :disabled="sendingReportEmail || !!reportPeriodError"><i aria-hidden="true" class="bi bi-send"></i>{{ sendingReportEmail ? 'Đang gửi…' : reportType === 'month' ? 'Gửi tổng kết tháng' : 'Gửi tổng kết năm' }}</button></div>
+            <div class="report-actions"><span><i aria-hidden="true" class="bi bi-shield-check"></i>Chỉ quản lý được gửi báo cáo</span><button class="primary-button" type="submit" :disabled="sendingReportEmail || !!reportPeriodError"><i aria-hidden="true" class="bi bi-send"></i>{{ sendingReportEmail ? 'Đang gửi…' : reportType === 'day' ? 'Gửi tổng kết ngày' : reportType === 'month' ? 'Gửi tổng kết tháng' : 'Gửi tổng kết năm' }}</button></div>
           </form>
         </article>
-        <article class="panel"><div class="panel-heading"><div><h2>Tự động gửi báo cáo</h2><p>Lưu email nhận và các kỳ muốn theo dõi.</p></div><span class="schedule-zone">Giờ Việt Nam</span></div>
+        <article class="panel"><div class="panel-heading"><div><h2>Tự động gửi báo cáo</h2></div><span class="schedule-zone">Giờ Việt Nam</span></div>
           <div v-if="scheduleLoading" class="empty-state" role="status">Đang tải lịch gửi…</div>
           <form v-else class="report-form schedule-form" @submit.prevent="saveEmailSchedule">
             <label>Email nhận tự động<input v-model="scheduleEmail" type="email" maxlength="254" :required="dailyEnabled || monthlyEnabled || yearlyEnabled" :disabled="scheduleSaving || !scheduleLoaded" placeholder="Ví dụ: quanly@example.com"></label>
             <label class="schedule-option"><input v-model="dailyEnabled" type="checkbox" :disabled="scheduleSaving || !scheduleLoaded"><span><strong>Tổng kết hằng ngày</strong><small>00:05 mỗi ngày, tự gửi báo cáo ngày vừa kết thúc.</small></span></label>
             <label class="schedule-option"><input v-model="monthlyEnabled" type="checkbox" :disabled="scheduleSaving || !scheduleLoaded"><span><strong>Tổng kết tháng</strong><small>00:05 ngày 1 tháng sau, báo cáo toàn bộ tháng vừa kết thúc.</small></span></label>
             <label class="schedule-option"><input v-model="yearlyEnabled" type="checkbox" :disabled="scheduleSaving || !scheduleLoaded"><span><strong>Tổng kết năm</strong><small>00:10 ngày 1/1, báo cáo toàn bộ năm vừa kết thúc.</small></span></label>
-            <div class="schedule-last"><span>Ngày gần nhất: <strong>{{ sentTime(lastDailySent) }}</strong></span><span>Tháng gần nhất: <strong>{{ sentTime(lastMonthlySent) }}</strong></span><span>Năm gần nhất: <strong>{{ sentTime(lastYearlySent) }}</strong></span></div>
             
             <p v-if="scheduleError" class="notice error" role="alert">{{ scheduleError }}<button v-if="!scheduleLoaded" type="button" @click="loadEmailSchedule">Thử lại</button></p><p v-if="scheduleSuccess" class="notice success" role="status">{{ scheduleSuccess }}</p>
             <div class="report-actions"><span>Các thay đổi có hiệu lực sau khi lưu.</span><button class="primary-button" type="submit" :disabled="scheduleSaving || !scheduleLoaded">{{ scheduleSaving ? 'Đang lưu…' : 'Lưu lịch tự động' }}</button></div>
@@ -1483,4 +1489,5 @@ watch([reportType,reportMonth,reportYear],()=>{reportEmailError.value='';reportE
 
 .view-tabs{overflow-x:auto;max-width:100%}.view-tabs button{flex-shrink:0}
 .chart-controls :deep(.statistics-select){width:135px;min-width:125px}.panel-heading>:deep(.statistics-select){width:180px}.table-filters>:deep(.statistics-select){min-width:180px}.table-filters>:deep(.statistics-select:last-of-type){min-width:210px}@media(max-width:500px){.table-filters>:deep(.statistics-select){width:100%}}
+.report-kinds button{min-width:0;flex-direction:column;gap:6px;padding:12px 8px;font-size:12px}
 </style>

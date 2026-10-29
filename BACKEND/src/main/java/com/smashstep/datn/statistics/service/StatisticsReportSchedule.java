@@ -6,7 +6,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import java.io.*;
-import java.nio.channels.*;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.file.*;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -15,15 +16,12 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/** Persistent local settings and per-period receipts; no database migration is needed. */
+/** Calendar-only email delivery; persistent local claims, no additional database tables. */
 @Service
 public class StatisticsReportSchedule {
     private static final System.Logger LOG=System.getLogger(StatisticsReportSchedule.class.getName());
     @Value("${smashstep.statistics-reports.directory:${user.home}/.smashstep/statistics-reports}")
     private String directory=Path.of(System.getProperty("user.home"),".smashstep","statistics-reports").toString();
-    private List<Path> legacyDirectories=List.of(applicationDirectory().resolve("private/statistics-reports"),
-            applicationDirectory().getParent().resolve("private/statistics-reports"));
-    private boolean storageInitialized;
     private Clock clock=Clock.system(StatisticsReportService.ZONE);
     private final StatisticsReportService reports;
     private final AtomicBoolean working=new AtomicBoolean();
@@ -41,8 +39,9 @@ public class StatisticsReportSchedule {
     }
     public synchronized View save(String email,boolean monthly,boolean yearly){return save(email,monthly,yearly,false);}
     public synchronized View save(String email,boolean monthly,boolean yearly,boolean daily){
-        email=Objects.toString(email,"").trim();
+        email=Objects.toString(email,"").trim().toLowerCase(Locale.ROOT);
         if((monthly||yearly||daily) && (email.length()>254 || !email.matches("^[^\\s@<>]+@[^\\s@<>]+\\.[^\\s@<>]+$")))throw AppException.badRequest("Nhập email hợp lệ trước khi bật lịch gửi tự động");
+        if(email.length()>254)throw AppException.badRequest("Email không được dài quá 254 ký tự");
         try{
             var previous=read();var now=LocalDate.now(clock);boolean same=email.equalsIgnoreCase(previous.email());
             var settings=new Settings(email,monthly,yearly,
@@ -52,42 +51,14 @@ public class StatisticsReportSchedule {
             var p=new Properties();p.setProperty("email",settings.email());p.setProperty("monthly",String.valueOf(monthly));p.setProperty("yearly",String.valueOf(yearly));
             p.setProperty("monthlySince",settings.monthlySince().toString());p.setProperty("yearlySince",settings.yearlySince().toString());
             p.setProperty("daily",String.valueOf(daily));p.setProperty("dailySince",settings.dailySince().toString());
-            writeAtomic(root().resolve("settings.properties"),p);
-            return view();
+            writeAtomic(root().resolve("settings.properties"),p);return view();
         }catch(IOException e){throw new IllegalStateException("Không lưu được lịch gửi báo cáo",e);}
     }
-    private synchronized Path root()throws IOException{
+    private Path root()throws IOException{
         var configured=Path.of(directory);
-        // Explicit relative overrides are also anchored to the application, never the launch cwd.
-        var root=(configured.isAbsolute()?configured:applicationDirectory().resolve(configured)).toAbsolutePath().normalize();
-        Files.createDirectories(root);
-        if(!storageInitialized){migrateLegacy(root,legacyDirectories);storageInitialized=true;}
-        return root;
-    }
-    private static Path applicationDirectory(){
-        try{
-            var location=Path.of(StatisticsReportSchedule.class.getProtectionDomain().getCodeSource().getLocation().toURI()).toAbsolutePath().normalize();
-            if(Files.isRegularFile(location))location=location.getParent();
-            if(location.getFileName()!=null && Set.of("classes","test-classes").contains(location.getFileName().toString()))location=location.getParent();
-            if(location.getFileName()!=null && "target".equals(location.getFileName().toString()))location=location.getParent();
-            return location;
-        }catch(Exception e){throw new IllegalStateException("Không xác định được thư mục ứng dụng để lưu lịch báo cáo",e);}
-    }
-    static void migrateLegacy(Path destination,List<Path> candidates)throws IOException{
-        for(var candidate:candidates){
-            var source=candidate.toAbsolutePath().normalize();
-            if(source.equals(destination) || !Files.isRegularFile(source.resolve("settings.properties"),LinkOption.NOFOLLOW_LINKS))continue;
-            copyIfAbsent(source.resolve("settings.properties"),destination.resolve("settings.properties"));
-            // Only copy settings and delivered receipts. Live lock files are not portable.
-            try(var files=Files.list(source)){
-                for(var file:files.filter(p->Files.isRegularFile(p,LinkOption.NOFOLLOW_LINKS)
-                        && p.getFileName().toString().matches("(?:day|month|year)-[0-9-]+-[0-9a-f]{64}\\.sent")).toList())
-                    copyIfAbsent(file,destination.resolve(file.getFileName()));
-            }
-        }
-    }
-    private static void copyIfAbsent(Path source,Path target)throws IOException{
-        try{Files.copy(source,target);}catch(FileAlreadyExistsException ignored){}
+        // Relative custom paths are anchored to the user home, not the shell/IDE launch folder.
+        var root=(configured.isAbsolute()?configured:Path.of(System.getProperty("user.home")).resolve(configured)).toAbsolutePath().normalize();
+        Files.createDirectories(root);return root;
     }
     private Settings read()throws IOException{
         var now=LocalDate.now(clock);var file=root().resolve("settings.properties");
@@ -97,76 +68,70 @@ public class StatisticsReportSchedule {
                 YearMonth.parse(p.getProperty("monthlySince",YearMonth.from(now).toString())),Integer.valueOf(p.getProperty("yearlySince",String.valueOf(now.getYear()))),Boolean.parseBoolean(p.getProperty("daily","false")),LocalDate.parse(p.getProperty("dailySince",now.toString())));}
         catch(RuntimeException e){throw new IOException("Cấu hình lịch báo cáo không hợp lệ",e);}
     }
-    public static List<Period> duePeriods(Settings settings,ZonedDateTime instant){
+    public static List<Period> duePeriods(Settings s,ZonedDateTime instant){
         var now=instant.withZoneSameInstant(StatisticsReportService.ZONE);var result=new ArrayList<Period>();
-        if(settings.email()==null || settings.email().isBlank())return result;
-        if(settings.dailyEnabled() && settings.dailySince()!=null){
-            var first=settings.dailySince();
-            if(first.getYear()<2000 || first.getYear()>2100)throw new IllegalArgumentException("Invalid daily schedule year");
-            // One catch-up report only: the most recent completed day, after its normal due time.
-            var day=now.toLocalDate().minusDays(1);
-            var due=day.plusDays(1).atTime(0,5).atZone(StatisticsReportService.ZONE);
-            if(!day.isBefore(first) && !now.isBefore(due))result.add(new Period("day",day.toString(),day,day,due));
+        if(s.email()==null || s.email().isBlank() || now.getHour()!=0)return result;
+        var today=now.toLocalDate();
+        if(now.getMinute()==5){
+            var day=today.minusDays(1);
+            if(s.dailyEnabled() && s.dailySince()!=null && !day.isBefore(s.dailySince()))
+                result.add(new Period("day",day.toString(),day,day,today.atTime(0,5).atZone(StatisticsReportService.ZONE)));
+            var month=YearMonth.from(today).minusMonths(1);
+            if(today.getDayOfMonth()==1 && s.monthlyEnabled() && s.monthlySince()!=null && !month.isBefore(s.monthlySince()))
+                result.add(new Period("month",month.toString(),month.atDay(1),month.atEndOfMonth(),today.atTime(0,5).atZone(StatisticsReportService.ZONE)));
         }
-        if(settings.monthlyEnabled() && settings.monthlySince()!=null){
-            var start=settings.monthlySince();
-            if(start.getYear()<2000 || start.getYear()>2100)throw new IllegalArgumentException("Invalid schedule year");
-            for(var month=start;month.isBefore(YearMonth.from(now));month=month.plusMonths(1)){
-                var due=month.plusMonths(1).atDay(1).atTime(0,5).atZone(StatisticsReportService.ZONE);
-                if(!now.isBefore(due))result.add(new Period("month",month.toString(),month.atDay(1),month.atEndOfMonth(),due));
-            }
-        }
-        if(settings.yearlyEnabled() && settings.yearlySince()!=null){
-            int first=settings.yearlySince();if(first<2000 || first>2100)throw new IllegalArgumentException("Invalid schedule year");
-            for(int year=first;year<now.getYear();year++){
-                var due=LocalDate.of(year+1,1,1).atTime(0,10).atZone(StatisticsReportService.ZONE);
-                if(!now.isBefore(due))result.add(new Period("year",String.valueOf(year),LocalDate.of(year,1,1),LocalDate.of(year,12,31),due));
-            }
-        }
-        result.sort(Comparator.comparing(Period::due));return result;
+        int year=today.getYear()-1;
+        if(now.getMinute()==10 && today.getMonthValue()==1 && today.getDayOfMonth()==1 && s.yearlyEnabled() && s.yearlySince()!=null && year>=s.yearlySince())
+            result.add(new Period("year",String.valueOf(year),LocalDate.of(year,1,1),LocalDate.of(year,12,31),today.atTime(0,10).atZone(StatisticsReportService.ZONE)));
+        return result;
     }
-    @Scheduled(fixedDelay=60_000,initialDelay=30_000)
+    @Scheduled(cron="0 5,10 0 * * *",zone="Asia/Ho_Chi_Minh")
     public void tick(){
         if(!working.compareAndSet(false,true))return;
-        try{worker.execute(()->{try{processDue();}catch(RuntimeException e){LOG.log(System.Logger.Level.WARNING,"Chưa xử lý được lịch báo cáo; sẽ thử lại.");}finally{working.set(false);}});}
+        try{worker.execute(()->{try{processDue();}catch(RuntimeException e){LOG.log(System.Logger.Level.WARNING,"Không xử lý được lịch báo cáo; kiểm tra quyền truy cập thư mục cấu hình.");}finally{working.set(false);}});}
         catch(RejectedExecutionException e){working.set(false);}
     }
     public void processDue(){
         try{
-            var settings=read();int attempted=0;
+            var settings=read();
             for(var period:duePeriods(settings,ZonedDateTime.now(clock))){
-                String base=period.kind()+"-"+period.key()+"-"+recipientKey(settings.email());
-                var sent=root().resolve(base+".sent");if(Files.exists(sent))continue;
-                if(attempted++>=4)break;
-                try(var channel=FileChannel.open(root().resolve(base+".lock"),StandardOpenOption.CREATE,StandardOpenOption.WRITE)){
-                    FileLock lock;
-                    try{lock=channel.tryLock();}catch(OverlappingFileLockException e){continue;}
-                    if(lock==null)continue;
-                    try(lock){
-                        if(Files.exists(sent))continue;
-                        var current=read();
-                        if(!settings.equals(current))return;
-                        reports.send(settings.email(),period.start(),period.end());
-                        var receipt=new Properties();receipt.setProperty("sentAt",Instant.now(clock).toString());receipt.setProperty("period",period.key());receipt.setProperty("kind",period.kind());
-                        writeAtomic(sent,receipt);
-                    }
-                }catch(RuntimeException e){LOG.log(System.Logger.Level.WARNING,"Gửi báo cáo chưa thành công; sẽ thử lại ở lượt tiếp theo.");}
+                if(!settings.equals(read()))return;
+                var base=period.kind()+"-"+period.key()+"-"+recipientKey(settings.email());
+                // Honor successful receipts written by the previous file-based version.
+                if(Files.exists(root().resolve(base+".sent")))continue;
+                var attempt=root().resolve(base+".attempt");var receipt=new Properties();
+                receipt.setProperty("kind",period.kind());receipt.setProperty("period",period.key());
+                receipt.setProperty("status","CLAIMED");receipt.setProperty("attemptedAt",clock.instant().toString());
+                if(!claim(attempt,receipt))continue;
+                try{reports.send(settings.email(),period.start(),period.end());}
+                catch(RuntimeException e){
+                    receipt.setProperty("status","FAILED");writeAtomic(attempt,receipt);
+                    LOG.log(System.Logger.Level.WARNING,"Gửi báo cáo không thành công; không tự thử lại kỳ này để tránh thư lặp.");continue;
+                }
+                receipt.setProperty("status","SENT");receipt.setProperty("sentAt",clock.instant().toString());writeAtomic(attempt,receipt);
             }
-        }catch(IOException e){throw new IllegalStateException("Không truy cập được thư mục lịch báo cáo",e);}
+        }catch(IOException e){throw new IllegalStateException("Không truy cập được thư mục lịch báo cáo; không gửi thêm thư",e);}
+    }
+    // CREATE_NEW is atomic across processes using the SAME local directory. Claim before SMTP.
+    private static boolean claim(Path file,Properties receipt)throws IOException{
+        var bytes=new ByteArrayOutputStream();receipt.store(bytes,"SmashStep email attempt");
+        try(var channel=FileChannel.open(file,StandardOpenOption.CREATE_NEW,StandardOpenOption.WRITE)){
+            var buffer=ByteBuffer.wrap(bytes.toByteArray());while(buffer.hasRemaining())channel.write(buffer);channel.force(true);return true;
+        }catch(FileAlreadyExistsException alreadyClaimed){return false;}
     }
     private String lastSent(String email,String kind)throws IOException{
         if(email==null || email.isBlank())return null;
-        String suffix="-"+recipientKey(email)+".sent",last=null;
+        String suffix="-"+recipientKey(email),last=null;
         try(var files=Files.list(root())){
-            for(var file:files.filter(p->p.getFileName().toString().startsWith(kind+"-") && p.getFileName().toString().endsWith(suffix)).toList()){
-                var p=new Properties();try(var input=Files.newInputStream(file)){p.load(input);}String at=p.getProperty("sentAt");
-                if(at!=null && (last==null || at.compareTo(last)>0))last=at;
+            for(var file:files.filter(p->{var name=p.getFileName().toString();return name.startsWith(kind+"-") && (name.endsWith(suffix+".sent") || name.endsWith(suffix+".attempt"));}).toList()){
+                var p=new Properties();try(var input=Files.newInputStream(file)){p.load(input);}
+                if(file.toString().endsWith(".attempt") && !"SENT".equals(p.getProperty("status")))continue;
+                String at=p.getProperty("sentAt");if(at!=null && (last==null || at.compareTo(last)>0))last=at;
             }
-        }
-        return last;
+        }return last;
     }
     private static String recipientKey(String email){
-        try{return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(email.toLowerCase(Locale.ROOT).getBytes(StandardCharsets.UTF_8)));}
+        try{return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(email.trim().toLowerCase(Locale.ROOT).getBytes(StandardCharsets.UTF_8)));}
         catch(java.security.NoSuchAlgorithmException e){throw new IllegalStateException(e);}
     }
     private static void writeAtomic(Path file,Properties props)throws IOException{
