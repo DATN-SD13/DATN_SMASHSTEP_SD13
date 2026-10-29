@@ -75,8 +75,13 @@ public final class CommerceDtos {
     public record Quote(List<Line> lines, BigDecimal subtotal, BigDecimal discount, BigDecimal shipping,
             @com.fasterxml.jackson.annotation.JsonFormat(shape=com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
             BigDecimal total, String voucherCode, List<Method> methods, boolean canCheckout, String message) {}
-    public record OrderItem(Long variantId, String name, String sku, String color, String size,
-            String image, int quantity, BigDecimal unitPrice, BigDecimal total) {}
+        public record OrderItem(Long variantId, Long productId, String name, String sku, String color, String size,
+            String image, int quantity, BigDecimal unitPrice, BigDecimal total) {
+        public OrderItem(Long variantId, String name, String sku, String color, String size,
+                String image, int quantity, BigDecimal unitPrice, BigDecimal total) {
+            this(variantId, null, name, sku, color, size, image, quantity, unitPrice, total);
+        }
+    }
     public record Event(Integer status, String label, String note, LocalDateTime at) {}
     public record Order(String code, Integer status, String statusLabel, LocalDateTime createdAt,
             LocalDateTime updatedAt, String receiverName, String phone, String address,
@@ -95,3 +100,4 @@ public final class CommerceDtos {
     }
     public record Notice(String id, String title, String message, String href, LocalDateTime at) {}
 }
+
