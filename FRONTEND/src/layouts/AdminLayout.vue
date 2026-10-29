@@ -57,6 +57,26 @@ async function doLogout() {
 // ── Panel ca làm việc ─────────────────────────────────────
 const showCaPanel    = ref(false)
 const caList         = ref([])
+const caSortNow = ref(Date.now())
+function caSortInfo(ca, now) {
+  const times = String(ca.thoiGian || '').match(/^(\d{2}:\d{2})(?::\d{2})?\s*[-–]\s*(\d{2}:\d{2})(?::\d{2})?$/)
+  const start = times ? Date.parse(`${ca.ngayLam}T${times[1]}:00+07:00`) : NaN
+  let end = times ? Date.parse(`${ca.ngayLam}T${times[2]}:00+07:00`) : NaN
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start === end) return { group: 3, time: 0 }
+  if (end < start) end += 86400000
+  const waiting = [0,4].includes(ca.trangThai)
+  const passed = [2,3].includes(ca.trangThai) || now >= end || (waiting && now > start + 15 * 60000)
+  if (passed) return { group: 2, time: -start }
+  return { group: ca.trangThai === 1 || now >= start - 15 * 60000 ? 0 : 1, time: start }
+}
+const sortedCaList = computed(() => caList.value
+  .map((ca,index) => ({ ca,index,...caSortInfo(ca,caSortNow.value) }))
+  .sort((a,b) => a.group - b.group || a.time - b.time || a.index - b.index)
+  .map(item => item.ca))
+// Chỉ hiện Nhận ca khi không còn ca đang làm; chọn ca chờ gần nhất còn hạn.
+const nearestReceiveShift = computed(() => (ketThucCaData.value || caList.value.some(ca => ca.trangThai === 1)) ? null : sortedCaList.value.find(ca =>
+  [0,4].includes(ca.trangThai) && caSortInfo(ca, caSortNow.value).group < 2
+) || null)
 const caLoading      = ref(false)
 
 // Số ca hôm nay của nhân viên đang đăng nhập (badge xanh trong button)
@@ -141,11 +161,14 @@ async function loadCaData() {
     const activeCas      = resActive.data?.data || []
     caHienTaiSo.value    = soThuTuCaHienTai(activeCas)
     caList.value         = resHoNay.data?.data || []
+    caSortNow.value = Date.now()
     caNhanVienCount.value = caList.value.length
   } catch { /* ignore */ }
 }
 
 async function openCaPanel() {
+  caSortNow.value = Date.now()
+  receiveShiftError.value = ''
   showCaPanel.value = true
   if (caLoading.value) return
   caLoading.value = true
@@ -179,6 +202,7 @@ async function openKetThucCaModal() {
   const refreshed = await checkCaDangLam()
   if (refreshed === false) { showError('Không thể tải số tiền cuối ca. Vui lòng thử lại.'); return }
   if (ketThucCaData.value) {
+    showCaPanel.value = false
     showKetThucCaModal.value = true
   }
 }
@@ -251,6 +275,7 @@ onMounted(() => {
   checkCaDangLam()
   // Poll mỗi 60 giây
   giaoCaTimer = setInterval(() => {
+    caSortNow.value = Date.now()
     checkGiaoCa()
     checkCaDangLam()
   }, 60_000)
@@ -274,11 +299,46 @@ function onNhanCaRejected() {
   nhanCaData.value = null
 }
 
-// Xem lại ca - xóa dismissed và force check ngay
-function forceCheckGiaoCa() {
-  dismissedIds.value.clear()  // Xóa tất cả dismissed
-  nhanCaData.value = null      // Reset modal để đảm bảo có thể hiện lại
-  checkGiaoCa()                // Check ngay lập tức
+// Manual receive stays available independently of automatic popup/dismissal.
+const receiveShiftLoading = ref(false)
+const receiveShiftError = ref('')
+function receiveWindowMessage(ca) {
+  if (!ca) return 'Bạn chưa có lịch phù hợp để nhận. Kiểm tra ngày được phân lịch và giờ bắt đầu ca.'
+  const match = String(ca.thoiGian || '').match(/^(\d{2}:\d{2})\s*[-–]\s*(\d{2}:\d{2})$/)
+  const start = match ? Date.parse(`${ca.ngayLam}T${match[1]}:00+07:00`) : NaN
+  const format = value => new Intl.DateTimeFormat('vi-VN', {timeZone:'Asia/Ho_Chi_Minh',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(value))
+  if (ca.trangThai === 2) return `Lịch ${ca.tenCa} đã được đánh dấu vắng mặt, không thể nhận ca.${Number.isFinite(start) ? ' Hạn nhận ca là ' + format(start + 15 * 60000) + '.' : ''}`
+  if (ca.trangThai === 3) return 'Ca này đã kết thúc, không thể nhận lại.'
+  if (ca.trangThai === 1) return 'Ca này đã được nhận. Dùng chức năng kết thúc ca khi hoàn tất.'
+  if (Number.isFinite(start) && Date.now() < start - 15 * 60000) return `Chưa đến thời gian nhận ca ${ca.tenCa}. Có thể nhận từ ${format(start - 15 * 60000)}.`
+  if (Number.isFinite(start) && Date.now() > start + 15 * 60000) return `Đã hết thời gian nhận ca ${ca.tenCa}. Hạn nhận là ${format(start + 15 * 60000)}; không thể nhận khi đã trễ quá 15 phút.`
+  return 'Máy chủ chưa cho phép nhận ca này. Kiểm tra trạng thái lịch và thời gian máy chủ.'
+}
+async function requestReceiveShift(selected = null) {
+  if (receiveShiftLoading.value) return
+  receiveShiftError.value = ''
+  receiveShiftLoading.value = true
+  try {
+    await loadCaData()
+    const activeResponse = await api.get('/lich-lam-viec/ca-dang-lam')
+    ketThucCaData.value = activeResponse.data?.data || null
+    if (ketThucCaData.value) {
+      receiveShiftError.value = 'Bạn còn một ca đang làm chưa kết thúc. Hãy kết thúc ca đó trước khi nhận ca mới.'
+      return
+    }
+    const response = await api.get('/lich-lam-viec/ca-sap-bat-dau')
+    const data = response.data?.data
+    if (!data || (selected && data.lichLamViecId !== selected.id)) {
+      const row = selected || sortedCaList.value.find(row => [0,4].includes(row.trangThai)) || sortedCaList.value[0]
+      receiveShiftError.value = receiveWindowMessage(row)
+      return
+    }
+    dismissedIds.value.delete(data.lichLamViecId)
+    nhanCaData.value = data
+    showCaPanel.value = false
+  } catch (error) {
+    receiveShiftError.value = error.response?.data?.message || 'Không tải được thông tin nhận ca. Kiểm tra kết nối BE rồi thử lại.'
+  } finally { receiveShiftLoading.value = false }
 }
 
 const formatDate = (dateStr) => {
@@ -436,35 +496,7 @@ const crumbs = computed(() => ({
             <span>Ca làm việc</span>
             <span v-if="caNhanVienCount > 0" class="ca-badge">{{ caNhanVienCount }}</span>
           </button>
-          
-          <!-- Nút xem lại ca (hiện khi có dismissed) -->
-          <button 
-            v-if="dismissedIds.size > 0" 
-            type="button" 
-            class="pill xem-lai-ca" 
-            @click="forceCheckGiaoCa"
-            title="Xem lại thông báo giao ca"
-          >
-            <i class="bi bi-bell-fill"></i>
-            <span>Xem lại ca</span>
-            <span class="ca-badge-notify">{{ dismissedIds.size }}</span>
-          </button>
-          
-          <!-- Nút kết thúc ca (hiện khi đang làm ca) -->
-          <button 
-            v-if="ketThucCaData" 
-            type="button" 
-            class="pill ket-thuc-ca" 
-            @click="openKetThucCaModal"
-            title="Kết thúc ca làm việc"
-          >
-            <i class="bi bi-stop-circle"></i>
-            <div class="ket-thuc-ca-info">
-              <span class="ket-thuc-ca-title">Kết thúc ca</span>
-              <span class="ket-thuc-ca-detail">{{ formatDate(ketThucCaData.ngayLam) }}</span>
-            </div>
-          </button>
-          
+
           <button type="button" class="bell" @click="openCaActivePanel" :title="caHienTaiSo ? 'Đang ở ca ' + caHienTaiSo : 'Ngoài giờ ca'">{{ caHienTaiSo || '—' }}</button>
 
           <StaffNotificationBell v-if="authStore.isStaff" />
@@ -522,6 +554,11 @@ const crumbs = computed(() => ({
             {{ new Date().toLocaleDateString('vi-VN', { weekday:'long', day:'2-digit', month:'long', year:'numeric' }) }}
           </div>
 
+          <p class="ca-receive-hint">Nhận ca từ 15 phút trước giờ bắt đầu đến muộn tối đa 15 phút. Ca còn trong giờ làm nhưng đã quá hạn nhận sẽ không nhận được.</p>
+          <div v-if="receiveShiftError" class="ca-receive-error" role="alert">
+            <i class="bi bi-exclamation-circle" aria-hidden="true"></i>
+            <div><strong>Chưa thể nhận ca</strong><p>{{ receiveShiftError }}</p></div>
+          </div>
           <!-- Loading -->
           <div v-if="caLoading" class="ca-empty">
             <i class="bi bi-arrow-repeat ca-spin"></i> Đang tải...
@@ -535,7 +572,7 @@ const crumbs = computed(() => ({
 
           <!-- Danh sách ca -->
           <div v-else class="ca-list">
-            <div v-for="ca in caList" :key="ca.id" class="ca-card">
+            <div v-for="ca in sortedCaList" :key="ca.id" class="ca-card">
               <div class="ca-card-top">
                 <div class="ca-shift-name">{{ ca.tenCa }}</div>
                 <span class="ca-pill" :class="caStatusInfo(ca.trangThai).cls">
@@ -559,6 +596,15 @@ const crumbs = computed(() => ({
               <div v-if="ca.ghiChu" class="ca-note">
                 <i class="bi bi-chat-left-text"></i> {{ ca.ghiChu }}
               </div>
+              <div v-if="nearestReceiveShift && ca.id === nearestReceiveShift.id" class="ca-card-actions">
+                <button type="button" class="pill xem-lai-ca" :disabled="receiveShiftLoading" @click="requestReceiveShift(ca)"><i class="bi bi-box-arrow-in-right"></i>{{ receiveShiftLoading ? 'Đang kiểm tra…' : 'Nhận ca' }}</button>
+              </div>
+              <div v-else-if="ca.trangThai === 1" class="ca-card-actions">
+                <button type="button" class="pill ket-thuc-ca" @click="openKetThucCaModal">
+                  <i class="bi bi-stop-circle"></i><span>Kết thúc ca</span>
+                </button>
+              </div>
+              <p v-else-if="ca.trangThai === 2" class="ca-receive-hint">Lịch đã được đánh dấu vắng mặt, không thể nhận ca.</p>
             </div>
           </div>
         </div>
@@ -1122,5 +1168,7 @@ const crumbs = computed(() => ({
 
 <style scoped>
 .logout-modal .logout-pos-hint { font-size: 12px; line-height: 1.5; color: #718096; }
+.ca-receive-error{display:flex;align-items:flex-start;gap:10px;margin:0 20px 16px;padding:12px;background:#fff6ec;border:1px solid #f2d6b4;border-radius:10px;color:#905814;font-size:12px;line-height:1.6;overflow-wrap:anywhere}.ca-receive-error>i{margin-top:2px;flex-shrink:0}.ca-receive-error>div{min-width:0}.ca-receive-error strong{display:block;margin-bottom:3px}.ca-receive-error p{margin:0}
+.ca-receive-hint{font-size:12px;line-height:1.6;color:#718096;margin:12px 0}.ca-panel>.ca-receive-hint{padding:0 20px}.ca-card-actions{display:flex;justify-content:flex-end;margin-top:12px}.pill:disabled{opacity:.55;cursor:wait}
 .logout-actions button:disabled { opacity: .6; cursor: wait; }
 </style>
