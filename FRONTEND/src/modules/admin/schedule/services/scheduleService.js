@@ -67,8 +67,8 @@ const scheduleService = {
     return unwrap(await api.post('/lich-lam-viec', payload))
   },
 
-  async updateTrangThai(id, trangThai, ghiChu = '') {
-    return unwrap(await api.patch(`/lich-lam-viec/${id}/trang-thai`, { trangThai, ghiChu }))
+  async updateTrangThai(id, trangThai, ghiChu = '', lyDoDieuChinh = '') {
+    return unwrap(await api.patch(`/lich-lam-viec/${id}/trang-thai`, { trangThai, ghiChu, lyDoDieuChinh }))
   },
 
   async deleteLich(id) {

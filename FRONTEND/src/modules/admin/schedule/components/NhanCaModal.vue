@@ -43,6 +43,7 @@ function onAmountInput(event){amount.value=updateCashInput(event,amount.value)}
       </div>
       <p v-else class="shift-hint">Chưa có ca trước đã kết thúc để bàn giao.</p>
       <p class="shift-hint">Kiểm đếm tiền mặt thực tế được giao trước khi xác nhận. Tiền chuyển khoản được theo dõi riêng, không cộng vào tiền mặt đầu ca.</p>
+      <p class="shift-hint">Nhận ca từ 15 phút trước giờ bắt đầu đến muộn tối đa 15 phút. Xác nhận sau giờ bắt đầu sẽ được ghi nhận đi muộn; chọn “Chưa nhận ca” không gia hạn thời gian.</p>
       <label for="opening-cash">Tiền mặt đầu ca (đ)</label><input id="opening-cash" :value="formattedAmount" @input="onAmountInput" type="text" inputmode="decimal" autocomplete="off" placeholder="Nhập số đã kiểm đếm, có thể bằng 0" :disabled="loading">
       <p v-if="error" class="shift-error" role="alert">{{ error }}</p><div class="shift-actions">
         <button type="button" :disabled="loading" @click="submit(false)">Chưa nhận ca</button><button class="primary" type="button" :disabled="loading" @click="submit(true)"><i class="bi bi-check2" aria-hidden="true"></i> {{ loading?'Đang xử lý…':'Xác nhận nhận ca' }}</button>

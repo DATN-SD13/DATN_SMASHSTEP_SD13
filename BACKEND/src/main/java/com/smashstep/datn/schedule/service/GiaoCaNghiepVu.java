@@ -30,9 +30,7 @@ public class GiaoCaNghiepVu {
     private List<LichLamViec> nearby(Long employee){var day=now().toLocalDate();return repo.findForEmployee(employee,day.minusDays(1),day.plusDays(1));}
     private QuyTacLichLamViec.KhoangGio range(LichLamViec row){return QuyTacLichLamViec.khoang(row.getNgayLam(),row.getIdCaLamViec());}
     public static boolean coTheNhan(LichLamViec row,LocalDateTime now){
-        var r=QuyTacLichLamViec.khoang(row.getNgayLam(),row.getIdCaLamViec());
-        return Set.of(0,4).contains(Objects.requireNonNullElse(row.getTrangThai(),-1))
-                && !now.isBefore(r.batDau().minusMinutes(15)) && !now.isAfter(r.batDau().plusMinutes(30)) && now.isBefore(r.ketThuc());
+        return QuyTacTrangThaiCa.coTheNhan(row,now);
     }
     public GiaoCaResponse sapNhan(Long employee){
         var now=now();
@@ -75,7 +73,7 @@ public class GiaoCaNghiepVu {
     @Transactional public LichLamViec nhan(Long id,Long employee,NhanCaRequest request){
         lock.khoa("schedule");var row=own(id,employee);var now=now();
         if(request==null)throw AppException.badRequest("Cần nhập tiền mặt đầu ca đã kiểm đếm");validMoney(request.getTienMatDauCa());
-        if(!coTheNhan(row,now))throw AppException.conflict("Ca không còn chờ nhận hoặc ngoài khoảng nhận ca (trước 15 phút, trễ tối đa 30 phút)");
+        if(!coTheNhan(row,now))throw AppException.conflict("Chỉ nhận ca từ 15 phút trước giờ bắt đầu đến muộn tối đa 15 phút, trước khi ca kết thúc và khi lịch còn chờ nhận");
         if(nearby(employee).stream().anyMatch(r->Integer.valueOf(1).equals(r.getTrangThai())))throw AppException.conflict("Bạn đang có ca chưa kết thúc");
         row.setTrangThai(1);row.setNgayCapNhat(now);
         so.ghi(row,new SoGiaoCaStore.Phieu(now,null,request.getTienMatDauCa(),BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,null,false),false);
@@ -118,7 +116,7 @@ public class GiaoCaNghiepVu {
     @Transactional public int quaGio(){
         lock.khoa("schedule");var rows=repo.findExpiredLich(now());
         for(var row:rows){if(Integer.valueOf(1).equals(row.getTrangThai()))close(row,null,null,true);
-        else {row.setTrangThai(2);row.setNgayCapNhat(now());repo.save(row);}}
+        else if(QuyTacTrangThaiCa.choNhan(row) && QuyTacTrangThaiCa.hetHanNhan(row,now())){row.setTrangThai(2);row.setNgayCapNhat(now());repo.save(row);}}
         return rows.size();
     }
     private static String fmt(LocalDateTime time){return time.toLocalTime().toString().substring(0,5);}

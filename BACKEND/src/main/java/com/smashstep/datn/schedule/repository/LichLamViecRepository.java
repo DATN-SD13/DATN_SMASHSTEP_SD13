@@ -94,14 +94,16 @@ public interface LichLamViecRepository extends JpaRepository<LichLamViec, Long> 
         SELECT l.* FROM lich_lam_viec l
         JOIN ca_lam_viec c ON l.id_ca_lam_viec = c.id
         WHERE l.trang_thai IN (0, 1, 4)
-          AND (
+          AND ((l.trang_thai IN (0, 4) AND
+            DATEADD(minute, 15, CAST(CONVERT(varchar, l.ngay_lam, 23) + ' ' + CONVERT(varchar, c.gio_bat_dau, 108) AS datetime2)) < :now)
+          OR (
             CASE
               WHEN c.gio_ket_thuc >= c.gio_bat_dau
                 THEN CAST(CONVERT(varchar, l.ngay_lam, 23) + ' ' + CONVERT(varchar, c.gio_ket_thuc, 108) AS datetime2)
               ELSE
                 CAST(CONVERT(varchar, DATEADD(day, 1, l.ngay_lam), 23) + ' ' + CONVERT(varchar, c.gio_ket_thuc, 108) AS datetime2)
             END
-          ) <= :now
+          ) <= :now)
         """, nativeQuery = true)
     List<LichLamViec> findExpiredLich(@Param("now") LocalDateTime now);
 

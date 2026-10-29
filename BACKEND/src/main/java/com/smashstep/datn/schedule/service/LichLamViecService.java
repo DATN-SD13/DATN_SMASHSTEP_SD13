@@ -44,6 +44,7 @@ public class LichLamViecService {
     private final com.smashstep.datn.product.service.KhoaGhiSanPham khoaGhi;
     private final LichLamViecImportService nhapExcel;
     @org.springframework.beans.factory.annotation.Autowired private GiaoCaNghiepVu giaoCa;
+    private java.time.Clock clock=java.time.Clock.system(java.time.ZoneId.of("Asia/Ho_Chi_Minh"));
 
     private static final DateTimeFormatter DATE_FMT     = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final DateTimeFormatter DATETIME_FMT = DateTimeFormatter.ofPattern("HH:mm\ndd/MM/yyyy");
@@ -176,13 +177,21 @@ public class LichLamViecService {
             throw AppException.badRequest("Trạng thái không hợp lệ (0-4)");
         }
 
-        if (!java.util.Objects.equals(llv.getTrangThai(), request.getTrangThai())
-                && (request.getTrangThai()==1 || request.getTrangThai()==3 || Integer.valueOf(1).equals(llv.getTrangThai()) || Integer.valueOf(3).equals(llv.getTrangThai())))
-            throw AppException.conflict("Nhận/kết thúc ca phải thực hiện từ tài khoản được phân lịch; không đổi trạng thái ca đã nhận hoặc đã chốt");
+        var now=LocalDateTime.now(clock);
+        var reason=java.util.Objects.toString(request.getLyDoDieuChinh(),"").trim();
+        if(reason.length()>200)throw AppException.badRequest("Lý do điều chỉnh tối đa 200 ký tự");
+        QuyTacTrangThaiCa.kiemTraDieuChinh(llv,request.getTrangThai(),now,reason);
+        boolean reopening=Integer.valueOf(2).equals(llv.getTrangThai()) && request.getTrangThai()!=2;
+        String note=request.getGhiChu()==null?llv.getGhiChu():request.getGhiChu();
+        if(reopening){
+            String audit="["+now.format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss"))+"] Mở lại lịch đánh dấu vắng: "+reason;
+            note=note==null || note.isBlank()?audit:note+" | "+audit;
+        }
+        if(note!=null && note.length()>500)throw AppException.badRequest("Ghi chú gồm lý do điều chỉnh tối đa 500 ký tự; hãy rút gọn nội dung");
         llv.setTrangThai(request.getTrangThai());
-        if (request.getGhiChu() != null) llv.setGhiChu(request.getGhiChu());
+        llv.setGhiChu(note);
         // Preserve the legacy completion timestamp when only editing a closed shift's note.
-        if (!Integer.valueOf(3).equals(llv.getTrangThai())) llv.setNgayCapNhat(LocalDateTime.now());
+        if (!Integer.valueOf(3).equals(llv.getTrangThai())) llv.setNgayCapNhat(now);
 
         return toResponse(lichLamViecRepository.save(llv), false);
     }

@@ -1,10 +1,10 @@
 <script setup>
-import { ref, reactive, onMounted, watch, computed } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, watch, computed } from 'vue'
 import AdminLayout from '../../../../layouts/AdminLayout.vue'
 import SsPager from '../../../../components/SsPager.vue'
 import Select2 from '../../promotion/components/Select2.vue'
 import scheduleService from '../services/scheduleService'
-import { canSetShiftStatus, canDeleteShift } from '../services/shiftStatusRules'
+import { canSetShiftStatus, canDeleteShift, requiresReopenReason, lateShiftInfo } from '../services/shiftStatusRules'
 import LichLamViecImportModal from '../components/LichLamViecImportModal.vue'
 import { confirmAction, showSuccess, showError } from '../../../../utils/feedback'
 import api from '../../../../utils/api'
@@ -120,7 +120,8 @@ function fmtNgay(val) {
 }
 watch(page, load)
 watch(size, () => { page.value = 1; load() })
-onMounted(() => { loadShifts(); load(); loadLichBiKhoa() })
+onMounted(() => { loadShifts(); load(); loadLichBiKhoa(); statusTimer = setInterval(() => { statusNow.value = Date.now() }, 1000) })
+onUnmounted(() => clearInterval(statusTimer))
 
 // ── Thay nhân viên vào ca (từ banner cảnh báo) ────────────
 const thayTheModal    = ref(false)
@@ -374,7 +375,10 @@ const showEditModal = ref(false)
 const editRow       = ref(null)
 const editSaving    = ref(false)
 const editError     = ref('')
-const editForm      = reactive({ trangThai: 0, ghiChu: '' })
+const editForm      = reactive({ trangThai: 0, ghiChu: '', lyDoDieuChinh: '' })
+const statusNow = ref(Date.now())
+let statusTimer
+const canChangeStatus = next => canSetShiftStatus(editRow.value, next, statusNow.value)
 
 const TRANG_THAI_OPTIONS = [
   { value: 0, label: 'Chờ giao ca'  },
@@ -388,22 +392,28 @@ function openEditModal(row) {
   editRow.value        = row
   editForm.trangThai   = row.trangThai
   editForm.ghiChu      = row.ghiChu || ''
+  editForm.lyDoDieuChinh = ''
+  statusNow.value = Date.now()
   editError.value      = ''
   showEditModal.value  = true
 }
 
 async function submitEdit() {
   editError.value = ''
-  if (!canSetShiftStatus(editRow.value.trangThai, editForm.trangThai)) {
-    editError.value = 'Nhận và kết thúc ca phải thực hiện từ ca cá nhân. Ca đang làm hoặc đã chốt chỉ được sửa ghi chú.'
+  if (!canSetShiftStatus(editRow.value, editForm.trangThai, Date.now())) {
+    editError.value = 'Đã hết hạn nhận ca hoặc trạng thái không được phép đổi. Ca đang làm/đã kết thúc chỉ được sửa ghi chú.'
+    return
+  }
+  if (requiresReopenReason(editRow.value, editForm.trangThai) && !editForm.lyDoDieuChinh.trim()) {
+    editError.value = 'Nhập lý do điều chỉnh vắng mặt trước khi mở lại lịch.'
     return
   }
   editSaving.value = true
   try {
-    await scheduleService.updateTrangThai(editRow.value.id, editForm.trangThai, editForm.ghiChu)
+    const updated = await scheduleService.updateTrangThai(editRow.value.id, editForm.trangThai, editForm.ghiChu, editForm.lyDoDieuChinh)
     const idx = rows.value.findIndex(r => r.id === editRow.value.id)
     if (idx !== -1) {
-      rows.value[idx] = { ...rows.value[idx], trangThai: editForm.trangThai, ghiChu: editForm.ghiChu }
+      rows.value[idx] = { ...rows.value[idx], ...updated }
     }
     showEditModal.value = false
     showSuccess('Đã cập nhật trạng thái.')
@@ -600,7 +610,7 @@ async function submitModal() {
                     <td>{{ row.tenCa }}</td>
                     <td class="nowrap">{{ row.thoiGian }}</td>
                     <td class="nowrap">{{ fmtNgay(row.ngayLam) }}</td>
-                    <td><span class="ss-pill dot" :class="STATUS[row.trangThai]?.cls">{{ STATUS[row.trangThai]?.label || 'Chưa xác định' }}</span></td>
+                    <td><span class="ss-pill dot" :class="STATUS[row.trangThai]?.cls">{{ STATUS[row.trangThai]?.label || 'Chưa xác định' }}</span><small v-if="lateShiftInfo(row)" class="shift-late">{{ lateShiftInfo(row) }}</small></td>
                     <td>
                       <div class="ss-row-actions">
                         <button class="ss-icon-btn" :title="[1,3].includes(row.trangThai) ? 'Sửa ghi chú' : 'Sửa trạng thái và ghi chú'" @click="openEditModal(row)">
@@ -886,7 +896,7 @@ async function submitModal() {
                      :src="avatarUrl(r.hinhAnh)" alt="" @error="failedAvatarUrls.add(avatarUrl(r.hinhAnh))" />
                 <i v-else class="bi bi-person"></i>
               </div>
-              <div class="calendar-person-info"><strong>{{ r.tenNhanVien }}</strong><span>{{ r.maNhanVien }}</span></div>
+              <div class="calendar-person-info"><strong>{{ r.tenNhanVien }}</strong><span>{{ r.maNhanVien }}</span><small v-if="lateShiftInfo(r)" class="shift-late">{{ lateShiftInfo(r) }}</small></div>
               <span class="ss-pill dot calendar-person-status" :class="STATUS[r.trangThai]?.cls">{{ STATUS[r.trangThai]?.label || 'Chưa xác định' }}</span>
             </li>
           </ul>
@@ -898,10 +908,10 @@ async function submitModal() {
     <!-- Modal chỉnh sửa trạng thái -->
     <Teleport to="body">
       <div v-if="showEditModal" class="ss-modal-bg" @click.self="showEditModal=false">
-        <div class="ss-modal" style="width:min(420px,100%)">
+        <div class="ss-modal shift-status-modal" role="dialog" aria-modal="true" aria-labelledby="shift-status-title" style="width:min(420px,100%)">
           <div class="ss-head">
             <div class="ss-head-icon"><i class="bi bi-pencil-square"></i></div>
-            <h2>Cập nhật trạng thái</h2>
+            <h2 id="shift-status-title">Cập nhật trạng thái</h2>
             <span class="ss-spacer"></span>
             <button class="ss-icon-btn" @click="showEditModal=false"><i class="bi bi-x-lg"></i></button>
           </div>
@@ -928,14 +938,14 @@ async function submitModal() {
                 v-for="opt in TRANG_THAI_OPTIONS" :key="opt.value"
                 class="tt-option"
                 :class="{ active: editForm.trangThai === opt.value, [`cls-${opt.value}`]: true }"
-                :style="!canSetShiftStatus(editRow.trangThai, opt.value) ? { opacity: .45, cursor: 'not-allowed' } : undefined"
+                :style="!canChangeStatus(opt.value) ? { opacity: .45, cursor: 'not-allowed' } : undefined"
               >
-                <input type="radio" :value="opt.value" v-model="editForm.trangThai" :disabled="!canSetShiftStatus(editRow.trangThai, opt.value)" style="display:none" />
+                <input type="radio" :value="opt.value" v-model="editForm.trangThai" :disabled="!canChangeStatus(opt.value)" style="display:none" />
                 <span class="tt-dot"></span>
                 {{ opt.label }}
               </label>
             </div>
-            <p class="ss-hint">Nhận/kết thúc ca thực hiện từ ca cá nhân. Lịch đang làm hoặc đã kết thúc chỉ được sửa ghi chú.</p>
+            <p class="ss-hint">Nhận ca: sớm tối đa 15 phút, muộn tối đa 15 phút. Quá hạn không được mở lại lịch vắng. Lịch đang làm/đã kết thúc chỉ được sửa ghi chú.</p>
           </div>
 
           <div class="ss-field" style="margin-top:12px">
@@ -943,6 +953,10 @@ async function submitModal() {
             <input class="ss-input" v-model="editForm.ghiChu" placeholder="Nhập ghi chú..." />
           </div>
 
+          <div v-if="requiresReopenReason(editRow, editForm.trangThai)" class="ss-field" style="margin-top:12px">
+            <label class="ss-label">Lý do điều chỉnh vắng mặt <span class="req">*</span></label>
+            <input class="ss-input" v-model="editForm.lyDoDieuChinh" maxlength="200" placeholder="Nhập lý do mở lại lịch (tối đa 200 ký tự)" />
+          </div>
           <p v-if="editError" class="ss-hint warn" style="margin-top:10px">
             <i class="bi bi-exclamation-circle"></i> {{ editError }}
           </p>
@@ -1010,6 +1024,8 @@ async function submitModal() {
 </template>
 
 <style scoped>
+.shift-status-modal{overflow-y:auto;max-height:calc(100dvh - 40px);overscroll-behavior:contain}.shift-status-modal>*{flex-shrink:0}
+.shift-late{display:block;font-size:11px;color:#a56514;margin-top:5px;line-height:1.5}
 .calendar-detail{width:min(560px,calc(100vw - 32px));max-height:calc(100dvh - 48px);display:flex;flex-direction:column;overflow:hidden;background:#fff;border:1px solid var(--ss-border);border-radius:14px;box-shadow:0 20px 60px #19364b26;color:var(--ss-text)}
 .calendar-detail-head{display:flex;align-items:center;gap:12px;padding:22px 22px 18px;flex-shrink:0}
 .calendar-detail-icon{width:44px;height:44px;display:grid;place-items:center;flex-shrink:0;background:var(--ss-primary-soft);border-radius:10px;color:var(--ss-primary);font-size:20px}
