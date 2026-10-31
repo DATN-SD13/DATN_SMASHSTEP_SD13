@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useCartStore } from '../stores/cart'
 import OrderQrPayment from '../components/OrderQrPayment.vue'
@@ -11,10 +11,14 @@ import OrderStatusTimeline from '../components/OrderStatusTimeline.vue'
 import ShippingInfoModal from '../components/ShippingInfoModal.vue'
 import OrderReviewModal from '../components/OrderReviewModal.vue'
 import ProductImage from '../components/ProductImage.vue'
+import ghnLogo from '../assets/brands/ghn-logo.png'
+import vnpayLogo from '../assets/brands/vnpay-logo.svg'
 
 const route = useRoute(), order = ref(null), error = ref(''), loading = ref(false), editing = ref(false), canceling = ref(false), confirmCancel = ref(false), notice = ref('')
 const router = useRouter(), cart = useCartStore(), owner = cart.owner
 const emailStatus = ref(null)
+const isVnpay = computed(() => String(order.value?.paymentMethodCode || order.value?.paymentMethod || '').trim().toUpperCase() === 'VNPAY')
+const isGhn = computed(() => /^(GHN|GIAO HÀNG NHANH|GIAO HANG NHANH)$/i.test(String(order.value?.shippingProvider || '').trim()))
 const reviewingItem = ref(null)
 
 let version = 0
@@ -168,7 +172,8 @@ useLiveRefresh(() => { if (emailStatus.value?.state === 'QUEUED') return loadEma
             ⌖ Xem vị trí giao hàng trên bản đồ
           </a>
           <p class="shop-muted">{{ order.shippingEditable ? 'Bạn còn 1 lần đổi thông tin nhận hàng khi đơn chờ xác nhận.' : 'Thông tin nhận hàng đang được khóa. Liên hệ cửa hàng nếu cần hỗ trợ.' }}</p>
-          <p class="shop-muted">Phương thức thanh toán: {{ order.paymentMethod || 'Chưa có thông tin' }}</p>
+          <div class="order-service-row"><span>Phương thức thanh toán</span><img v-if="isVnpay" :src="vnpayLogo" alt="VNPAY" class="order-vnpay-logo" width="84" height="28"><strong v-else>{{ order.paymentMethod || 'Chưa có thông tin' }}</strong></div>
+          <div class="order-service-row"><span>Đơn vị vận chuyển</span><img v-if="isGhn" :src="ghnLogo" alt="GHN – Giao Hàng Nhanh" class="order-ghn-logo" width="72" height="24"><strong v-else>{{ order.shippingProvider || 'Chưa cập nhật' }}</strong></div>
           <p v-if="order.note" class="shop-muted">Ghi chú: {{ order.note }}</p>
         </div>
       </section>
@@ -197,9 +202,8 @@ useLiveRefresh(() => { if (emailStatus.value?.state === 'QUEUED') return loadEma
         <dl class="order-totals">
           <dt>Tạm tính</dt>
           <dd>{{ money(order.subtotal) }}</dd>
-          <dt>Giảm giá</dt>
-          <dd>−{{ money(order.discount) }}</dd>
-          <dt>Phí vận chuyển</dt>
+          <template v-if="Number(order.discount) > 0"><dt class="order-voucher-label"><span>Phiếu giảm giá</span><b v-if="order.voucherCode" class="order-voucher-code">{{ order.voucherCode }}</b><small v-if="order.voucherName">{{ order.voucherName }}</small><small v-else-if="!order.voucherCode">Ưu đãi đã lưu trên đơn</small></dt><dd class="order-voucher-saving">−{{ money(order.discount) }}</dd></template>
+          <dt class="order-shipping-fee"><span>Phí vận chuyển</span><img v-if="isGhn" :src="ghnLogo" alt="GHN – Giao Hàng Nhanh" class="order-ghn-logo" width="64" height="22"></dt>
           <dd>{{ money(order.shipping || 0) }}</dd>
           <dt class="summary-total">Tổng cộng</dt>
           <dd class="summary-total">{{ money(order.total) }}</dd>
@@ -255,4 +259,5 @@ useLiveRefresh(() => { if (emailStatus.value?.state === 'QUEUED') return loadEma
   background: #1868bd;
   color: #fff;
 }
+.order-service-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding-top:12px;margin-top:12px;border-top:1px solid #e4ebf4;font-size:12px}.order-service-row>span{color:var(--customer-muted)}.order-service-row>strong{font-size:12px}.order-vnpay-logo{width:84px;height:28px;object-fit:contain}.order-ghn-logo{width:72px;height:24px;object-fit:cover;background:#fff;border-radius:3px}.order-shipping-fee{display:flex;align-items:center;flex-wrap:wrap;gap:6px}.order-shipping-fee .order-ghn-logo{width:64px;height:22px}.order-voucher-label{display:flex;flex-wrap:wrap;align-items:center;gap:5px 8px;min-width:0}.order-voucher-code{font-size:10px;font-weight:700;letter-spacing:.3px;padding:2px 7px;border:1px dashed #a8d5bd;background:#eef9f2;color:#1b7653;border-radius:4px;overflow-wrap:anywhere;max-width:100%}.order-voucher-label small{flex-basis:100%;font-size:10px;line-height:1.6;color:var(--customer-muted)}.order-totals .order-voucher-saving{color:#168456}
 </style>

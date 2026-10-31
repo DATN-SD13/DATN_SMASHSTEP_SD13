@@ -113,7 +113,7 @@ public class CustomerCommerceService {
         String requestedCode=r.voucherCode()==null?"":r.voucherCode().trim();
         String selectedCode=requestedCode.isEmpty() ? null
                 : vouchers(customerId,subtotal).stream().filter(v->v.code().equalsIgnoreCase(requestedCode)).map(Voucher::code).findFirst()
-                    .orElseThrow(()->AppException.badRequest("Phiếu giảm giá đã chọn không còn đủ điều kiện cho đơn hàng này. Vui lòng chọn phiếu khác hoặc bỏ phiếu."));
+                .orElseThrow(()->AppException.badRequest("Phiếu giảm giá đã chọn không còn đủ điều kiện cho đơn hàng này. Vui lòng chọn phiếu khác hoặc bỏ phiếu."));
         var voucher=sales.tinhThuPhieu(c,subtotal,selectedCode);
         BigDecimal fee=null; String message="";
         try { fee=shipping.fee(r.receiver(),r.items().stream().mapToInt(Item::quantity).sum(),subtotal.subtract(voucher.tienGiam())); }
@@ -297,7 +297,9 @@ public class CustomerCommerceService {
                 .setParameter("id",h.getId()).getResultList().stream().filter(l->!com.smashstep.datn.invoice.rules.PosHistoryRules.danhRieng(l.getGhiChu()) && !com.smashstep.datn.invoice.rules.PosPriceSnapshot.metadata(l.getGhiChu()))
                 .map(l->new Event(l.getTrangThai(),label(l.getTrangThai()),l.getGhiChu(),l.getNgayTao())).toList();
         return new Order(h.getMaHoaDon(),h.getTrangThai(),label(h.getTrangThai()),h.getNgayTao(),h.getNgayCapNhat(),h.getHoTenNguoiNhan(),h.getSoDienThoaiNguoiNhan(),h.getDiaChiGiaoHang(),h.getIdPhuongThucThanhToan()==null?null:h.getIdPhuongThucThanhToan().getTenPhuongThuc(),com.smashstep.datn.invoice.rules.PosDraftRules.note(h),h.getTongTien(),h.getTienGiamGia(),h.getPhiVanChuyen(),h.getThanhTien(),isEditable(h),lines,history,
-                h.getIdPhuongThucThanhToan()==null?null:h.getIdPhuongThucThanhToan().getMaPhuongThuc(),canChangeShipping(h),OrderLocation.get(em,h));
+                h.getIdPhuongThucThanhToan()==null?null:h.getIdPhuongThucThanhToan().getMaPhuongThuc(),canChangeShipping(h),OrderLocation.get(em,h),
+                h.getIdPhieuGiamGia()==null?null:h.getIdPhieuGiamGia().getMaPhieuGiamGia(),
+                h.getIdPhieuGiamGia()==null?null:h.getIdPhieuGiamGia().getTenPhieuGiamGia(),h.getDonViVanChuyen());
     }
     private static String label(Integer status) {var value=TrangThaiHoaDon.tuMa(status);return value==null?"Chưa xác định":value.getNhan();}
     private void history(HoaDon h,String message) {var l=new LichSuHoaDon();l.setIdHoaDon(h);l.setTrangThai(h.getTrangThai());l.setNgayTao(LocalDateTime.now());l.setGhiChu(message);em.persist(l);}

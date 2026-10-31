@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import ProductImage from './ProductImage.vue'
 import { money } from '../utils/money'
+import ghnLogo from '../assets/brands/ghn-logo.png'
 
 const props = defineProps({
   lines: { type: Array, default: () => [] },
@@ -36,7 +37,7 @@ function hasProductDiscount(variant) {
     <dl>
       <dt>Tiền hàng</dt><dd>{{ money(subtotal) }}</dd>
       <template v-if="Number(discount) > 0"><dt>Giảm voucher</dt><dd class="checkout-discount">−{{ money(discount) }}</dd></template>
-      <dt>Phí vận chuyển</dt><dd>{{ shipping == null ? 'Chưa tính được' : money(shipping) }}</dd>
+      <dt class="shipping-fee-label"><span>Phí vận chuyển</span><img :src="ghnLogo" alt="GHN – Giao Hàng Nhanh" title="Giao Hàng Nhanh" width="64" height="22"></dt><dd>{{ shipping == null ? 'Chưa tính được' : money(shipping) }}</dd>
       <dt class="summary-total">Tổng thanh toán</dt><dd class="summary-total">{{ money(total) }}</dd>
     </dl>
     <p v-if="message" class="shop-alert" role="status">{{ message }}</p>
@@ -50,4 +51,6 @@ function hasProductDiscount(variant) {
 
 <style scoped>
 .checkout-summary{min-width:0}.checkout-summary h2 .shop-muted{font-size:12px;font-weight:500}.summary-product .line-total{display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex-shrink:0;white-space:nowrap;font-size:12px;color:var(--customer-text)}.line-total del{color:var(--customer-muted);font-size:10px;font-weight:400}.line-total strong{font-size:13px;font-weight:750}.checkout-discount{color:#168456}.refresh-quote{margin-bottom:10px}.confirm-order-button{width:100%;min-height:50px;margin-top:14px;font-size:14px;font-weight:750;border-radius:9px;box-shadow:0 5px 14px #2879e329}.confirm-order-button:disabled{opacity:.65}.payment-next-step{margin-top:9px;color:var(--customer-muted);font-size:11px;text-align:center;line-height:1.6}
+.shipping-fee-label{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.shipping-fee-label img{width:64px;height:22px;object-fit:cover;border-radius:3px;background:#fff}
+@media(max-width:600px){.summary-product{flex-wrap:wrap}.summary-product>div:not(.product-image){min-width:0;flex:1}.summary-product .line-total{margin-left:auto}}
 </style>
